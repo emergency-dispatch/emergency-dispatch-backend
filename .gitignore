@@ -1,8 +1,8 @@
-## ASP.NET Core / .NET
-
-# Build results
+## Build results
 [Dd]ebug/
+[Dd]ebugPublic/
 [Rr]elease/
+[Rr]eleases/
 x64/
 x86/
 [Ww][Ii][Nn]32/
@@ -14,7 +14,14 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
-# Visual Studio
+## NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+*.snupkg
+.nuget/
+
+## Visual Studio
 .vs/
 *.suo
 *.user
@@ -22,42 +29,10 @@ bld/
 *.sln.docstates
 *.rsuser
 
-# User-specific files
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-
-# Mono Auto Generated Files
-mono_crash.*
-
-# Build Results
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
-
-# NuGet
-**/[Pp]ackages/*
-!**/[Pp]ackages/build/
-*.nupkg
-**/packages/*
-!**/packages/build/
-*.snupkg
-.nuget/
-NuGet.Config
-
-# MSTest test Results
-[Tt]est[Rr]esult*/
-[Bb]uild[Ll]og.*
-
-# dotCover
-*.dotCover
-
-# Rider
+## JetBrains Rider
 .idea/
 
-# Visual Studio Code
+## VS Code
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
@@ -65,36 +40,43 @@ NuGet.Config
 !.vscode/extensions.json
 *.code-workspace
 
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
+## Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.dotCover
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Publish / Deploy
+## Publish / Deploy
 *.publish.xml
 *.azurePubxml
 *.pubxml
 *.publishproj
 publish/
 
-# dotnet tool
-.config/dotnet-tools.json
-
-# Entity Framework Migrations (keep these, but ignore designer files if needed)
-# *.Designer.cs
-
-# Secrets
+## Secrets & Environment
 appsettings.Development.json
 appsettings.Local.json
+.env
+.env.*
 *.pfx
 *.key
 
-# Environment
-.env
-.env.*
+## ML / ONNX models (quá nặng, không nên commit)
+*.onnx
+*.pb
+Models/*.onnx
+
+## OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride
+
+## Mono
+mono_crash.*
+
+## Misc
+*.cache
+*.log

@@ -1,36 +1,48 @@
 # Emergency Dispatch Backend
 
-ASP.NET Core backend for the Emergency Dispatch system.
+Backend API cho hệ thống điều phối cấp cứu — ASP.NET Core 9.0 + Clean Architecture.
 
 ## Tech Stack
-- ASP.NET Core
-- Entity Framework Core
-- SQL Server
 
-## Getting Started
+| Thành phần | Công nghệ |
+|---|---|
+| Framework | ASP.NET Core Web API (.NET 9.0) |
+| Database | PostgreSQL + EF Core (Npgsql) |
+| Auth | JWT Bearer (Access + Refresh Token) |
+| Realtime | SignalR |
+| API Docs | Swagger (Swashbuckle) |
+| Image Storage | Cloudinary |
+| Email | Gmail SMTP |
 
-### Prerequisites
-- .NET 8 SDK (or later)
-- SQL Server
+## Kiến trúc (Clean Architecture)
+
+```
+EmergencyDispatch.sln
+├── EmergencyDispatch.Domain            # Entities, Enums, Repository Interfaces
+├── EmergencyDispatch.Application       # DTOs, Service Interfaces, Business Logic
+├── EmergencyDispatch.Infrastructure    # DbContext, Repositories, External Services
+└── EmergencyDispatch.API               # Controllers, Hubs, Program.cs (DI + Middleware)
+```
+
+## Bắt đầu
+
+### Yêu cầu
+- .NET 9 SDK
+- PostgreSQL
 - Visual Studio 2022 / VS Code / Rider
 
-### Run the project
+### Chạy project
 ```bash
 dotnet restore
 dotnet build
-dotnet run
+dotnet run --project EmergencyDispatch.API
 ```
 
-## Project Structure
-```
-├── Controllers/        # API Controllers
-├── Models/             # Entity models
-├── DTOs/               # Data Transfer Objects
-├── Services/           # Business logic
-├── Repositories/       # Data access layer
-├── Migrations/         # EF Core migrations
-└── Program.cs          # Application entry point
+### Migration
+```bash
+dotnet ef migrations add <TenMigration> --project EmergencyDispatch.Infrastructure --startup-project EmergencyDispatch.API
+dotnet ef database update --project EmergencyDispatch.Infrastructure --startup-project EmergencyDispatch.API
 ```
 
 ## License
-This project is for educational purposes (SEP490).
+Đồ án SEP490 — FPT University.
