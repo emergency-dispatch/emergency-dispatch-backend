@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="EmergencyDispatch.API/EmergencyDispatch.API.csproj" />
+  <Project Path="EmergencyDispatch.Application/EmergencyDispatch.Application.csproj" />
+  <Project Path="EmergencyDispatch.Domain/EmergencyDispatch.Domain.csproj" />
+  <Project Path="EmergencyDispatch.Infrastructure/EmergencyDispatch.Infrastructure.csproj" />
+</Solution>
