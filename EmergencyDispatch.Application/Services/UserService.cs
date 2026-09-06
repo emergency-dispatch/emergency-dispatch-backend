@@ -44,6 +44,16 @@ public class UserService : IUserService
         {
             user.AvatarUrl = dto.AvatarUrl;
         }
+
+        user.DateOfBirth = dto.DateOfBirth;
+        user.Gender = dto.Gender;
+        user.CitizenIdNumber = dto.CitizenIdNumber?.Trim();
+        user.Address = dto.Address?.Trim();
+        user.BloodType = dto.BloodType;
+        user.MedicalNotes = dto.MedicalNotes?.Trim();
+        user.EmergencyContactName = dto.EmergencyContactName?.Trim();
+        user.EmergencyContactPhone = dto.EmergencyContactPhone?.Trim();
+        user.EmergencyContactRelationship = dto.EmergencyContactRelationship?.Trim();
         user.UpdatedAt = DateTime.UtcNow;
 
         await _userRepository.UpdateAsync(user);
@@ -126,6 +136,20 @@ public class UserService : IUserService
         return true;
     }
 
+    public async Task<bool> UpdateFcmTokenAsync(Guid userId, string fcmToken)
+    {
+        var user = await _userRepository.GetByIdAsync(userId);
+        if (user == null)
+        {
+            return false;
+        }
+
+        user.FcmToken = fcmToken.Trim();
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user);
+        return true;
+    }
+
     private static UserResponseDto MapToUserResponseDto(User user) => new()
     {
         Id = user.Id,
@@ -135,6 +159,17 @@ public class UserService : IUserService
         AvatarUrl = user.AvatarUrl,
         Role = user.Role,
         Status = user.Status,
+        DateOfBirth = user.DateOfBirth,
+        Gender = user.Gender,
+        CitizenIdNumber = user.CitizenIdNumber,
+        Address = user.Address,
+        BloodType = user.BloodType,
+        MedicalNotes = user.MedicalNotes,
+        EmergencyContactName = user.EmergencyContactName,
+        EmergencyContactPhone = user.EmergencyContactPhone,
+        EmergencyContactRelationship = user.EmergencyContactRelationship,
+        IsEmailVerified = user.IsEmailVerified,
+        FcmToken = user.FcmToken,
         StationId = user.StationId,
         StationName = user.Station?.Name,
         CreatedAt = user.CreatedAt,

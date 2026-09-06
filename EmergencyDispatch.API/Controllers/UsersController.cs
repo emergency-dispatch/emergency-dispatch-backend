@@ -82,6 +82,38 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Đăng ký hoặc cập nhật FCM Device Token cho thiết bị (phục vụ nhận Push Notification âm thanh còi hú)
+    /// </summary>
+    [HttpPut("fcm-token")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateFcmToken([FromBody] EmergencyDispatch.Application.DTOs.User.UpdateFcmTokenDto dto)
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(userIdStr, out var userId))
+            {
+                return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
+            }
+
+            var success = await _userService.UpdateFcmTokenAsync(userId, dto.FcmToken);
+            if (!success)
+            {
+                return BadRequest(ApiResponseDto<object>.Fail("Không thể cập nhật FCM Token."));
+            }
+
+            return Ok(ApiResponseDto<object>.Ok(null!, "Cập nhật FCM Token thành công."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
     /// Lấy danh sách người dùng có phân trang và tìm kiếm (Dành cho Quản trị viên)
     /// </summary>
     [HttpGet]

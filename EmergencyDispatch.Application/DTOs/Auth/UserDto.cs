@@ -13,4 +13,6 @@ public class UserDto
     public UserStatus Status { get; set; }
     public Guid? StationId { get; set; }
     public string? StationName { get; set; }
+    public bool IsEmailVerified { get; set; }
+    public BloodType? BloodType { get; set; }
 }

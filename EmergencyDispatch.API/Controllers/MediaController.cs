@@ -30,7 +30,7 @@ public class MediaController : ControllerBase
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ApiResponseDto<MediaUploadResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<MediaUploadResultDto>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UploadMedia([FromForm] IFormFile? file, CancellationToken cancellationToken)
+    public async Task<IActionResult> UploadMedia(IFormFile? file, CancellationToken cancellationToken)
     {
         if (file == null || file.Length == 0)
         {

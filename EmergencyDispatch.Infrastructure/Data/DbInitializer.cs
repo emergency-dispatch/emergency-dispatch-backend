@@ -54,6 +54,7 @@ public static class DbInitializer
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123456"),
                     Role = UserRole.Admin,
                     Status = UserStatus.Active,
+                    IsEmailVerified = true,
                     CreatedAt = DateTime.UtcNow
                 },
                 new()
@@ -64,6 +65,7 @@ public static class DbInitializer
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("Operator@123456"),
                     Role = UserRole.Operator,
                     Status = UserStatus.Active,
+                    IsEmailVerified = true,
                     StationId = defaultStation?.Id,
                     CreatedAt = DateTime.UtcNow
                 },
@@ -75,6 +77,8 @@ public static class DbInitializer
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("Staff@123456"),
                     Role = UserRole.RescueStaff,
                     Status = UserStatus.Active,
+                    IsEmailVerified = true,
+                    BloodType = BloodType.B_Positive,
                     StationId = defaultStation?.Id,
                     CreatedAt = DateTime.UtcNow
                 },
@@ -86,6 +90,14 @@ public static class DbInitializer
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("Citizen@123456"),
                     Role = UserRole.Citizen,
                     Status = UserStatus.Active,
+                    IsEmailVerified = true,
+                    BloodType = BloodType.O_Positive,
+                    Address = "789 Điện Biên Phủ, Phường 22, Quận Bình Thạnh, TP. Hồ Chí Minh",
+                    CitizenIdNumber = "079095012345",
+                    MedicalNotes = "Dị ứng thuốc kháng sinh nhóm Penicillin; Tiền sử huyết áp thấp.",
+                    EmergencyContactName = "Lê Thị Thân",
+                    EmergencyContactPhone = "0911223344",
+                    EmergencyContactRelationship = "Vợ",
                     CreatedAt = DateTime.UtcNow
                 }
             };

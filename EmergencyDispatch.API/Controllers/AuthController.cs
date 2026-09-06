@@ -19,7 +19,7 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Đăng ký tài khoản người dân (Citizen)
+    /// Đăng ký tài khoản người dân (Citizen) kèm mã xác thực OTP gửi qua email
     /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
@@ -30,7 +30,7 @@ public class AuthController : ControllerBase
         try
         {
             var result = await _authService.RegisterAsync(dto);
-            return Ok(ApiResponseDto<AuthResponseDto>.Ok(result, "Đăng ký tài khoản thành công."));
+            return Ok(ApiResponseDto<AuthResponseDto>.Ok(result, "Đăng ký tài khoản thành công. Mã xác thực (OTP) đã được gửi tới email của bạn."));
         }
         catch (InvalidOperationException ex)
         {
@@ -41,6 +41,69 @@ public class AuthController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError,
                 ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
         }
+    }
+
+    /// <summary>
+    /// Xác thực email tài khoản bằng mã OTP 6 số (Gửi Welcome Email khi hoàn tất)
+    /// </summary>
+    [HttpPost("verify-email")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailDto dto)
+    {
+        var result = await _authService.VerifyEmailAsync(dto);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Gửi lại mã xác thực email (OTP) mới
+    /// </summary>
+    [HttpPost("resend-verification")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationDto dto)
+    {
+        var result = await _authService.ResendVerificationEmailAsync(dto);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Quên mật khẩu - Gửi mã OTP/Token đặt lại mật khẩu qua email
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
+    {
+        var result = await _authService.ForgotPasswordAsync(dto);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Đặt lại mật khẩu mới bằng mã OTP nhận từ email
+    /// </summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
+    {
+        var result = await _authService.ResetPasswordAsync(dto);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
     }
 
     /// <summary>
@@ -143,7 +206,7 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Đổi mật khẩu
+    /// Đổi mật khẩu (Bắt buộc gửi email cảnh báo bảo mật thời gian thực kèm IP)
     /// </summary>
     [HttpPost("change-password")]
     [Authorize]
@@ -160,8 +223,9 @@ public class AuthController : ControllerBase
                 return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
             }
 
-            await _authService.ChangePasswordAsync(userId, dto);
-            return Ok(ApiResponseDto<object>.Ok(null!, "Đổi mật khẩu thành công."));
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+            await _authService.ChangePasswordAsync(userId, dto, ipAddress);
+            return Ok(ApiResponseDto<object>.Ok(null!, "Đổi mật khẩu thành công. Thông báo bảo mật đã được gửi tới email của bạn."));
         }
         catch (UnauthorizedAccessException ex)
         {

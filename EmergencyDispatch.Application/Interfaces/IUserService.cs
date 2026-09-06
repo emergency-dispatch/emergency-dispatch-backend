@@ -18,4 +18,5 @@ public interface IUserService
     Task<UserResponseDto> CreateUserAsync(CreateUserDto dto);
     Task<UserResponseDto> UpdateUserAsync(Guid id, UpdateUserDto dto);
     Task<bool> DeleteUserAsync(Guid id);
+    Task<bool> UpdateFcmTokenAsync(Guid userId, string fcmToken);
 }

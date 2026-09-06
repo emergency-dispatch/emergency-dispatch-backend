@@ -96,18 +96,20 @@ builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();
 
-// 7. Cấu hình Resilient HTTP Client cho AI Qwen2.5-VL (OpenRouter)
+// 7. Cấu hình Resilient HTTP Client cho AI Qwen (OpenRouter)
 builder.Services.AddHttpClient("OpenRouterClient")
     .AddStandardResilienceHandler(options =>
     {
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(35);
         options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(25);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(60);
         options.Retry.MaxRetryAttempts = 2;
         options.Retry.Delay = TimeSpan.FromSeconds(2);
     });
 
 // 8. Đăng ký Application Services (Scoped)
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IEmailService, EmergencyDispatch.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
@@ -180,7 +182,10 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -29,6 +29,15 @@ public class ApplicationDbContext : DbContext
             entity.Property(u => u.Email).HasMaxLength(150).IsRequired();
             entity.Property(u => u.PhoneNumber).HasMaxLength(20);
             entity.Property(u => u.GoogleId).HasMaxLength(100);
+            entity.Property(u => u.CitizenIdNumber).HasMaxLength(30);
+            entity.Property(u => u.Address).HasMaxLength(300);
+            entity.Property(u => u.MedicalNotes).HasMaxLength(2000);
+            entity.Property(u => u.EmergencyContactName).HasMaxLength(100);
+            entity.Property(u => u.EmergencyContactPhone).HasMaxLength(20);
+            entity.Property(u => u.EmergencyContactRelationship).HasMaxLength(50);
+            entity.Property(u => u.FcmToken).HasMaxLength(500);
+            entity.Property(u => u.EmailVerificationToken).HasMaxLength(100);
+            entity.Property(u => u.PasswordResetToken).HasMaxLength(100);
 
             // Quan hệ với Station (Staff thuộc Station)
             entity.HasOne(u => u.Station)
