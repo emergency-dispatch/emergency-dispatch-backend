@@ -53,6 +53,8 @@ bld/
 publish/
 
 ## Secrets & Environment
+appsettings.json
+appsettings.*.json
 appsettings.Development.json
 appsettings.Local.json
 .env
