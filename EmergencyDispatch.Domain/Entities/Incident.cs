@@ -43,7 +43,7 @@ public class Incident : BaseEntity
     public SeverityLevel Severity { get; set; } = SeverityLevel.Unclassified;
 
     /// <summary>
-    /// ID người dân gửi báo cáo (nếu đã đăng nhập)
+    /// ID người dân gửi báo cáo (nếu đã đăng nhập, null nếu nặc danh)
     /// </summary>
     public Guid? ReportedByUserId { get; set; }
     public User? ReportedByUser { get; set; }
@@ -75,12 +75,48 @@ public class Incident : BaseEntity
     public string? OperatorNotes { get; set; }
 
     /// <summary>
-    /// Danh sách ảnh/video hiện trường đính kèm
+    /// Lý do hủy sự cố (nếu Status = Cancelled)
     /// </summary>
-    public ICollection<IncidentMedia> MediaItems { get; set; } = new List<IncidentMedia>();
+    public CancellationReason? CancellationReason { get; set; }
 
     /// <summary>
-    /// Kết quả phân tích từ AI Vision-Language
+    /// Khóa ngoại tự tham chiếu tới sự cố gốc nếu phát hiện trùng lặp
     /// </summary>
+    public Guid? DuplicateOfIncidentId { get; set; }
+    public Incident? DuplicateOfIncident { get; set; }
+    public ICollection<Incident> DuplicateIncidents { get; set; } = new List<Incident>();
+
+    /// <summary>
+    /// Cờ đánh dấu báo cáo bị trễ (offline sync hoặc người dân gửi muộn)
+    /// </summary>
+    public bool IsDelayed { get; set; } = false;
+    public DateTime? OriginalReportTimestamp { get; set; }
+
+    /// <summary>
+    /// Thời điểm đóng sự cố hoàn tất
+    /// </summary>
+    public DateTime? ClosedAt { get; set; }
+
+    /// <summary>
+    /// Thời gian phản hồi tính bằng mili-giây (từ khi tạo đến khi Operator xác minh)
+    /// </summary>
+    public long? ResponseTimeMs { get; set; }
+
+    /// <summary>
+    /// Thời gian điều phối (từ khi xác minh đến khi có đội cứu hộ nhận việc)
+    /// </summary>
+    public long? DispatchTimeMs { get; set; }
+
+    /// <summary>
+    /// Tổng thời gian giải quyết sự cố (từ khi tạo đến khi đóng)
+    /// </summary>
+    public long? ResolutionTimeMs { get; set; }
+
+    // Navigation properties
+    public ICollection<IncidentMedia> MediaItems { get; set; } = new List<IncidentMedia>();
     public AiClassification? AiClassification { get; set; }
+    public ICollection<IncidentAssignment> IncidentAssignments { get; set; } = new List<IncidentAssignment>();
+    public ICollection<IncidentStatusHistory> StatusHistories { get; set; } = new List<IncidentStatusHistory>();
+    public ICollection<IncidentAuditTrail> AuditTrails { get; set; } = new List<IncidentAuditTrail>();
+    public CitizenFeedback? CitizenFeedback { get; set; }
 }
