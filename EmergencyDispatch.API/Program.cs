@@ -91,6 +91,9 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+builder.Services.AddScoped<IStationRepository, StationRepository>();
+builder.Services.AddScoped<IRescueUnitRepository, RescueUnitRepository>();
+builder.Services.AddScoped<IDispatchAssignmentRepository, DispatchAssignmentRepository>();
 builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
 
 // 6. Đăng ký FluentValidation
@@ -112,6 +115,8 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IEmailService, EmergencyDispatch.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IStationService, StationService>();
+builder.Services.AddScoped<IRescueUnitService, RescueUnitService>();
 builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();

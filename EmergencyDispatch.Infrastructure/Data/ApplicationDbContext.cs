@@ -12,7 +12,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Station> Stations => Set<Station>();
+    public DbSet<RescueUnit> RescueUnits => Set<RescueUnit>();
     public DbSet<Incident> Incidents => Set<Incident>();
+    public DbSet<DispatchAssignment> DispatchAssignments => Set<DispatchAssignment>();
     public DbSet<IncidentMedia> IncidentMedias => Set<IncidentMedia>();
     public DbSet<AiClassification> AiClassifications => Set<AiClassification>();
 
@@ -98,10 +100,53 @@ public class ApplicationDbContext : DbContext
                   .HasForeignKey(i => i.VerifiedByUserId)
                   .OnDelete(DeleteBehavior.SetNull);
 
+            // Quan hệ người đóng hồ sơ sự cố (User -> Incident: Restrict)
+            entity.HasOne(i => i.ClosedByUser)
+                  .WithMany()
+                  .HasForeignKey(i => i.ClosedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasQueryFilter(i => !i.IsDeleted);
         });
 
-        // 5. Cấu hình bảng IncidentMedia
+        // 5. Cấu hình bảng RescueUnit
+        modelBuilder.Entity<RescueUnit>(entity =>
+        {
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.PlateNumber).HasMaxLength(50).IsRequired();
+            entity.HasIndex(r => r.PlateNumber).IsUnique();
+
+            // Quan hệ với Station (Station -> RescueUnits: Cascade)
+            entity.HasOne(r => r.Station)
+                  .WithMany(s => s.RescueUnits)
+                  .HasForeignKey(r => r.StationId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(r => !r.IsDeleted);
+        });
+
+        // 6. Cấu hình bảng DispatchAssignment
+        modelBuilder.Entity<DispatchAssignment>(entity =>
+        {
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Notes).HasMaxLength(1000);
+
+            // Quan hệ với Incident
+            entity.HasOne(d => d.Incident)
+                  .WithMany(i => i.DispatchAssignments)
+                  .HasForeignKey(d => d.IncidentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // Quan hệ với RescueUnit
+            entity.HasOne(d => d.RescueUnit)
+                  .WithMany(r => r.DispatchAssignments)
+                  .HasForeignKey(d => d.RescueUnitId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasQueryFilter(d => !d.IsDeleted);
+        });
+
+        // 7. Cấu hình bảng IncidentMedia
         modelBuilder.Entity<IncidentMedia>(entity =>
         {
             entity.HasKey(m => m.Id);
@@ -118,7 +163,7 @@ public class ApplicationDbContext : DbContext
             entity.HasQueryFilter(m => !m.IsDeleted);
         });
 
-        // 6. Cấu hình bảng AiClassification
+        // 8. Cấu hình bảng AiClassification
         modelBuilder.Entity<AiClassification>(entity =>
         {
             entity.HasKey(a => a.Id);
