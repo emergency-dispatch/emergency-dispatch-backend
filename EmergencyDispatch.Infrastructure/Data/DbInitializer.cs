@@ -39,7 +39,90 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // 2. Seed Tài khoản mẫu (Admin, Operator, RescueStaff, Citizen)
+        // 2. Seed Phương tiện cứu hộ mẫu (RescueUnits)
+        if (!await context.RescueUnits.AnyAsync())
+        {
+            var stations = await context.Stations.ToListAsync();
+            var q1Station = stations.FirstOrDefault(s => s.Name.Contains("Quận 1")) ?? stations.First();
+            var q7Station = stations.FirstOrDefault(s => s.Name.Contains("Quận 7")) ?? stations.Last();
+
+            var units = new List<RescueUnit>
+            {
+                // Trạm Quận 1
+                new()
+                {
+                    PlateNumber = "51A-115.01",
+                    UnitType = RescueUnitType.Ambulance,
+                    Status = RescueUnitStatus.Available,
+                    CurrentLat = q1Station.Latitude,
+                    CurrentLng = q1Station.Longitude,
+                    LastLocationUpdateAt = DateTime.UtcNow,
+                    StationId = q1Station.Id,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new()
+                {
+                    PlateNumber = "51A-001.14",
+                    UnitType = RescueUnitType.FireTruck,
+                    Status = RescueUnitStatus.Available,
+                    CurrentLat = q1Station.Latitude,
+                    CurrentLng = q1Station.Longitude,
+                    LastLocationUpdateAt = DateTime.UtcNow,
+                    StationId = q1Station.Id,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new()
+                {
+                    PlateNumber = "51A-002.14",
+                    UnitType = RescueUnitType.LadderTruck,
+                    Status = RescueUnitStatus.Available,
+                    CurrentLat = q1Station.Latitude,
+                    CurrentLng = q1Station.Longitude,
+                    LastLocationUpdateAt = DateTime.UtcNow,
+                    StationId = q1Station.Id,
+                    CreatedAt = DateTime.UtcNow
+                },
+                // Trạm Quận 7
+                new()
+                {
+                    PlateNumber = "51B-115.02",
+                    UnitType = RescueUnitType.Ambulance,
+                    Status = RescueUnitStatus.Available,
+                    CurrentLat = q7Station.Latitude,
+                    CurrentLng = q7Station.Longitude,
+                    LastLocationUpdateAt = DateTime.UtcNow,
+                    StationId = q7Station.Id,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new()
+                {
+                    PlateNumber = "51B-003.14",
+                    UnitType = RescueUnitType.FireTruck,
+                    Status = RescueUnitStatus.Available,
+                    CurrentLat = q7Station.Latitude,
+                    CurrentLng = q7Station.Longitude,
+                    LastLocationUpdateAt = DateTime.UtcNow,
+                    StationId = q7Station.Id,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new()
+                {
+                    PlateNumber = "51B-005.99",
+                    UnitType = RescueUnitType.HeavyRescueVehicle,
+                    Status = RescueUnitStatus.Available,
+                    CurrentLat = q7Station.Latitude,
+                    CurrentLng = q7Station.Longitude,
+                    LastLocationUpdateAt = DateTime.UtcNow,
+                    StationId = q7Station.Id,
+                    CreatedAt = DateTime.UtcNow
+                }
+            };
+
+            await context.RescueUnits.AddRangeAsync(units);
+            await context.SaveChangesAsync();
+        }
+
+        // 3. Seed Tài khoản mẫu (Admin, Operator, RescueStaff, Citizen)
         if (!await context.Users.AnyAsync())
         {
             var defaultStation = await context.Stations.FirstOrDefaultAsync();

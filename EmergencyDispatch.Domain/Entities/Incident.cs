@@ -75,6 +75,22 @@ public class Incident : BaseEntity
     public string? OperatorNotes { get; set; }
 
     /// <summary>
+    /// Thời điểm đóng hồ sơ sự cố
+    /// </summary>
+    public DateTime? ClosedAt { get; set; }
+
+    /// <summary>
+    /// ID Người đóng hồ sơ sự cố (Operator hoặc Staff)
+    /// </summary>
+    public Guid? ClosedByUserId { get; set; }
+    public User? ClosedByUser { get; set; }
+
+    /// <summary>
+    /// Báo cáo tóm tắt giải quyết sự cố / kết quả xử lý hiện trường
+    /// </summary>
+    public string? ResolutionSummary { get; set; }
+
+    /// <summary>
     /// Danh sách ảnh/video hiện trường đính kèm
     /// </summary>
     public ICollection<IncidentMedia> MediaItems { get; set; } = new List<IncidentMedia>();
@@ -83,4 +99,52 @@ public class Incident : BaseEntity
     /// Kết quả phân tích từ AI Vision-Language
     /// </summary>
     public AiClassification? AiClassification { get; set; }
+
+    /// <summary>
+    /// Danh sách các lượt điều động phương tiện / đội xe cứu hộ
+    /// </summary>
+    public ICollection<DispatchAssignment> DispatchAssignments { get; set; } = new List<DispatchAssignment>();
+
+    /// <summary>
+    /// Cập nhật trạng thái sự cố
+    /// </summary>
+    public void UpdateStatus(IncidentStatus newStatus)
+    {
+        Status = newStatus;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Cập nhật mức độ nghiêm trọng
+    /// </summary>
+    public void UpdateSeverity(SeverityLevel newSeverity)
+    {
+        Severity = newSeverity;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Điều phối viên xác minh sự cố
+    /// </summary>
+    public void Verify(Guid operatorId, SeverityLevel confirmedSeverity, string? notes = null)
+    {
+        VerifiedByUserId = operatorId;
+        VerifiedAt = DateTime.UtcNow;
+        Severity = confirmedSeverity;
+        Status = IncidentStatus.Verified;
+        OperatorNotes = notes;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Đóng hồ sơ sự cố hoàn tất
+    /// </summary>
+    public void Close(Guid closedById, string resolutionSummary)
+    {
+        ClosedByUserId = closedById;
+        ClosedAt = DateTime.UtcNow;
+        ResolutionSummary = resolutionSummary;
+        Status = IncidentStatus.Completed;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }
