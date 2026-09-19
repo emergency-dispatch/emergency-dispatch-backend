@@ -114,6 +114,120 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Lấy danh bạ người thân khẩn cấp (ICE - In Case of Emergency) của tài khoản đang đăng nhập
+    /// </summary>
+    [HttpGet("ice-contacts")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<IceContactDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetIceContacts()
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(userIdStr, out var userId))
+            {
+                return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
+            }
+
+            var contacts = await _userService.GetIceContactsAsync(userId);
+            return Ok(ApiResponseDto<IReadOnlyList<IceContactDto>>.Ok(contacts, "Lấy danh bạ người thân khẩn cấp thành công."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
+    /// Thêm người thân khẩn cấp mới vào danh bạ ICE
+    /// </summary>
+    [HttpPost("ice-contacts")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDto<IceContactDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreateIceContact([FromBody] CreateIceContactDto dto)
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(userIdStr, out var userId))
+            {
+                return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
+            }
+
+            var created = await _userService.CreateIceContactAsync(userId, dto);
+            return Ok(ApiResponseDto<IceContactDto>.Ok(created, "Thêm người thân khẩn cấp thành công."));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Cập nhật thông tin người thân khẩn cấp
+    /// </summary>
+    [HttpPut("ice-contacts/{contactId:guid}")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDto<IceContactDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateIceContact(Guid contactId, [FromBody] UpdateIceContactDto dto)
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(userIdStr, out var userId))
+            {
+                return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
+            }
+
+            var updated = await _userService.UpdateIceContactAsync(userId, contactId, dto);
+            return Ok(ApiResponseDto<IceContactDto>.Ok(updated, "Cập nhật thông tin người thân thành công."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponseDto<object>.Fail(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Xóa một người thân khỏi danh bạ khẩn cấp ICE
+    /// </summary>
+    [HttpDelete("ice-contacts/{contactId:guid}")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteIceContact(Guid contactId)
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(userIdStr, out var userId))
+            {
+                return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
+            }
+
+            var success = await _userService.DeleteIceContactAsync(userId, contactId);
+            if (!success)
+            {
+                return NotFound(ApiResponseDto<object>.Fail("Không tìm thấy người thân cần xóa."));
+            }
+
+            return Ok(ApiResponseDto<object>.Ok(null!, "Xóa người thân khẩn cấp thành công."));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Lấy danh sách người dùng có phân trang và tìm kiếm (Dành cho Quản trị viên)
     /// </summary>
     [HttpGet]

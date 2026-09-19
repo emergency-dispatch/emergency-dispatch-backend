@@ -26,7 +26,22 @@ public class User : BaseEntity
     public BloodType? BloodType { get; set; }
     public string? MedicalNotes { get; set; }
 
-    // Người liên hệ khẩn cấp (Emergency Contact)
+    // Hồ sơ y tế chuyên sâu (Medical ID)
+    public List<string> ChronicConditions { get; set; } = new();
+    public List<string> Allergies { get; set; } = new();
+    public List<string> CurrentMedications { get; set; } = new();
+    public List<string> MobilityLimitations { get; set; } = new();
+
+    // Thông tin đặc thù cứu nạn tại hiện trường (Special Info)
+    public string? PreferredLanguage { get; set; }
+    public string? DependentsNote { get; set; }
+    public int? HouseholdMembersCount { get; set; }
+
+    // Cấu hình gửi SMS khẩn cấp
+    public bool AutoSendSmsOnSos { get; set; } = false;
+    public string? SmsTemplate { get; set; }
+
+    // Người liên hệ khẩn cấp chính (Backward compatibility)
     public string? EmergencyContactName { get; set; }
     public string? EmergencyContactPhone { get; set; }
     public string? EmergencyContactRelationship { get; set; }
@@ -47,4 +62,5 @@ public class User : BaseEntity
     // Navigation Properties
     public Station? Station { get; set; }
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public ICollection<IceContact> IceContacts { get; set; } = new List<IceContact>();
 }

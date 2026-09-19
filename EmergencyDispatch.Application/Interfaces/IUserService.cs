@@ -19,4 +19,10 @@ public interface IUserService
     Task<UserResponseDto> UpdateUserAsync(Guid id, UpdateUserDto dto);
     Task<bool> DeleteUserAsync(Guid id);
     Task<bool> UpdateFcmTokenAsync(Guid userId, string fcmToken);
+
+    // Quản lý danh bạ người thân khẩn cấp (ICE - In Case of Emergency)
+    Task<IReadOnlyList<IceContactDto>> GetIceContactsAsync(Guid userId);
+    Task<IceContactDto> CreateIceContactAsync(Guid userId, CreateIceContactDto dto);
+    Task<IceContactDto> UpdateIceContactAsync(Guid userId, Guid contactId, UpdateIceContactDto dto);
+    Task<bool> DeleteIceContactAsync(Guid userId, Guid contactId);
 }

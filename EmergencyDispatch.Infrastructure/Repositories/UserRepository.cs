@@ -16,6 +16,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     {
         return await _dbSet
             .Include(u => u.Station)
+            .Include(u => u.IceContacts)
             .FirstOrDefaultAsync(u => u.Id == id);
     }
 

@@ -95,6 +95,7 @@ builder.Services.AddScoped<IStationRepository, StationRepository>();
 builder.Services.AddScoped<IRescueUnitRepository, RescueUnitRepository>();
 builder.Services.AddScoped<IDispatchAssignmentRepository, DispatchAssignmentRepository>();
 builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
+builder.Services.AddScoped<IIceContactRepository, IceContactRepository>();
 
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();

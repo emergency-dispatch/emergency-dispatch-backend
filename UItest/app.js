@@ -210,19 +210,67 @@ function initGuestSosTab() {
         }
     });
 
+    const btnSubmitCitizenSos = document.getElementById('btn-submit-citizen-sos');
+    if (btnSubmitCitizenSos) {
+        btnSubmitCitizenSos.addEventListener('click', async () => {
+            if (!authToken) {
+                showToast('Vui lòng đăng nhập trước khi gửi SOS người dân!', 'error');
+                await quickLogin();
+            }
+
+            const sosData = {
+                title: document.getElementById('sos-title').value.trim(),
+                description: document.getElementById('sos-desc').value.trim(),
+                locationAddress: document.getElementById('sos-address').value.trim(),
+                latitude: parseFloat(document.getElementById('sos-lat').value),
+                longitude: parseFloat(document.getElementById('sos-lng').value),
+                reporterName: currentUser?.fullName || 'Người dân đã đăng ký',
+                reporterPhone: currentUser?.phoneNumber || '0901234567',
+                mediaUrls: []
+            };
+
+            try {
+                // Truyền Authorization Header -> Gắn ID người dùng & Medical Profile + Kích hoạt SMS
+                const res = await fetch(`${API_BASE}/incidents`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(sosData)
+                });
+
+                const result = await res.json();
+                if (res.ok && result.success) {
+                    currentIncident = result.data;
+                    renderIncidentState(currentIncident);
+                    cancelBox.classList.remove('hidden');
+                    showToast('Đã phát SOS Người dân (Kèm Medical ID & kích hoạt SMS)!', 'success');
+                } else {
+                    showToast('Lỗi: ' + (result.message || 'Không thể gửi SOS'), 'error');
+                }
+            } catch (err) {
+                showToast('Lỗi kết nối server', 'error');
+            }
+        });
+    }
+
     btnCancelNow.addEventListener('click', async () => {
         if (!currentIncident || !currentIncident.id) {
             showToast('Chưa có sự cố nào để hủy!', 'error');
             return;
         }
 
-        const reason = cancelReasonInput.value.trim() || 'Khách vãng lai tự hủy sự cố';
+        const reason = cancelReasonInput.value.trim() || 'Người báo tự hủy sự cố';
 
         try {
-            // Khách tự hủy KHÔNG CẦN TOKEN!
+            // Khách hoặc người dân tự hủy (kèm token nếu có)
+            const headers = { 'Content-Type': 'application/json' };
+            if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
             const res = await fetch(`${API_BASE}/incidents/${currentIncident.id}/cancel`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ reason })
             });
 
@@ -231,7 +279,7 @@ function initGuestSosTab() {
                 currentIncident = result.data;
                 renderIncidentState(currentIncident);
                 cancelBox.classList.add('hidden');
-                showToast('Khách đã tự hủy sự cố thành công! (Không yêu cầu đăng nhập)', 'success');
+                showToast('Đã tự hủy sự cố thành công!', 'success');
             } else {
                 showToast('Không thể hủy: ' + (result.message || 'Lỗi server'), 'error');
             }
@@ -248,23 +296,36 @@ function initGuestSosTab() {
         if (inc.status === 'Dispatched') badgeClass = 'badge-dispatched';
         if (inc.status === 'Completed') badgeClass = 'badge-completed';
 
+        const med = inc.reporterMedicalProfile;
+
         liveState.innerHTML = `
             <div class="incident-card-status">
                 <div class="incident-badge-row">
                     <strong style="font-size: 16px;">${inc.title || 'Sự cố'}</strong>
                     <span class="badge ${badgeClass}">${statusText}</span>
                 </div>
+
+                ${inc.emergencySmsDispatchLog ? `
+                <div class="alert alert-info" style="font-size: 12px; margin-bottom: 12px;">
+                    📲 <strong>HỆ THỐNG GỬI SMS TỰ ĐỘNG KHI PHÁT SOS:</strong><br>
+                    ${inc.emergencySmsDispatchLog}
+                </div>` : ''}
+
                 <div class="incident-meta-list">
                     <div class="incident-meta-item">
                         <span class="incident-meta-label">Mã sự cố (ID):</span>
                         <span class="incident-meta-val">${inc.id}</span>
                     </div>
                     <div class="incident-meta-item">
+                        <span class="incident-meta-label">Người báo cáo:</span>
+                        <span>${inc.reporterName || 'Nặc danh / Khách vãng lai'} ${inc.reporterPhone ? `(${inc.reporterPhone})` : ''}</span>
+                    </div>
+                    <div class="incident-meta-item">
                         <span class="incident-meta-label">Địa chỉ:</span>
                         <span>${inc.locationAddress || 'N/A'}</span>
                     </div>
                     <div class="incident-meta-item">
-                        <span class="incident-meta-label">Tọa độ:</span>
+                        <span class="incident-meta-label">Tọa độ GPS:</span>
                         <span class="incident-meta-val">${inc.latitude?.toFixed(4)}, ${inc.longitude?.toFixed(4)}</span>
                     </div>
                     <div class="incident-meta-item">
@@ -277,9 +338,33 @@ function initGuestSosTab() {
                         <span>${inc.operatorNotes}</span>
                     </div>` : ''}
                 </div>
+
+                ${med ? `
+                <!-- HỒ SƠ Y TẾ VÀ ĐẶC THÙ CỨU NẠN GẮN LIỀN VỚI SỰ CỐ -->
+                <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <strong style="color: #60A5FA; font-size: 13px; display: block; margin-bottom: 8px;">
+                        📋 HỒ SƠ Y TẾ & CỨU HỘ ĐÍNH KÈM (Cung cấp tức thì cho Kíp 114 / 115):
+                    </strong>
+                    <div style="font-size: 12px; line-height: 1.6;">
+                        <div>🩸 <strong>Nhóm máu:</strong> <span style="color: #F87171; font-weight: bold;">${med.bloodType || 'Chưa rõ'}</span> | 🗣️ <strong>Ngôn ngữ:</strong> ${med.preferredLanguage || 'Tiếng Việt'}</div>
+                        <div>⚠️ <strong>Bệnh nền mạn tính:</strong> ${med.chronicConditions?.length ? med.chronicConditions.join(', ') : 'Không có'}</div>
+                        <div>🚨 <strong>DỊ ỨNG NGUY HIỂM:</strong> <span style="color: #FBBF24; font-weight: bold;">${med.allergies?.length ? med.allergies.join(', ') : 'Không có'}</span></div>
+                        <div>💊 <strong>Thuốc đang sử dụng:</strong> ${med.currentMedications?.length ? med.currentMedications.join(', ') : 'Không có'}</div>
+                        <div>♿ <strong>Hạn chế vận động:</strong> ${med.mobilityLimitations?.length ? med.mobilityLimitations.join(', ') : 'Bình thường'}</div>
+                        <div>🏠 <strong>Thông tin căn hộ:</strong> ${med.householdMembersCount} người | <em>${med.dependentsNote || 'Không có người già/trẻ nhỏ phụ thuộc'}</em></div>
+                        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1);">
+                            👨‍👩‍👧‍👦 <strong>Người thân khẩn cấp (ICE):</strong><br>
+                            ${med.iceContacts?.length ? med.iceContacts.map(c => `• <strong>${c.name}</strong> (${c.relationship}) - 📞 ${c.phoneNumber} ${c.isPrimary ? '<span style="color: #FBBF24;">⭐(Chính)</span>' : ''}`).join('<br>') : 'Chưa có danh bạ người thân'}
+                        </div>
+                    </div>
+                </div>` : `
+                <div class="alert alert-warning" style="font-size: 12px;">
+                    ℹ️ <strong>Khách vãng lai (Chưa đăng nhập):</strong> Sự cố không có hồ sơ y tế hay danh bạ người thân đính kèm.
+                </div>`}
+
                 ${inc.status === 'Cancelled' ? `
                 <div class="alert alert-success">
-                    ✅ <strong>Sự cố đã được hủy thành công bởi chính người báo!</strong><br>
+                    ✅ <strong>Sự cố đã được hủy thành công bởi người báo!</strong><br>
                     Không có xe cứu hộ nào bị điều phối nhầm.
                 </div>` : ''}
             </div>

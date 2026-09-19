@@ -123,21 +123,23 @@ public class IncidentsController : ControllerBase
     }
 
     /// <summary>
-    /// Hủy sự cố (báo sai, báo khống hoặc trùng lặp)
+    /// Hủy sự cố (Hỗ trợ Điều phối viên hủy báo sai hoặc Người dân/Khách vãng lai tự hủy SOS)
     /// </summary>
     [HttpPut("{id:guid}/cancel")]
-    [Authorize]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> CancelIncident(Guid id, [FromBody] string reason, CancellationToken cancellationToken)
+    public async Task<IActionResult> CancelIncident(Guid id, [FromBody] CancelIncidentDto? dto, CancellationToken cancellationToken)
     {
+        Guid? currentUserId = null;
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!Guid.TryParse(userIdClaim, out var operatorId))
+        if (Guid.TryParse(userIdClaim, out var parsedGuid))
         {
-            return Unauthorized(ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn chưa xác thực tài khoản."));
+            currentUserId = parsedGuid;
         }
 
-        var response = await _incidentService.CancelIncidentAsync(id, reason, operatorId, cancellationToken);
+        var reason = !string.IsNullOrWhiteSpace(dto?.Reason) ? dto.Reason : "Người dùng tự hủy sự cố";
+        var response = await _incidentService.CancelIncidentAsync(id, reason, currentUserId, cancellationToken);
         if (!response.Success)
         {
             return BadRequest(response);

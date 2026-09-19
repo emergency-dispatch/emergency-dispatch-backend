@@ -31,7 +31,7 @@ public interface IIncidentService
     Task<ApiResponseDto<IncidentResponseDto>> VerifyIncidentAsync(Guid id, VerifyIncidentDto dto, Guid operatorId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Hủy sự cố (báo sai, báo khống, trùng lặp)
+    /// Hủy sự cố (báo sai, báo khống, trùng lặp hoặc người dân/khách vãng lai tự hủy SOS)
     /// </summary>
-    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid operatorId, CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default);
 }

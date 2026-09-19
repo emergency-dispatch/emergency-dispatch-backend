@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DispatchAssignment> DispatchAssignments => Set<DispatchAssignment>();
     public DbSet<IncidentMedia> IncidentMedias => Set<IncidentMedia>();
     public DbSet<AiClassification> AiClassifications => Set<AiClassification>();
+    public DbSet<IceContact> IceContacts => Set<IceContact>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +35,13 @@ public class ApplicationDbContext : DbContext
             entity.Property(u => u.CitizenIdNumber).HasMaxLength(30);
             entity.Property(u => u.Address).HasMaxLength(300);
             entity.Property(u => u.MedicalNotes).HasMaxLength(2000);
+            entity.Property(u => u.ChronicConditions).HasDefaultValueSql("'{}'");
+            entity.Property(u => u.Allergies).HasDefaultValueSql("'{}'");
+            entity.Property(u => u.CurrentMedications).HasDefaultValueSql("'{}'");
+            entity.Property(u => u.MobilityLimitations).HasDefaultValueSql("'{}'");
+            entity.Property(u => u.PreferredLanguage).HasMaxLength(50);
+            entity.Property(u => u.DependentsNote).HasMaxLength(1000);
+            entity.Property(u => u.SmsTemplate).HasMaxLength(500);
             entity.Property(u => u.EmergencyContactName).HasMaxLength(100);
             entity.Property(u => u.EmergencyContactPhone).HasMaxLength(20);
             entity.Property(u => u.EmergencyContactRelationship).HasMaxLength(50);
@@ -49,6 +57,22 @@ public class ApplicationDbContext : DbContext
 
             // Global Query Filter: Tự động bỏ qua các bản ghi đã xóa mềm
             entity.HasQueryFilter(u => !u.IsDeleted);
+        });
+
+        // 1b. Cấu hình bảng IceContact (Người thân khẩn cấp)
+        modelBuilder.Entity<IceContact>(entity =>
+        {
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Name).HasMaxLength(100).IsRequired();
+            entity.Property(c => c.PhoneNumber).HasMaxLength(20).IsRequired();
+            entity.Property(c => c.Relationship).HasMaxLength(50).IsRequired();
+
+            entity.HasOne(c => c.User)
+                  .WithMany(u => u.IceContacts)
+                  .HasForeignKey(c => c.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(c => !c.IsDeleted);
         });
 
         // 2. Cấu hình bảng RefreshToken

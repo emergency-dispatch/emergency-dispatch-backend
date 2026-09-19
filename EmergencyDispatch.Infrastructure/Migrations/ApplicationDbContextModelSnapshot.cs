@@ -129,6 +129,49 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.ToTable("DispatchAssignments");
                 });
 
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IceContact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Relationship")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("IceContacts");
+                });
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Incident", b =>
                 {
                     b.Property<Guid>("Id")
@@ -401,11 +444,26 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.PrimitiveCollection<List<string>>("Allergies")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("'{}'");
+
+                    b.Property<bool>("AutoSendSmsOnSos")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("AvatarUrl")
                         .HasColumnType("text");
 
                     b.Property<int?>("BloodType")
                         .HasColumnType("integer");
+
+                    b.PrimitiveCollection<List<string>>("ChronicConditions")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("'{}'");
 
                     b.Property<string>("CitizenIdNumber")
                         .HasMaxLength(30)
@@ -414,8 +472,18 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.PrimitiveCollection<List<string>>("CurrentMedications")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("'{}'");
+
                     b.Property<DateTime?>("DateOfBirth")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DependentsNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -457,6 +525,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int?>("HouseholdMembersCount")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -466,6 +537,12 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<string>("MedicalNotes")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
+
+                    b.PrimitiveCollection<List<string>>("MobilityLimitations")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("'{}'");
 
                     b.Property<string>("PasswordHash")
                         .HasColumnType("text");
@@ -481,8 +558,16 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("PreferredLanguage")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<int>("Role")
                         .HasColumnType("integer");
+
+                    b.Property<string>("SmsTemplate")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<Guid?>("StationId")
                         .HasColumnType("uuid");
@@ -531,6 +616,17 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Incident");
 
                     b.Navigation("RescueUnit");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IceContact", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "User")
+                        .WithMany("IceContacts")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Incident", b =>
@@ -623,6 +719,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>
                 {
+                    b.Navigation("IceContacts");
+
                     b.Navigation("RefreshTokens");
                 });
 #pragma warning restore 612, 618

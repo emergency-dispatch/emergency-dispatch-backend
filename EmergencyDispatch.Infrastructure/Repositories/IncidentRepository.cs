@@ -16,9 +16,12 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
     {
         return await _context.Incidents
             .Include(i => i.ReportedByUser)
+                .ThenInclude(u => u!.IceContacts)
             .Include(i => i.VerifiedByUser)
             .Include(i => i.MediaItems)
             .Include(i => i.AiClassification)
+            .Include(i => i.DispatchAssignments)
+                .ThenInclude(da => da.RescueUnit)
             .FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
     }
 
@@ -34,6 +37,7 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
     {
         var query = _context.Incidents
             .Include(i => i.ReportedByUser)
+                .ThenInclude(u => u!.IceContacts)
             .Include(i => i.VerifiedByUser)
             .Include(i => i.MediaItems)
             .Include(i => i.AiClassification)
