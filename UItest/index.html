@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Dispatch - Medical ID, ICE & SOS Cancel Test Lab</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Top Navbar -->
+        <header class="top-nav">
+            <div class="brand-group">
+                <div class="brand-icon">
+                    <span class="pulse-dot"></span>
+                    🏥
+                </div>
+                <div>
+                    <h1 class="brand-title">EMERGENCY DISPATCH - TEST LAB</h1>
+                    <p class="brand-subtitle">Kiểm thử: Medical ID Chuyên sâu, Danh bạ ICE Contacts & Tự Hủy SOS</p>
+                </div>
+            </div>
+
+            <div class="nav-controls">
+                <div class="backend-status-pill" id="backend-status">
+                    <span class="status-indicator"></span>
+                    <span id="backend-status-text">Đang kiểm tra kết nối API...</span>
+                </div>
+                <div class="auth-box">
+                    <button class="btn btn-secondary btn-sm" id="btn-quick-login">🔑 Đăng nhập nhanh Test</button>
+                    <span class="user-badge hidden" id="user-badge">👤 Admin Logged In</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace with Tabs -->
+        <div class="main-container">
+            <!-- Navigation Sidebar Tabs -->
+            <aside class="sidebar">
+                <nav class="nav-tabs">
+                    <button class="tab-link active" data-tab="tab-cancel-sos">
+                        <span class="tab-icon">🚨</span>
+                        <div class="tab-info">
+                            <strong>Khách Tự Hủy SOS</strong>
+                            <small>Hủy ca không cần Token</small>
+                        </div>
+                    </button>
+                    <button class="tab-link" data-tab="tab-medical-id">
+                        <span class="tab-icon">📋</span>
+                        <div class="tab-info">
+                            <strong>Hồ Sơ Y Tế & Special Info</strong>
+                            <small>Bệnh nền, dị ứng, thuốc, SMS</small>
+                        </div>
+                    </button>
+                    <button class="tab-link" data-tab="tab-ice-contacts">
+                        <span class="tab-icon">👨‍👩‍👧‍👦</span>
+                        <div class="tab-info">
+                            <strong>Danh Bạ ICE Contacts</strong>
+                            <small>CRUD người thân khẩn cấp</small>
+                        </div>
+                    </button>
+                </nav>
+                <div class="sidebar-footer">
+                    <p>Emergency Dispatch System</p>
+                    <small>Version 2.0 (Medical & ICE)</small>
+                </div>
+            </aside>
+
+            <!-- Content Area -->
+            <main class="content-panel">
+                <!-- ======================================================= -->
+                <!-- TAB 1: GUEST SOS & TỰ HỦY SỰ CỐ -->
+                <!-- ======================================================= -->
+                <section class="tab-pane active" id="tab-cancel-sos">
+                    <div class="pane-header">
+                        <h2>🚨 Giả Lập Gửi SOS Khách Vãng Lai & Tự Hủy Ca</h2>
+                        <p>Thử nghiệm tính năng: Người dân hoặc khách chưa đăng nhập gửi SOS, sau đó có thể <strong>tự bấm hủy sự cố ngay lập tức mà không bị lỗi 401 Unauthorized</strong>.</p>
+                    </div>
+
+                    <div class="grid-2col">
+                        <!-- Form phát SOS -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>1. Bấm Báo SOS (Khách Vãng Lai)</h3>
+                                <button type="button" class="btn btn-secondary btn-xs" id="btn-fill-sos-preset">Nạp dữ liệu mẫu</button>
+                            </div>
+                            <form id="form-guest-sos" class="flow-form">
+                                <div class="form-group">
+                                    <label>Tiêu đề sự cố <span class="required">*</span></label>
+                                    <input type="text" id="sos-title" class="input-control" value="Chập điện cháy nhỏ tại phòng trọ" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Mô tả chi tiết</label>
+                                    <textarea id="sos-desc" class="input-control" rows="2">Khói bốc lên từ ổ cắm, gia đình đang chuẩn bị bình dập lửa.</textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Địa chỉ hiện trường <span class="required">*</span></label>
+                                    <input type="text" id="sos-address" class="input-control" value="123 Nguyễn Văn Cừ, Quận 5, TP.HCM" required>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group col-6">
+                                        <label>Vĩ độ (Lat)</label>
+                                        <input type="number" step="0.0001" id="sos-lat" class="input-control" value="10.7580" required>
+                                    </div>
+                                    <div class="form-group col-6">
+                                        <label>Kinh độ (Lng)</label>
+                                        <input type="number" step="0.0001" id="sos-lng" class="input-control" value="106.6820" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-danger btn-block" id="btn-submit-guest-sos">
+                                    ⚡ GỬI TÍN HIỆU SOS (KHÔNG DÙNG TOKEN)
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Trạng thái sự cố vừa tạo & Nút Hủy -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>2. Trạng Thái Sự Cố Hiện Tại</h3>
+                            </div>
+                            <div id="incident-live-state" class="empty-box">
+                                <p>Chưa có sự cố nào được gửi. Vui lòng bấm nút gửi SOS bên cạnh để thử nghiệm.</p>
+                            </div>
+
+                            <div id="cancel-action-box" class="cancel-box hidden">
+                                <div class="alert alert-warning">
+                                    ⚠️ <strong>Sự cố đang chờ xử lý!</strong> Khách vãng lai được phép tự hủy ca nếu hiện trường đã an toàn hoặc bấm nhầm.
+                                </div>
+                                <div class="form-group">
+                                    <label>Lý do hủy sự cố:</label>
+                                    <input type="text" id="cancel-reason" class="input-control" value="Gia đình đã tự dập tắt bằng bình mini, hiện trường an toàn.">
+                                </div>
+                                <button type="button" class="btn btn-warning btn-block" id="btn-cancel-incident-now">
+                                    ❌ TỰ HỦY SỰ CỐ NÀY (KHÔNG CẦN TOKEN)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ======================================================= -->
+                <!-- TAB 2: MEDICAL ID & SPECIAL INFO -->
+                <!-- ======================================================= -->
+                <section class="tab-pane" id="tab-medical-id">
+                    <div class="pane-header">
+                        <h2>📋 Hồ Sơ Y Tế Cấp Cứu Chuyên Sâu (Medical ID) & Special Info</h2>
+                        <p>Dữ liệu này được lưu trữ để cung cấp tức thì cho bác sĩ 115 và lực lượng cứu hộ khi tiếp cận nạn nhân.</p>
+                    </div>
+
+                    <form id="form-medical-id" class="medical-form">
+                        <!-- Nhóm Y tế Chuyên sâu -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3>🏥 Hồ Sơ Bệnh Lý & Thể Chất (Medical ID)</h3>
+                                <button type="button" class="btn btn-secondary btn-xs" id="btn-fill-medical-preset">Điền hồ sơ mẫu</button>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-row">
+                                    <div class="form-group col-4">
+                                        <label>Nhóm máu</label>
+                                        <select id="med-blood-type" class="input-control">
+                                            <option value="">-- Chưa rõ --</option>
+                                            <option value="O_Positive">O+</option>
+                                            <option value="O_Negative">O-</option>
+                                            <option value="A_Positive">A+</option>
+                                            <option value="A_Negative">A-</option>
+                                            <option value="B_Positive">B+</option>
+                                            <option value="B_Negative">B-</option>
+                                            <option value="AB_Positive">AB+</option>
+                                            <option value="AB_Negative">AB-</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group col-8">
+                                        <label>Ghi chú bệnh án tóm tắt</label>
+                                        <input type="text" id="med-notes" class="input-control" placeholder="Tiền sử bệnh án chung...">
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group col-6">
+                                        <label>Bệnh nền mạn tính (Phân cách bằng dấu phẩy)</label>
+                                        <input type="text" id="med-chronic" class="input-control" placeholder="VD: Tim mạch, Hen suyễn, Tiểu đường tuýp 2...">
+                                        <small class="hint">Mảng chuỗi: chronicConditions</small>
+                                    </div>
+                                    <div class="form-group col-6">
+                                        <label>Dị ứng thuốc / thức ăn (Phân cách bằng dấu phẩy)</label>
+                                        <input type="text" id="med-allergies" class="input-control" placeholder="VD: Thuốc Penicillin, Aspirin, Đậu phộng...">
+                                        <small class="hint">Mảng chuỗi: allergies</small>
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group col-6">
+                                        <label>Thuốc đang sử dụng định kỳ (Phân cách bằng dấu phẩy)</label>
+                                        <input type="text" id="med-medications" class="input-control" placeholder="VD: Insulin, Amlodipine 5mg, Thuốc trợ tim...">
+                                        <small class="hint">Mảng chuỗi: currentMedications</small>
+                                    </div>
+                                    <div class="form-group col-6">
+                                        <label>Hạn chế thể chất / khuyết tật</label>
+                                        <input type="text" id="med-mobility" class="input-control" placeholder="VD: Sử dụng xe lăn, Khiếm thính, Khiếm thị...">
+                                        <small class="hint">Mảng chuỗi: mobilityLimitations</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Nhóm Thông tin Đặc thù Cứu nạn & SMS -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3>🚒 Thông Tin Cứu Nạn Tại Căn Hộ & Cấu Hình SMS</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-row">
+                                    <div class="form-group col-6">
+                                        <label>Ngôn ngữ ưu tiên giao tiếp khẩn cấp</label>
+                                        <input type="text" id="med-language" class="input-control" value="Tiếng Việt">
+                                    </div>
+                                    <div class="form-group col-6">
+                                        <label>Số lượng thành viên sống cùng căn hộ</label>
+                                        <input type="number" min="1" max="50" id="med-members-count" class="input-control" value="3">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Ghi chú người phụ thuộc sống cùng (Trẻ em, người già, người khuyết tật)</label>
+                                    <textarea id="med-dependents" class="input-control" rows="2" placeholder="VD: Có trẻ sơ sinh 6 tháng tuổi và người già 80 tuổi tai biến..."></textarea>
+                                </div>
+
+                                <div class="form-row align-center sms-box">
+                                    <div class="form-group col-4">
+                                        <label class="switch-label">
+                                            <input type="checkbox" id="med-auto-sms" checked>
+                                            <span>Tự động gửi SMS toạ độ khi ấn SOS</span>
+                                        </label>
+                                    </div>
+                                    <div class="form-group col-8">
+                                        <label>Nội dung tin nhắn SMS mẫu</label>
+                                        <input type="text" id="med-sms-template" class="input-control" value="CẤP CỨU: Tôi vừa bấm SOS tại tọa độ {lat},{lng}. Cần hỗ trợ khẩn cấp!">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" id="btn-save-medical-id">
+                            💾 LƯU CẬP NHẬT MEDICAL ID & SPECIAL INFO
+                        </button>
+                    </form>
+                </section>
+
+                <!-- ======================================================= -->
+                <!-- TAB 3: ICE CONTACTS CRUD -->
+                <!-- ======================================================= -->
+                <section class="tab-pane" id="tab-ice-contacts">
+                    <div class="pane-header">
+                        <h2>👨‍👩‍👧‍👦 Quản Lý Danh Bạ Người Thân Khẩn Cấp (ICE - In Case of Emergency)</h2>
+                        <p>Thêm, sửa, xóa và chuyển đổi người liên hệ chính khi xảy ra sự cố nguy kịch.</p>
+                    </div>
+
+                    <div class="grid-2col">
+                        <!-- Danh sách ICE Contacts -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Danh Sách Người Thân</h3>
+                                <button class="btn btn-secondary btn-xs" id="btn-refresh-ice-list">🔄 Tải lại</button>
+                            </div>
+                            <div class="ice-contacts-list" id="ice-contacts-list">
+                                <div class="empty-state">Đang tải danh sách...</div>
+                            </div>
+                        </div>
+
+                        <!-- Form Thêm mới / Chỉnh sửa ICE Contact -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 id="form-ice-title">Thêm Người Thân Mới</h3>
+                                <button type="button" class="btn btn-secondary btn-xs hidden" id="btn-cancel-edit-ice">Hủy sửa</button>
+                            </div>
+                            <form id="form-ice-contact" class="flow-form">
+                                <input type="hidden" id="ice-contact-id">
+
+                                <div class="form-group">
+                                    <label>Họ và tên <span class="required">*</span></label>
+                                    <input type="text" id="ice-name" class="input-control" placeholder="VD: Nguyễn Văn Cha" required>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Số điện thoại <span class="required">*</span></label>
+                                    <input type="tel" id="ice-phone" class="input-control" placeholder="0911223344" required>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Mối quan hệ <span class="required">*</span></label>
+                                    <input type="text" id="ice-relationship" class="input-control" placeholder="VD: Bố, Mẹ, Vợ/Chồng, Con, Đồng nghiệp..." required>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="ice-is-primary">
+                                        <span>Đặt làm Người liên hệ khẩn cấp CHÍNH (Primary)</span>
+                                    </label>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary btn-block" id="btn-submit-ice">
+                                    ➕ THÊM VÀO DANH BẠ ICE
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
