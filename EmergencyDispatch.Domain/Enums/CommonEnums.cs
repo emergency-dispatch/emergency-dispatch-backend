@@ -5,8 +5,8 @@ namespace EmergencyDispatch.Domain.Enums;
 /// </summary>
 public enum MediaType
 {
-    Photo = 1,
-    Video = 2
+    Photo = 0,
+    Video = 1
 }
 
 /// <summary>
@@ -14,9 +14,9 @@ public enum MediaType
 /// </summary>
 public enum NotificationType
 {
-    NewIncident = 1,
-    JobAssigned = 2,
-    StatusUpdate = 3,
-    EscalationAlert = 4,
-    System = 5
+    NewIncident = 0,
+    JobAssigned = 1,
+    StatusUpdate = 2,
+    Escalation = 3,
+    System = 4
 }

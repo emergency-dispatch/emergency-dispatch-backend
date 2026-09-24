@@ -23,7 +23,7 @@ public class User : BaseEntity
     public string? Address { get; set; }
 
     // Hồ sơ y tế cứu hộ khẩn cấp (Emergency Medical Profile)
-    public BloodType? BloodType { get; set; }
+    public BloodType? BloodType { get; set; } = Enums.BloodType.Unknown;
     public string? MedicalNotes { get; set; }
 
     // Người liên hệ khẩn cấp (Emergency Contact)
@@ -47,4 +47,8 @@ public class User : BaseEntity
     // Navigation Properties
     public Station? Station { get; set; }
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public ICollection<IncidentAssignment> AssignedJobs { get; set; } = new List<IncidentAssignment>();
+    public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+    public ICollection<LocationUpdate> LocationUpdates { get; set; } = new List<LocationUpdate>();
+    public ICollection<CitizenFeedback> CitizenFeedbacks { get; set; } = new List<CitizenFeedback>();
 }
