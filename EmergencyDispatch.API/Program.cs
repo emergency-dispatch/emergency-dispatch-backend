@@ -8,6 +8,7 @@ using EmergencyDispatch.Infrastructure.Data;
 using EmergencyDispatch.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -37,6 +38,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     if (!string.IsNullOrEmpty(connectionString))
     {
         options.UseNpgsql(connectionString);
+        options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
     }
 });
 
