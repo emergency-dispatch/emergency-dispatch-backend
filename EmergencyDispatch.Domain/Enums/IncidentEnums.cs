@@ -86,3 +86,37 @@ public enum SeverityLevel
     /// </summary>
     Level5 = 5
 }
+
+/// <summary>
+/// Lý do hủy sự cố
+/// </summary>
+public enum CancellationReason
+{
+    FalseReport = 0,      // Báo giả / khống
+    Duplicate = 1,        // Trùng lặp sự cố khác
+    TestReport = 2,       // Báo cáo thử nghiệm
+    CitizenCancelled = 3, // Citizen tự hủy
+    AutoExpired = 4,      // Hết hạn 24h
+    Other = 5             // Lý do khác
+}
+
+/// <summary>
+/// Hành động ghi vết kiểm toán sự cố (Audit Trail)
+/// </summary>
+public enum AuditAction
+{
+    Created = 0,
+    AiAnalyzed = 1,
+    Verified = 2,
+    SeverityOverridden = 3,
+    Dispatched = 4,
+    AssignmentAccepted = 5,
+    AssignmentRejected = 6,
+    StatusChanged = 7,
+    Escalated = 8,
+    DeEscalated = 9,
+    Cancelled = 10,
+    Completed = 11,
+    Closed = 12,
+    ReDispatched = 13
+}
