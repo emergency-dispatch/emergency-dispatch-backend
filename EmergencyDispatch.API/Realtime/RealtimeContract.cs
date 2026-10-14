@@ -24,4 +24,10 @@ public static class RealtimeContract
 
     /// <summary>Vị trí realtime của đội cứu hộ</summary>
     public const string ReceiveRescueUnitLocation = "ReceiveRescueUnitLocation";
+
+    /// <summary>Lệnh phân công cứu hộ mới (gửi tới Rescuers / Station)</summary>
+    public const string ReceiveJobAssigned = "ReceiveJobAssigned";
+
+    /// <summary>Cập nhật trạng thái lượt phân công (Accepted, EnRoute, OnScene, Completed)</summary>
+    public const string ReceiveAssignmentStatus = "ReceiveAssignmentStatus";
 }

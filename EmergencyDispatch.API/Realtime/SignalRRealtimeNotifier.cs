@@ -1,4 +1,5 @@
 using EmergencyDispatch.API.Hubs;
+using EmergencyDispatch.Application.DTOs.Dispatch;
 using EmergencyDispatch.Application.DTOs.Incident;
 using EmergencyDispatch.Application.Interfaces;
 using Microsoft.AspNetCore.SignalR;
@@ -56,6 +57,60 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Không đẩy được cập nhật sự cố {IncidentId} qua SignalR.", incident.Id);
+        }
+    }
+
+    public async Task JobAssignedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Bắn tới toàn bộ lực lượng cứu hộ
+            await _incidentHub.Clients.Group(RealtimeContract.RescuersGroup)
+                .SendAsync(RealtimeContract.ReceiveJobAssigned, assignment, cancellationToken);
+
+            // Bắn tới trạm trực thuộc nếu có thông tin trạm
+            if (assignment.RescueUnit != null && assignment.RescueUnit.StationId != Guid.Empty)
+            {
+                await _incidentHub.Clients.Group(RealtimeContract.StationGroup(assignment.RescueUnit.StationId.ToString()))
+                    .SendAsync(RealtimeContract.ReceiveJobAssigned, assignment, cancellationToken);
+            }
+
+            // Bắn tới Operator để cập nhật trạng thái phân công
+            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+                .SendAsync(RealtimeContract.ReceiveJobAssigned, assignment, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không đẩy được thông báo phân công nhiệm vụ {AssignmentId} qua SignalR.", assignment.Id);
+        }
+    }
+
+    public async Task AssignmentStatusChangedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Đẩy tới Operator
+            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+                .SendAsync(RealtimeContract.ReceiveAssignmentStatus, assignment, cancellationToken);
+
+            // Đẩy tới người dân theo dõi sự cố
+            await _incidentHub.Clients.Group(RealtimeContract.IncidentGroup(assignment.IncidentId))
+                .SendAsync(RealtimeContract.ReceiveAssignmentStatus, new
+                {
+                    assignment.Id,
+                    assignment.IncidentId,
+                    RescueUnitPlate = assignment.RescueUnit?.PlateNumber,
+                    RescueUnitType = assignment.RescueUnit?.UnitType,
+                    assignment.Status,
+                    assignment.DispatchedAt,
+                    assignment.AcceptedAt,
+                    assignment.ArrivedAt,
+                    assignment.CompletedAt
+                }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không đẩy được cập nhật trạng thái phân công {AssignmentId} qua SignalR.", assignment.Id);
         }
     }
 }

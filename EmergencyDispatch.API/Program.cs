@@ -132,6 +132,7 @@ builder.Services.AddScoped<IRescueUnitService, RescueUnitService>();
 builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
+builder.Services.AddScoped<IDispatchService, DispatchService>();
 
 // 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
 builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();

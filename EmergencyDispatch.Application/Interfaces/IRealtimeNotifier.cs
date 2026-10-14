@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.DTOs.Dispatch;
 using EmergencyDispatch.Application.DTOs.Incident;
 
 namespace EmergencyDispatch.Application.Interfaces;
@@ -17,4 +18,14 @@ public interface IRealtimeNotifier
     /// Sự cố được cập nhật (AI phân tích xong, Operator xác minh, hủy...) → đẩy tới Operator và người báo đang theo dõi
     /// </summary>
     Task IncidentUpdatedAsync(IncidentResponseDto incident, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lệnh điều phối mới được phát → đẩy tới đội xe cứu hộ và trạm trực thuộc
+    /// </summary>
+    Task JobAssignedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tiến độ phân công cứu hộ thay đổi → đẩy tới Operator và người báo đang theo dõi
+    /// </summary>
+    Task AssignmentStatusChangedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default);
 }
