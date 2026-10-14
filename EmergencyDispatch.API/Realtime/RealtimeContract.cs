@@ -8,6 +8,7 @@ public static class RealtimeContract
     // ===== Groups =====
     public const string OperatorsGroup = "operators";
     public const string RescuersGroup = "rescuers";
+    public const string AdminsGroup = "admins";
 
     public static string IncidentGroup(Guid incidentId) => $"incident:{incidentId}";
     public static string StationGroup(string stationId) => $"station:{stationId}";
@@ -33,4 +34,7 @@ public static class RealtimeContract
 
     /// <summary>Điểm nghẽn giao thông mới hoặc giải tỏa trên Live Map</summary>
     public const string ReceiveTrafficHotspot = "ReceiveTrafficHotspot";
+
+    /// <summary>Cảnh báo khẩn cấp leo thang sự cố quá hạn phản hồi (gửi tới Operator và Admin kèm âm thanh báo động)</summary>
+    public const string ReceiveEscalationAlert = "ReceiveEscalationAlert";
 }

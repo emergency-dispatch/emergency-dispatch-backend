@@ -129,4 +129,25 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
             _logger.LogWarning(ex, "Không đẩy được điểm nghẽn giao thông {HotspotId} qua SignalR.", hotspot.Id);
         }
     }
+
+    public async Task EscalationAlertAsync(EmergencyDispatch.Application.DTOs.Escalation.EscalationAlertDto alert, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Bắn cảnh báo còi hú / đỏ rực tới toàn bộ Operator và Admin
+            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+                .SendAsync(RealtimeContract.ReceiveEscalationAlert, alert, cancellationToken);
+
+            await _incidentHub.Clients.Group(RealtimeContract.AdminsGroup)
+                .SendAsync(RealtimeContract.ReceiveEscalationAlert, alert, cancellationToken);
+
+            // Bắn tới group sự cố
+            await _incidentHub.Clients.Group(RealtimeContract.IncidentGroup(alert.IncidentId))
+                .SendAsync(RealtimeContract.ReceiveEscalationAlert, alert, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không đẩy được cảnh báo leo thang sự cố {IncidentId} qua SignalR.", alert.IncidentId);
+        }
+    }
 }

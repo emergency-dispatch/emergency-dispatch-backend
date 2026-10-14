@@ -54,6 +54,11 @@ internal static class HubGroupHelper
             await groups.AddToGroupAsync(context.ConnectionId, RealtimeContract.OperatorsGroup);
         }
 
+        if (user.IsInRole(nameof(UserRole.Admin)))
+        {
+            await groups.AddToGroupAsync(context.ConnectionId, RealtimeContract.AdminsGroup);
+        }
+
         if (user.IsInRole(nameof(UserRole.RescueStaff)))
         {
             await groups.AddToGroupAsync(context.ConnectionId, RealtimeContract.RescuersGroup);

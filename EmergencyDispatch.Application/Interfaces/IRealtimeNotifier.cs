@@ -1,4 +1,5 @@
 using EmergencyDispatch.Application.DTOs.Dispatch;
+using EmergencyDispatch.Application.DTOs.Escalation;
 using EmergencyDispatch.Application.DTOs.Incident;
 
 namespace EmergencyDispatch.Application.Interfaces;
@@ -33,4 +34,9 @@ public interface IRealtimeNotifier
     /// Điểm nghẽn giao thông mới được báo cáo → phát tới Operators và Rescuers (để điều hướng né kẹt xe)
     /// </summary>
     Task TrafficHotspotReportedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cảnh báo leo thang khẩn cấp (Sự cố Level 3/4 chưa được điều phối hoặc tiếp nhận sau thời gian quy định)
+    /// </summary>
+    Task EscalationAlertAsync(EscalationAlertDto alert, CancellationToken cancellationToken = default);
 }
