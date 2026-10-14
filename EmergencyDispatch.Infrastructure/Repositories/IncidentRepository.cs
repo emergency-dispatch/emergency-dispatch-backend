@@ -96,4 +96,34 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
             .ThenBy(i => i.CreatedAt)                                        // Cùng mức thì ai đến trước xử lý trước (FIFO)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<List<Incident>> GetStuckAiProcessingAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.Incidents
+            .AsNoTracking()
+            .Include(i => i.MediaItems)
+            .Where(i => i.Status == IncidentStatus.AiProcessing && i.AiClassification == null)
+            .OrderBy(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddAiClassificationAsync(AiClassification classification, CancellationToken cancellationToken = default)
+    {
+        await _context.AiClassifications.AddAsync(classification, cancellationToken);
+    }
+
+    public async Task AddStatusHistoryAsync(IncidentStatusHistory history, CancellationToken cancellationToken = default)
+    {
+        await _context.IncidentStatusHistories.AddAsync(history, cancellationToken);
+    }
+
+    public async Task AddAuditTrailAsync(IncidentAuditTrail auditTrail, CancellationToken cancellationToken = default)
+    {
+        await _context.IncidentAuditTrails.AddAsync(auditTrail, cancellationToken);
+    }
+
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }

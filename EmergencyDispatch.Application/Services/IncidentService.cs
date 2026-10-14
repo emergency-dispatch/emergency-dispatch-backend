@@ -1,3 +1,4 @@
+using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Incident;
@@ -13,9 +14,14 @@ namespace EmergencyDispatch.Application.Services;
 
 public class IncidentService : IIncidentService
 {
+    private const string AiWorkerRole = "AI_Worker";
+    private const string GuestRole = "Guest";
+
     private readonly IIncidentRepository _incidentRepository;
     private readonly IUserRepository _userRepository;
     private readonly IAiClassificationService _aiService;
+    private readonly IAiAnalysisQueue _aiQueue;
+    private readonly IRealtimeNotifier _realtimeNotifier;
     private readonly IValidator<CreateIncidentDto> _validator;
     private readonly ILogger<IncidentService> _logger;
 
@@ -23,12 +29,16 @@ public class IncidentService : IIncidentService
         IIncidentRepository incidentRepository,
         IUserRepository userRepository,
         IAiClassificationService aiService,
+        IAiAnalysisQueue aiQueue,
+        IRealtimeNotifier realtimeNotifier,
         IValidator<CreateIncidentDto> validator,
         ILogger<IncidentService> logger)
     {
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
         _aiService = aiService;
+        _aiQueue = aiQueue;
+        _realtimeNotifier = realtimeNotifier;
         _validator = validator;
         _logger = logger;
     }
@@ -122,55 +132,157 @@ public class IncidentService : IIncidentService
             }
         }
 
-        // 4. Phân tích AI tự động (Core Research AI Module)
-        AiClassificationResultDto? aiResult = null;
-        var mediaToAnalyze = incident.MediaItems.FirstOrDefault()?.MediaUrl;
+        // 4. Xác định ảnh hiện trường cho AI (VLM chỉ nhận ảnh, ưu tiên Photo)
+        var mediaToAnalyze = incident.MediaItems.FirstOrDefault(m => m.MediaType == MediaType.Photo)?.MediaUrl;
+        var willAnalyze = !string.IsNullOrWhiteSpace(mediaToAnalyze);
 
-        if (!string.IsNullOrWhiteSpace(mediaToAnalyze))
+        incident.Status = willAnalyze ? IncidentStatus.AiProcessing : IncidentStatus.Pending;
+        incident.Severity = SeverityLevel.Unclassified;
+
+        var actorRole = reportingUser?.Role.ToString() ?? GuestRole;
+
+        incident.StatusHistories.Add(new IncidentStatusHistory
         {
-            _logger.LogInformation("Bắt đầu kích hoạt phân tích Vision-Language AI cho sự cố với media: {MediaUrl}", mediaToAnalyze);
-            incident.Status = IncidentStatus.AiProcessing;
+            IncidentId = incident.Id,
+            OldStatus = IncidentStatus.Pending,
+            NewStatus = incident.Status,
+            ChangedByUserId = userId,
+            ChangedByRole = actorRole,
+            Notes = willAnalyze ? "Tiếp nhận SOS, chuyển AI phân tích nền." : "Tiếp nhận SOS không kèm ảnh, chờ Operator đánh giá thủ công.",
+            ChangedAt = incident.CreatedAt
+        });
 
-            // Gọi AI Service với cơ chế Fallback tự động
-            aiResult = await _aiService.AnalyzeAsync(mediaToAnalyze, dto.Description, cancellationToken);
-
-            var aiEntity = new AiClassification
+        incident.AuditTrails.Add(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = userId,
+            ActorRole = actorRole,
+            Action = AuditAction.Created,
+            Description = "Tiếp nhận báo cáo SOS",
+            NewStateJson = JsonSerializer.Serialize(new
             {
-                IncidentId = incident.Id,
-                SeverityScore = aiResult.SeverityLevel,
-                HazardTags = aiResult.HazardTags,
-                Summary = aiResult.Summary,
-                ConfidenceScore = aiResult.ConfidenceScore,
-                ModelName = aiResult.ModelName,
-                RawResponse = aiResult.RawResponse,
-                IsSuccess = aiResult.IsSuccess,
-                ErrorMessage = aiResult.ErrorMessage,
-                ProcessingDurationMs = aiResult.ProcessingDurationMs,
-                CreatedAt = DateTime.UtcNow
-            };
+                status = incident.Status.ToString(),
+                mediaCount = incident.MediaItems.Count,
+                queuedForAi = willAnalyze
+            }),
+            Timestamp = incident.CreatedAt
+        });
 
-            incident.AiClassification = aiEntity;
-            incident.Severity = aiResult.SeverityLevel;
-            incident.Status = IncidentStatus.AiProcessed;
+        // 5. Lưu vào cơ sở dữ liệu (không chờ AI → phản hồi nhanh cho người báo)
+        await _incidentRepository.AddAsync(incident);
 
-            _logger.LogInformation("Phân tích AI hoàn tất. Mức độ: {Severity}, Thành công: {IsSuccess}",
-                aiResult.SeverityLevel, aiResult.IsSuccess);
+        // 6. Đẩy công việc AI vào hàng đợi nền (System.Threading.Channels)
+        if (willAnalyze)
+        {
+            await _aiQueue.EnqueueAsync(
+                new AiAnalysisJob(incident.Id, mediaToAnalyze!, dto.Description, DateTime.UtcNow),
+                cancellationToken);
+
+            _logger.LogInformation("Sự cố {IncidentId} đã vào hàng đợi phân tích AI.", incident.Id);
         }
         else
         {
-            _logger.LogInformation("Sự cố không có hình ảnh/video hiện trường. Giữ mức độ Unclassified (Level 0).");
-            incident.Status = IncidentStatus.Pending;
-            incident.Severity = SeverityLevel.Unclassified;
+            _logger.LogInformation("Sự cố {IncidentId} không có ảnh hiện trường. Giữ mức Unclassified (Level 0).", incident.Id);
         }
 
-        // 5. Lưu vào cơ sở dữ liệu
-        await _incidentRepository.AddAsync(incident);
+        // 7. Map kết quả trả về + đẩy realtime tới Operator
+        var responseDto = MapToResponseDto(incident, null, smsDispatchLog);
+        await _realtimeNotifier.IncidentCreatedAsync(responseDto, cancellationToken);
 
-        // 6. Map kết quả trả về
-        var responseDto = MapToResponseDto(incident, aiResult, smsDispatchLog);
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(
             responseDto,
-            "Báo cáo sự cố đã được tiếp nhận và phân tích rủi ro thành công.");
+            willAnalyze
+                ? "Đã tiếp nhận SOS. AI đang phân tích mức độ nguy hiểm, kết quả sẽ được cập nhật realtime."
+                : "Đã tiếp nhận SOS. Điều phối viên sẽ đánh giá sự cố ngay.");
+    }
+
+    public async Task ProcessAiAnalysisAsync(AiAnalysisJob job, CancellationToken cancellationToken = default)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(job.IncidentId, cancellationToken);
+        if (incident == null)
+        {
+            _logger.LogWarning("AI Worker: không tìm thấy sự cố {IncidentId}, bỏ qua.", job.IncidentId);
+            return;
+        }
+
+        if (incident.AiClassification != null)
+        {
+            _logger.LogInformation("AI Worker: sự cố {IncidentId} đã có kết quả AI, bỏ qua.", job.IncidentId);
+            return;
+        }
+
+        var startedAt = DateTime.UtcNow;
+        var queueWaitMs = (long)(startedAt - job.EnqueuedAtUtc).TotalMilliseconds;
+
+        // Gọi AI (đã có Fallback nội bộ → không ném exception khi AI lỗi)
+        var aiResult = await _aiService.AnalyzeAsync(job.MediaUrl, job.AdditionalContext, cancellationToken);
+
+        var aiEntity = new AiClassification
+        {
+            IncidentId = incident.Id,
+            SeverityScore = aiResult.SeverityLevel,
+            HazardTags = aiResult.HazardTags,
+            Summary = aiResult.Summary,
+            ConfidenceScore = aiResult.ConfidenceScore,
+            ModelName = aiResult.ModelName,
+            RawResponse = aiResult.RawResponse,
+            IsSuccess = aiResult.IsSuccess,
+            ErrorMessage = aiResult.ErrorMessage,
+            ProcessingDurationMs = aiResult.ProcessingDurationMs,
+            CreatedAt = DateTime.UtcNow
+        };
+        await _incidentRepository.AddAiClassificationAsync(aiEntity, cancellationToken);
+
+        // Chỉ cập nhật trạng thái/mức độ nếu Operator chưa can thiệp (chưa xác minh / chưa hủy)
+        var appliedToIncident = incident.Status == IncidentStatus.AiProcessing;
+        if (appliedToIncident)
+        {
+            var oldStatus = incident.Status;
+            incident.Severity = aiResult.SeverityLevel;
+            incident.Status = IncidentStatus.AiProcessed;
+            incident.UpdatedAt = DateTime.UtcNow;
+
+            await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
+            {
+                IncidentId = incident.Id,
+                OldStatus = oldStatus,
+                NewStatus = incident.Status,
+                ChangedByRole = AiWorkerRole,
+                Notes = aiResult.IsSuccess
+                    ? $"AI đánh giá mức độ {aiResult.SeverityLevel}."
+                    : "AI lỗi → Fallback Unclassified, cần Operator đánh giá thủ công."
+            }, cancellationToken);
+        }
+
+        // Telemetry RQ3: T_AI (end-to-end từ lúc tạo sự cố) + độ trễ hàng đợi + độ trễ mô hình
+        var tAiTotalMs = (long)(DateTime.UtcNow - incident.CreatedAt).TotalMilliseconds;
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorRole = AiWorkerRole,
+            Action = AuditAction.AiAnalyzed,
+            Description = appliedToIncident
+                ? "AI phân tích hoàn tất"
+                : $"AI phân tích hoàn tất nhưng sự cố đã ở trạng thái {incident.Status}, chỉ lưu kết quả tham khảo",
+            NewStateJson = JsonSerializer.Serialize(new
+            {
+                severity = aiResult.SeverityLevel.ToString(),
+                isSuccess = aiResult.IsSuccess,
+                model = aiResult.ModelName,
+                modelLatencyMs = aiResult.ProcessingDurationMs,
+                queueWaitMs,
+                tAiTotalMs
+            })
+        }, cancellationToken);
+
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+        incident.AiClassification ??= aiEntity;
+
+        _logger.LogInformation(
+            "AI Worker: sự cố {IncidentId} → {Severity} (success={IsSuccess}, model={ModelMs}ms, queue={QueueMs}ms, T_AI={TotalMs}ms)",
+            incident.Id, aiResult.SeverityLevel, aiResult.IsSuccess, aiResult.ProcessingDurationMs, queueWaitMs, tAiTotalMs);
+
+        await _realtimeNotifier.IncidentUpdatedAsync(MapToResponseDto(incident, aiResult), cancellationToken);
     }
 
     public async Task<ApiResponseDto<IncidentResponseDto>> GetIncidentByIdAsync(
@@ -225,10 +337,16 @@ public class IncidentService : IIncidentService
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Không tìm thấy sự cố cần xác minh.");
         }
 
-        if (incident.Status != IncidentStatus.Pending && incident.Status != IncidentStatus.AiProcessed)
+        // Cho phép Operator xác minh ngay cả khi AI chưa xong (Human-in-the-loop luôn được ưu tiên)
+        if (incident.Status != IncidentStatus.Pending &&
+            incident.Status != IncidentStatus.AiProcessing &&
+            incident.Status != IncidentStatus.AiProcessed)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult($"Sự cố đang ở trạng thái '{incident.Status}', không thể xác minh lại.");
         }
+
+        var oldStatus = incident.Status;
+        var aiSeverity = incident.AiClassification?.SeverityScore;
 
         // Cập nhật thông tin xác minh bởi Operator (Human-in-the-loop)
         incident.Severity = dto.ConfirmedSeverity;
@@ -238,18 +356,55 @@ public class IncidentService : IIncidentService
         incident.OperatorNotes = dto.OperatorNotes?.Trim();
         incident.UpdatedAt = DateTime.UtcNow;
 
+        // Telemetry RQ3: T_Operator = thời gian từ lúc tạo sự cố đến khi Operator xác minh
+        incident.ResponseTimeMs = (long)(incident.VerifiedAt.Value - incident.CreatedAt).TotalMilliseconds;
+
         if (!string.IsNullOrWhiteSpace(dto.AdjustedTitle))
         {
             incident.Title = dto.AdjustedTitle.Trim();
         }
 
-        await _incidentRepository.UpdateAsync(incident);
+        var severityOverridden = aiSeverity.HasValue && aiSeverity.Value != dto.ConfirmedSeverity;
 
-        _logger.LogInformation("Operator {OperatorId} đã xác minh sự cố {IncidentId} với mức độ {Severity}",
-            operatorId, id, dto.ConfirmedSeverity);
+        await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
+        {
+            IncidentId = incident.Id,
+            OldStatus = oldStatus,
+            NewStatus = IncidentStatus.Verified,
+            ChangedByUserId = operatorId,
+            ChangedByRole = UserRole.Operator.ToString(),
+            Notes = incident.OperatorNotes
+        }, cancellationToken);
+
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = operatorId,
+            ActorRole = UserRole.Operator.ToString(),
+            Action = severityOverridden ? AuditAction.SeverityOverridden : AuditAction.Verified,
+            Description = severityOverridden
+                ? $"Operator ghi đè mức độ AI {aiSeverity} → {dto.ConfirmedSeverity}"
+                : "Operator xác minh sự cố",
+            OldStateJson = JsonSerializer.Serialize(new { status = oldStatus.ToString(), aiSeverity = aiSeverity?.ToString() }),
+            NewStateJson = JsonSerializer.Serialize(new
+            {
+                status = IncidentStatus.Verified.ToString(),
+                severity = dto.ConfirmedSeverity.ToString(),
+                tOperatorMs = incident.ResponseTimeMs
+            })
+        }, cancellationToken);
+
+        // Sự cố đang được theo dõi bởi DbContext → chỉ cần SaveChanges
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Operator {OperatorId} đã xác minh sự cố {IncidentId} với mức độ {Severity} (T_Operator={Ms}ms)",
+            operatorId, id, dto.ConfirmedSeverity, incident.ResponseTimeMs);
+
+        var responseDto = MapToResponseDto(incident);
+        await _realtimeNotifier.IncidentUpdatedAsync(responseDto, cancellationToken);
 
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(
-            MapToResponseDto(incident),
+            responseDto,
             "Xác minh sự cố thành công. Sự cố sẵn sàng để điều phối đội cứu hộ.");
     }
 
@@ -330,7 +485,10 @@ public class IncidentService : IIncidentService
             ? $"Đã hủy sự cố thành công và tự động phát lệnh thu hồi {recalledUnitsCount} xe cứu hộ quay về trạm."
             : "Đã hủy sự cố thành công.";
 
-        return ApiResponseDto<IncidentResponseDto>.SuccessResult(MapToResponseDto(incident), successMessage);
+        var responseDto = MapToResponseDto(incident);
+        await _realtimeNotifier.IncidentUpdatedAsync(responseDto, cancellationToken);
+
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(responseDto, successMessage);
     }
 
     private static IncidentResponseDto MapToResponseDto(

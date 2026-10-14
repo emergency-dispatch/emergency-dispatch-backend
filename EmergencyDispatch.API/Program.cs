@@ -1,8 +1,11 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using EmergencyDispatch.API.Hubs;
+using EmergencyDispatch.API.Realtime;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Application.Services;
 using EmergencyDispatch.Domain.Interfaces;
+using EmergencyDispatch.Infrastructure.BackgroundJobs;
 using FluentValidation;
 using EmergencyDispatch.Infrastructure.Data;
 using EmergencyDispatch.Infrastructure.Repositories;
@@ -14,11 +17,17 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Controllers + JSON Enum serialize as string
+// 1. Controllers + JSON Enum serialize as string + SignalR
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
 // 2. CORS (Cho phép Frontend và Mobile gọi API)
@@ -124,6 +133,13 @@ builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastru
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
 
+// 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
+builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();
+builder.Services.AddHostedService<AiAnalysisWorker>();
+
+// 8.2. Kênh thông báo Realtime (SignalR Notifier)
+builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
+
 // 9. Cấu hình JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["Key"] ?? "EmergencyDispatchSuperSecretKeyForJwtAuthentication2026!#$*&@";
@@ -146,9 +162,24 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero
     };
+
+    // Hỗ trợ truyền JWT qua query string "access_token" cho kết nối WebSockets / SignalR
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
-// 8. Authorization
+// 10. Authorization
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
@@ -196,5 +227,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// SignalR Hub endpoints
+app.MapHub<IncidentHub>("/hubs/incidents");
+app.MapHub<TrackingHub>("/hubs/tracking");
 
 app.Run();
