@@ -113,4 +113,20 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
             _logger.LogWarning(ex, "Không đẩy được cập nhật trạng thái phân công {AssignmentId} qua SignalR.", assignment.Id);
         }
     }
+
+    public async Task TrafficHotspotReportedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+                .SendAsync(RealtimeContract.ReceiveTrafficHotspot, hotspot, cancellationToken);
+
+            await _incidentHub.Clients.Group(RealtimeContract.RescuersGroup)
+                .SendAsync(RealtimeContract.ReceiveTrafficHotspot, hotspot, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không đẩy được điểm nghẽn giao thông {HotspotId} qua SignalR.", hotspot.Id);
+        }
+    }
 }

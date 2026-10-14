@@ -28,4 +28,9 @@ public interface IRealtimeNotifier
     /// Tiến độ phân công cứu hộ thay đổi → đẩy tới Operator và người báo đang theo dõi
     /// </summary>
     Task AssignmentStatusChangedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Điểm nghẽn giao thông mới được báo cáo → phát tới Operators và Rescuers (để điều hướng né kẹt xe)
+    /// </summary>
+    Task TrafficHotspotReportedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default);
 }

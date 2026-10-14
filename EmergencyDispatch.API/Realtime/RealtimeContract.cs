@@ -30,4 +30,7 @@ public static class RealtimeContract
 
     /// <summary>Cập nhật trạng thái lượt phân công (Accepted, EnRoute, OnScene, Completed)</summary>
     public const string ReceiveAssignmentStatus = "ReceiveAssignmentStatus";
+
+    /// <summary>Điểm nghẽn giao thông mới hoặc giải tỏa trên Live Map</summary>
+    public const string ReceiveTrafficHotspot = "ReceiveTrafficHotspot";
 }

@@ -67,4 +67,5 @@ public class User : BaseEntity
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
     public ICollection<LocationUpdate> LocationUpdates { get; set; } = new List<LocationUpdate>();
     public ICollection<CitizenFeedback> CitizenFeedbacks { get; set; } = new List<CitizenFeedback>();
+    public ICollection<TrafficHotspot> TrafficHotspots { get; set; } = new List<TrafficHotspot>();
 }

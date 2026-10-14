@@ -107,6 +107,7 @@ builder.Services.AddScoped<IRescueUnitRepository, RescueUnitRepository>();
 builder.Services.AddScoped<IDispatchAssignmentRepository, DispatchAssignmentRepository>();
 builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
 builder.Services.AddScoped<IIceContactRepository, IceContactRepository>();
+builder.Services.AddScoped<ITrafficHotspotRepository, TrafficHotspotRepository>();
 
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();
@@ -133,10 +134,12 @@ builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastru
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();
+builder.Services.AddScoped<ITrafficService, TrafficService>();
 
 // 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
 builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();
 builder.Services.AddHostedService<AiAnalysisWorker>();
+builder.Services.AddHostedService<HotspotCleanupWorker>();
 
 // 8.2. Kênh thông báo Realtime (SignalR Notifier)
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();

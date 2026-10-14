@@ -40,10 +40,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<LocationUpdate> LocationUpdates => Set<LocationUpdate>();
 
-    // 7. Escalation & Feedback
+    // 7. Escalation & Feedback & Traffic
     public DbSet<EscalationRule> EscalationRules => Set<EscalationRule>();
     public DbSet<EscalationLog> EscalationLogs => Set<EscalationLog>();
     public DbSet<CitizenFeedback> CitizenFeedbacks => Set<CitizenFeedback>();
+    public DbSet<TrafficHotspot> TrafficHotspots => Set<TrafficHotspot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -524,6 +525,29 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasQueryFilter(f => !f.IsDeleted);
+        });
+
+        // ==================== 22. TRAFFIC HOTSPOT ====================
+        modelBuilder.Entity<TrafficHotspot>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.Title).HasMaxLength(200).IsRequired();
+            entity.Property(t => t.Description).HasMaxLength(1000);
+            entity.Property(t => t.LocationAddress).HasMaxLength(300).IsRequired();
+            entity.Property(t => t.MediaUrl).HasMaxLength(500);
+            entity.Property(t => t.ReporterName).HasMaxLength(100);
+            entity.Property(t => t.ReporterPhone).HasMaxLength(30);
+
+            entity.HasIndex(t => t.IsActive).HasDatabaseName("IX_TrafficHotspots_IsActive");
+            entity.HasIndex(t => t.ExpiresAt).HasDatabaseName("IX_TrafficHotspots_ExpiresAt");
+            entity.HasIndex(t => t.ReportedByUserId).HasDatabaseName("IX_TrafficHotspots_ReportedBy");
+
+            entity.HasOne(t => t.ReportedByUser)
+                  .WithMany(u => u.TrafficHotspots)
+                  .HasForeignKey(t => t.ReportedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasQueryFilter(t => !t.IsDeleted);
         });
     }
 }
