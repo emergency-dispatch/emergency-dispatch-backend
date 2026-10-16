@@ -1,7 +1,9 @@
+using EmergencyDispatch.Application.Localization;
+
 namespace EmergencyDispatch.Application.DTOs.Common;
 
 /// <summary>
-/// Định dạng chuẩn cho response API
+/// Định dạng chuẩn cho response API (tự động chuyển ngữ song ngữ vi/en theo Accept-Language)
 /// </summary>
 /// <typeparam name="T">Kiểu dữ liệu data trả về</typeparam>
 public class ApiResponseDto<T>
@@ -11,13 +13,26 @@ public class ApiResponseDto<T>
     public T? Data { get; set; }
     public List<string>? Errors { get; set; }
 
-    public static ApiResponseDto<T> Ok(T data, string message = "Thành công") =>
-        new() { Success = true, Message = message, Data = data };
+    public static ApiResponseDto<T> Ok(T data, string? message = null)
+    {
+        var rawMessage = string.IsNullOrWhiteSpace(message) ? "Thành công" : message;
+        return new()
+        {
+            Success = true,
+            Message = LocalizationHelper.Localize(rawMessage),
+            Data = data
+        };
+    }
 
     public static ApiResponseDto<T> Fail(string message, List<string>? errors = null) =>
-        new() { Success = false, Message = message, Errors = errors };
+        new()
+        {
+            Success = false,
+            Message = LocalizationHelper.Localize(message),
+            Errors = errors?.Select(e => LocalizationHelper.Localize(e)).ToList()
+        };
 
-    public static ApiResponseDto<T> SuccessResult(T data, string message = "Thành công") =>
+    public static ApiResponseDto<T> SuccessResult(T data, string? message = null) =>
         Ok(data, message);
 
     public static ApiResponseDto<T> FailureResult(string message, List<string>? errors = null) =>

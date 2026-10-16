@@ -1,8 +1,11 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json.Serialization;
+using EmergencyDispatch.API.Filters;
 using EmergencyDispatch.API.Hubs;
 using EmergencyDispatch.API.Realtime;
 using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.Services;
 using EmergencyDispatch.Domain.Interfaces;
 using EmergencyDispatch.Infrastructure.BackgroundJobs;
@@ -10,6 +13,7 @@ using FluentValidation;
 using EmergencyDispatch.Infrastructure.Data;
 using EmergencyDispatch.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
@@ -39,6 +43,23 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowCredentials());
 });
+
+// 2.1. Cấu hình đa ngôn ngữ (Bilingual vi/en Localization)
+var supportedCultures = new[] { "vi", "en", "vi-VN", "en-US" };
+var localizationOptions = new RequestLocalizationOptions()
+    .SetDefaultCulture("vi")
+    .AddSupportedCultures(supportedCultures)
+    .AddSupportedUICultures(supportedCultures);
+
+// Bắt ngôn ngữ theo thứ tự: Header Accept-Language -> Query ?culture= -> Cookie
+localizationOptions.RequestCultureProviders = new List<IRequestCultureProvider>
+{
+    new AcceptLanguageHeaderRequestCultureProvider(),
+    new QueryStringRequestCultureProvider(),
+    new CookieRequestCultureProvider()
+};
+builder.Services.AddLocalization();
+builder.Services.AddSingleton<ILocalizationService, LocalizationService>();
 
 // 3. Database (PostgreSQL)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -96,6 +117,9 @@ builder.Services.AddSwaggerGen(c =>
     {
         c.IncludeXmlComments(appXmlPath);
     }
+
+    // Hỗ trợ chọn nhanh ngôn ngữ (vi / en) trực tiếp trên giao diện Swagger UI
+    c.OperationFilter<AcceptLanguageHeaderOperationFilter>();
 });
 
 // 5. Đăng ký Repositories (Scoped)
@@ -214,6 +238,9 @@ using (var scope = app.Services.CreateScope())
 
 // Pipeline Middleware
 app.UseCors("AllowAll");
+
+// Đặt RequestLocalization trước Authentication & Authorization để mọi middleware đều nhận đúng ngôn ngữ
+app.UseRequestLocalization(localizationOptions);
 
 if (app.Environment.IsDevelopment())
 {
