@@ -18,7 +18,7 @@
 | 12 | Nhật ký kiểm toán toàn bộ vòng đời sự cố (Incident Audit Trail) | 🔴 **Chưa làm** |
 | 13 | WebSocket Server (SignalR Hub: Live GPS Tracking xe & Đồng bộ trạng thái tức thì) | 🔴 **Chưa làm** |
 | 14 | Push Notification FCM (Còi hú âm thanh cho Staff & tiến độ cho Citizen) | 🔴 **Chưa làm** |
-| 15 | Escalation Service (Background worker quét sự cố Level 4-5 sau 5 phút cảnh báo quản lý) | 🔴 **Chưa làm** |
+| 15 | Escalation Service (Background worker quét sự cố Level 3 sau 5 phút cảnh báo quản lý) | 🔴 **Chưa làm** |
 | 16 | Thuật toán Truy vấn Không gian Địa lý (Geospatial Query / PostGIS trong bán kính $R$) | 🔴 **Chưa làm** |
 | 17 | Động cơ điều phối: So sánh 2 thuật toán (Nearest-Available vs. Load-Aware) | 🔴 **Chưa làm** |
 | 18 | Bộ dữ liệu kiểm chứng & Báo cáo đo lường AI (Accuracy, F1-Score, Cohen's Kappa, Latency) | 🔴 **Chưa làm** |
@@ -99,7 +99,7 @@
 
 - [ ] **Task 2.9: Escalation Service (Background Worker)** `[🔴 Chưa làm]`
   - Xây dựng `BackgroundService` (.NET IHostedService) chạy định kỳ mỗi 30s - 1 phút.
-  - Tự động quét tìm sự cố **Level 4 - 5** chưa được tiếp nhận/điều phối sau **5 phút**.
+  - Tự động quét tìm sự cố **Level 3** (mức khẩn cấp cao nhất) chưa được tiếp nhận/điều phối sau **5 phút**.
   - Tự động đổi trạng thái sang `Escalated`, ghi log vào Audit Trail và bắn cảnh báo khẩn cấp lên Quản lý qua SignalR/FCM.
 
 ---
