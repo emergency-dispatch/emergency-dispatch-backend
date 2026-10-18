@@ -222,7 +222,7 @@ public class AuthService : IAuthService
         GoogleJsonWebSignature.Payload payload;
         try
         {
-            var googleClientId = _configuration["Authentication:Google:ClientId"];
+            var googleClientId = _configuration["Authentication:Google:ClientId"] ?? _configuration["Google:ClientId"];
             var settings = new GoogleJsonWebSignature.ValidationSettings();
             if (!string.IsNullOrEmpty(googleClientId))
             {
