@@ -41,6 +41,7 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
 
 | Vai trò (Role) | Email | Mật khẩu | Mục đích sử dụng |
 |---|---|---|---|
+| **Admin (Mới)** | `admin@gmail.com` | `123123` | Quản trị viên hệ thống (Đã cấu hình & kích hoạt) |
 | **Admin** | `admin@emergencydispatch.com` | `Admin@123456` | Quản trị viên hệ thống, quản lý tài khoản/trạm |
 | **Operator** | `operator@emergencydispatch.com` | `Operator@123456` | Điều phối viên (Xem hàng đợi, duyệt gợi ý AI) |
 | **RescueStaff**| `staff@emergencydispatch.com` | `Staff@123456` | Đội cứu hộ (Nhận nhiệm vụ, cập nhật trạng thái) |
@@ -405,6 +406,231 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
   ```
 
 ---
+
+
+### PHÂN HỆ 5: ĐIỀU PHỐI CỨU HỘ THÔNG MINH (DISPATCH & RECOMMENDER ENGINE)
+
+#### 5.1. Lấy danh sách đội cứu hộ gợi ý thông minh (`GET /api/dispatch/incidents/{incidentId}/recommendations`)
+* **Endpoint**: `GET /api/dispatch/incidents/{incidentId}/recommendations?algorithm=NearestAvailable&maxUnits=5`
+* **Quyền hạn**: `Operator`, `Admin`
+* **Query Parameters**:
+  * `algorithm` (tùy chọn): Thuật toán gợi ý (`NearestAvailable` [mặc định theo khoảng cách Haversine] hoặc `LoadAware` [cân bằng tải dựa trên số lượng sự cố đang xử lý]).
+  * `maxUnits` (tùy chọn, mặc định 5): Số lượng đội cứu hộ gợi ý tối đa.
+* **Mô tả**: Hệ thống tự động lọc các đơn vị cứu hộ có chủng loại phù hợp (Ambulance, FireTruck, PoliceVehicle, RescueBoat) theo mức độ nghiêm trọng và loại sự cố, tính toán khoảng cách địa lý thời gian thực, thời gian di chuyển ước tính (ETA) và điểm số phù hợp (MatchScore từ 0 đến 100).
+* **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Lấy danh sách gợi ý thành công",
+  "data": [
+    {
+      "rescueUnitId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "plateNumber": "51A-115.01",
+      "unitType": "Ambulance",
+      "status": "Available",
+      "distanceKm": 1.45,
+      "estimatedArrivalMinutes": 4.5,
+      "matchScore": 95.0,
+      "recommendationReason": "Đội cứu thương gần nhất (1.45 km, ETA ~4.5 phút)",
+      "currentActiveAssignments": 0,
+      "stationName": "Trạm Cứu hộ Trung tâm Quận 1"
+    }
+  ]
+}
+```
+
+#### 5.2. Điều phối đội cứu hộ tới sự cố (`POST /api/dispatch/assignments`)
+* **Endpoint**: `POST /api/dispatch/assignments`
+* **Quyền hạn**: `Operator`, `Admin`
+* **Mô tả**: Điều phối viên phê duyệt gửi một hoặc nhiều đội cứu hộ tới hiện trường. Hệ thống chuyển trạng thái sự cố sang `Dispatched`, tạo lệnh điều phối và phát sự kiện Realtime qua SignalR tới cả Web CAD và App Mobile cứu hộ.
+* **Body Request**:
+```json
+{
+  "incidentId": "d3b07384-d113-40e1-bbbb-b9961a9ee001",
+  "rescueUnitIds": [
+    "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  ],
+  "dispatcherNotes": "Ưu tiên cấp cứu nạn nhân bỏng tầng 2, tiếp cận từ cổng Đông."
+}
+```
+* **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Đã điều phối 1 đội cứu hộ thành công.",
+  "data": [
+    {
+      "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "incidentId": "d3b07384-d113-40e1-bbbb-b9961a9ee001",
+      "rescueUnitId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "status": "Assigned",
+      "dispatchedAt": "2026-10-18T14:30:00Z"
+    }
+  ]
+}
+```
+
+#### 5.3. Xem danh sách nhiệm vụ của Đội cứu hộ (`GET /api/dispatch/assignments/my-missions`)
+* **Endpoint**: `GET /api/dispatch/assignments/my-missions`
+* **Quyền hạn**: `RescueStaff`, `Admin`
+* **Mô tả**: Dành cho App Mobile Đội cứu hộ. Trả về toàn bộ nhiệm vụ đang được phân công cho xe/trạm trực thuộc nhân viên cứu hộ đang đăng nhập.
+* **Response**: `200 OK`
+
+#### 5.4. Cập nhật trạng thái nhiệm vụ cứu hộ (`PUT /api/dispatch/assignments/{assignmentId}/status`)
+* **Endpoint**: `PUT /api/dispatch/assignments/{assignmentId}/status`
+* **Quyền hạn**: `RescueStaff`, `Operator`, `Admin`
+* **Mô tả**: Đội cứu hộ cập nhật tiến trình di chuyển theo vòng đời chuẩn:
+  * `EnRoute`: Đang trên đường tới hiện trường.
+  * `OnScene`: Đã có mặt tại hiện trường sự cố.
+  * `Completed`: Đã hoàn tất nhiệm vụ cứu nạn.
+  * `Cancelled`: Lệnh điều phối bị hủy.
+* **Body Request**:
+```json
+{
+  "status": "OnScene",
+  "notes": "Đã tiếp cận hiện trường, đang triển khai đội hình sơ cứu."
+}
+```
+* **Response**: `200 OK`
+
+#### 5.5. Hoàn tất xử lý sự cố (`POST /api/dispatch/incidents/{incidentId}/resolve`)
+* **Endpoint**: `POST /api/dispatch/incidents/{incidentId}/resolve`
+* **Quyền hạn**: `Operator`, `Admin`
+* **Mô tả**: Đóng sự cố khẩn cấp, giải phóng toàn bộ các phương tiện cứu hộ về trạng thái `Available` (Sẵn sàng) và ghi nhận thời gian phản ứng tổng thể.
+* **Body Request**:
+```json
+{
+  "resolutionSummary": "Đã dập tắt đám cháy hoàn toàn lúc 14:45. 2 nạn nhân đã được đưa vào Bệnh viện Quận 1 an toàn."
+}
+```
+* **Response**: `200 OK`
+
+---
+
+### PHÂN HỆ 6: CẢNH BÁO ĐIỂM NÓNG GIAO THÔNG (TRAFFIC HOTSPOTS)
+
+#### 6.1. Báo cáo điểm nóng ùn tắc / sự cố giao thông (`POST /api/traffic/hotspots`)
+* **Endpoint**: `POST /api/traffic/hotspots`
+* **Quyền hạn**: `Operator`, `RescueStaff`, `Admin`
+* **Mô tả**: Cảnh báo điểm kẹt xe, tai nạn hoặc ngập lụt cản trở xe cứu hộ. Điểm nóng có cơ chế tự động hết hạn (TTL) và được worker `HotspotCleanupWorker` dọn dẹp ngầm.
+* **Body Request**:
+```json
+{
+  "title": "Ùn tắc nghiêm trọng tại ngã tư D1 - D2",
+  "description": "Va chạm giữa 2 xe tải gây chắn toàn bộ làn đường hướng vào Lô E",
+  "latitude": 10.8415,
+  "longitude": 106.8105,
+  "radiusMeters": 350.0,
+  "severity": "High",
+  "durationMinutes": 60
+}
+```
+* **Response**: `200 OK` (Trả về chi tiết Hotspot ID và thời gian hết hạn `expiresAt`).
+
+#### 6.2. Lấy danh sách điểm nóng giao thông đang hoạt động (`GET /api/traffic/hotspots/active`)
+* **Endpoint**: `GET /api/traffic/hotspots/active`
+* **Quyền hạn**: Công khai (Có thể gọi từ cả Web CAD và App Mobile)
+* **Mô tả**: Trả về toàn bộ các điểm nóng còn hiệu lực để hiển thị lớp bản đồ nhiệt (Heatmap) hoặc vẽ bán kính đỏ cảnh báo lái xe cứu hộ tránh tuyến đường nghẽn.
+* **Response**: `200 OK`
+
+---
+
+### PHÂN HỆ 7: CẤU HÌNH LEO THANG SỰ CỐ TỰ ĐỘNG (ESCALATION RULE ENGINE)
+
+#### 7.1. Lấy danh sách quy tắc leo thang tự động (`GET /api/escalation/rules`)
+* **Endpoint**: `GET /api/escalation/rules`
+* **Quyền hạn**: `Admin`, `Operator`
+* **Mô tả**: Xem toàn bộ các quy tắc leo thang sự cố đang được cấu hình trên hệ thống.
+* **Response**: `200 OK`
+
+#### 7.2. Tạo mới quy tắc leo thang tự động (`POST /api/escalation/rules`)
+* **Endpoint**: `POST /api/escalation/rules`
+* **Quyền hạn**: `Admin`
+* **Mô tả**: Thiết lập quy tắc cho background worker `EscalationWorker`. Khi có sự cố mức độ nghiêm trọng `>= minSeverityLevel` không được tiếp nhận sau `timeoutMinutes`, hệ thống tự động đổi trạng thái sự cố sang `Escalated` và phát chuông cảnh báo tới các vai trò trong `notifyRoles`.
+* **Body Request**:
+```json
+{
+  "description": "Leo thang khẩn cấp sự cố Cấp 3 chưa duyệt quá 5 phút",
+  "minSeverityLevel": "Level3",
+  "timeoutMinutes": 5,
+  "notifyRoles": "["Admin","Operator"]",
+  "expandRadiusPercent": 50,
+  "isActive": true
+}
+```
+* **Response**: `200 OK`
+
+#### 7.3. Cập nhật quy tắc leo thang (`PUT /api/escalation/rules/{id}`)
+* **Endpoint**: `PUT /api/escalation/rules/{id}`
+* **Quyền hạn**: `Admin`
+* **Body Request**: Tương tự `POST`, có thể bật/tắt `isActive: false` để vô hiệu hóa quy tắc tức thời.
+
+#### 7.4. Xóa mềm quy tắc leo thang (`DELETE /api/escalation/rules/{id}`)
+* **Endpoint**: `DELETE /api/escalation/rules/{id}`
+* **Quyền hạn**: `Admin`
+* **Response**: `200 OK`
+
+#### 7.5. Xem lịch sử kích hoạt leo thang (`GET /api/escalation/logs`)
+* **Endpoint**: `GET /api/escalation/logs?pageIndex=1&pageSize=20`
+* **Quyền hạn**: `Admin`, `Operator`
+* **Mô tả**: Xem nhật ký chi tiết các sự cố đã bị worker kích hoạt leo thang khẩn cấp kèm thời gian và hành động xử lý.
+* **Response**: `200 OK`
+
+---
+
+### PHÂN HỆ 8: ĐA NGÔN NGỮ (BILINGUAL LOCALIZATION `vi` / `en`)
+
+#### 8.1. Kiểm tra ngôn ngữ hiện tại của Client (`GET /api/localization/info`)
+* **Endpoint**: `GET /api/localization/info`
+* **Quyền hạn**: Công khai
+* **Cơ chế xác định ngôn ngữ của Backend**:
+  1. Header HTTP: `Accept-Language: en` (hoặc `vi`)
+  2. Query string: `?culture=en` (hoặc `?culture=vi`)
+  3. Mặc định: Tự động fallback về Tiếng Việt (`vi`).
+* **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Current culture information retrieved successfully",
+  "data": {
+    "currentCulture": "en",
+    "supportedCultures": [
+      { "code": "vi", "name": "Tiếng Việt (Vietnamese)" },
+      { "code": "en", "name": "English (US)" }
+    ]
+  }
+}
+```
+
+#### 8.2. Lấy toàn bộ từ điển thông báo chuẩn hai ngôn ngữ (`GET /api/localization/catalog`)
+* **Endpoint**: `GET /api/localization/catalog`
+* **Quyền hạn**: Công khai
+* **Mô tả**: Trả về toàn bộ danh mục mã thông báo và lỗi đa ngôn ngữ của hệ thống để Frontend và Mobile đồng bộ giao diện.
+
+---
+
+### PHÂN HỆ 9: KẾT NỐI REAL-TIME WEBSOCKET (SIGNALR HUBS)
+
+Backend cung cấp 2 SignalR Hubs chuyên dụng đáp ứng tiêu chuẩn độ trễ $1–3	ext{ giây}$:
+
+#### 9.1. Tracking Hub — Định vị GPS thời gian thực (`/hubs/tracking`)
+* **URL**: `http://localhost:5000/hubs/tracking?access_token=<JWT_TOKEN>`
+* **Mục đích**: Đồng bộ vị trí xe cứu hộ và nhân sự hiện trường lên bản đồ số Dispatcher CAD.
+* **Client phát dữ liệu lên Server (Invoke)**:
+  * Phương thức: `SendLocationUpdate(double latitude, double longitude, double? speed, double? heading)`
+* **Client lắng nghe từ Server (On)**:
+  * Sự kiện: `ReceiveLocationUpdate` $ightarrow$ Nhận payload `{ rescueUnitId, latitude, longitude, speed, heading, updatedAt }`.
+  * Sự kiện: `ReceiveRescueUnitStatus` $ightarrow$ Nhận payload `{ rescueUnitId, status, updatedAt }`.
+
+#### 9.2. Incident Hub — Hàng đợi sự cố khẩn cấp (`/hubs/incidents`)
+* **URL**: `http://localhost:5000/hubs/incidents?access_token=<JWT_TOKEN>`
+* **Mục đích**: Broadcast tức thời khi có sự cố SOS mới, sự cố được duyệt, hoặc lệnh điều phối.
+* **Client lắng nghe từ Server (On)**:
+  * `NewIncident`: Sự cố SOS mới phát sinh (kèm chuông cảnh báo đỏ trên bàn CAD).
+  * `IncidentVerified`: Sự cố đã được Operator thẩm định.
+  * `IncidentStatusUpdated`: Cập nhật trạng thái sự cố.
+  * `IncidentEscalated`: Cảnh báo khẩn cấp sự cố bị leo thang do quá 5 phút chưa nhận.
+  * `DispatchAssigned`: Thông báo nhiệm vụ mới tới điện thoại của đội cứu hộ được chọn.
 
 ## 4. BẢNG TRA CỨU ENUMS (DÀNH CHO TYPESCRIPT / INTERFACES)
 
