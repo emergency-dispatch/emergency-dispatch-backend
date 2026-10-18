@@ -8,6 +8,60 @@ public static class DbInitializer
 {
     public static async Task SeedAsync(ApplicationDbContext context)
     {
+        // 0. Đảm bảo schema đồng bộ cho các cột và bảng mới (phòng trường hợp migration chưa apply trên cloud database)
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Stations"" ADD COLUMN IF NOT EXISTS ""CoverageRadiusKm"" double precision NOT NULL DEFAULT 10;
+                ALTER TABLE ""Stations"" ADD COLUMN IF NOT EXISTS ""Email"" text;
+                ALTER TABLE ""Stations"" ADD COLUMN IF NOT EXISTS ""OperatingHours"" text;
+
+                CREATE TABLE IF NOT EXISTS ""EscalationRules"" (
+                    ""Id"" uuid NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone,
+                    ""IsDeleted"" boolean NOT NULL,
+                    ""MinSeverityLevel"" integer NOT NULL,
+                    ""TimeoutMinutes"" integer NOT NULL,
+                    ""NotifyRoles"" text NOT NULL,
+                    ""ExpandRadiusPercent"" integer NOT NULL,
+                    ""IsActive"" boolean NOT NULL,
+                    ""Description"" text,
+                    CONSTRAINT ""PK_EscalationRules"" PRIMARY KEY (""Id"")
+                );
+
+                CREATE TABLE IF NOT EXISTS ""EscalationLogs"" (
+                    ""Id"" uuid NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone,
+                    ""IsDeleted"" boolean NOT NULL,
+                    ""IncidentId"" uuid NOT NULL,
+                    ""EscalationRuleId"" uuid NOT NULL,
+                    ""EscalationLevel"" integer NOT NULL,
+                    ""NotifiedRoles"" text,
+                    ""NotifiedUserIds"" text,
+                    ""ActionTaken"" text,
+                    ""TriggerTime"" timestamp with time zone NOT NULL,
+                    ""ResolvedAt"" timestamp with time zone,
+                    ""ResolutionTimeMs"" bigint,
+                    CONSTRAINT ""PK_EscalationLogs"" PRIMARY KEY (""Id"")
+                );
+
+                CREATE TABLE IF NOT EXISTS ""CitizenFeedbacks"" (
+                    ""Id"" uuid NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone,
+                    ""IsDeleted"" boolean NOT NULL,
+                    ""IncidentId"" uuid NOT NULL,
+                    ""CitizenUserId"" uuid NOT NULL,
+                    ""Rating"" integer NOT NULL,
+                    ""Comment"" text,
+                    CONSTRAINT ""PK_CitizenFeedbacks"" PRIMARY KEY (""Id"")
+                );
+            ");
+        }
+        catch { }
+
         // 1. Seed Trạm cứu hộ mẫu
         if (!await context.Stations.AnyAsync())
         {
@@ -188,5 +242,35 @@ public static class DbInitializer
             await context.Users.AddRangeAsync(users);
             await context.SaveChangesAsync();
         }
+
+        // 4. Đảm bảo tài khoản admin@gmail.com luôn tồn tại với mật khẩu 123123 và quyền Admin
+        var targetAdminEmail = "admin@gmail.com";
+        var targetAdmin = await context.Users.FirstOrDefaultAsync(u => u.Email == targetAdminEmail);
+        if (targetAdmin == null)
+        {
+            targetAdmin = new User
+            {
+                Id = Guid.NewGuid(),
+                FullName = "Administrator",
+                Email = targetAdminEmail,
+                PhoneNumber = "0987654321",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("123123"),
+                Role = UserRole.Admin,
+                Status = UserStatus.Active,
+                IsEmailVerified = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            await context.Users.AddAsync(targetAdmin);
+        }
+        else
+        {
+            targetAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("123123");
+            targetAdmin.Role = UserRole.Admin;
+            targetAdmin.Status = UserStatus.Active;
+            targetAdmin.IsEmailVerified = true;
+            targetAdmin.IsDeleted = false;
+            targetAdmin.UpdatedAt = DateTime.UtcNow;
+        }
+        await context.SaveChangesAsync();
     }
 }
