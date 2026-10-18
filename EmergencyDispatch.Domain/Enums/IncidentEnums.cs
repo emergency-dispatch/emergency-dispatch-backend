@@ -52,37 +52,37 @@ public enum IncidentStatus
 }
 
 /// <summary>
-/// Mức độ nghiêm trọng của sự cố (AI chấm điểm hoặc Operator điều chỉnh)
+/// Mức độ nghiêm trọng của sự cố (Chuẩn hóa dự án SEP490: 3 Cấp độ + Reject / Level 0)
 /// </summary>
 public enum SeverityLevel
 {
     /// <summary>
-    /// Mức 0: Chưa phân loại (Dành cho trường hợp AI lỗi/timeout hoặc cần đánh giá thủ công)
+    /// Mức 0: Bác bỏ / Chưa phân loại (Reject - Báo khống, diễn tập, nấu nướng, không phải sự cố khẩn cấp)
     /// </summary>
     Unclassified = 0,
 
     /// <summary>
-    /// Mức 1: Rất thấp (Không nguy hiểm tính mạng, sự cố nhỏ)
+    /// Mức 1: Nhẹ / Mới bùng phát (Cháy rác, chập điện nhỏ, va chạm giao thông nhẹ, xử lý nhanh tại chỗ)
     /// </summary>
     Level1 = 1,
 
     /// <summary>
-    /// Mức 2: Thấp (Cần hỗ trợ thông thường)
+    /// Mức 2: Trung bình / Cục bộ (Cháy 1 xe hoặc 1 phòng/căn hộ, tai nạn có người bị thương, cần 1-2 xe chữa cháy/cấp cứu khu vực)
     /// </summary>
     Level2 = 2,
 
     /// <summary>
-    /// Mức 3: Trung bình (Nguy cơ lan rộng hoặc có người bị thương nhẹ)
+    /// Mức 3: Khẩn cấp / Thảm họa cao nhất (Cháy lớn toàn tòa nhà, cháy nổ nhà xưởng, sập công trình, nhiều nạn nhân - Tự động leo thang sau 5 phút nếu chưa tiếp nhận)
     /// </summary>
     Level3 = 3,
 
     /// <summary>
-    /// Mức 4: Cao (Nguy hiểm tính mạng, đám cháy lớn, tai nạn nghiêm trọng)
+    /// [Legacy/Deprecated] Giữ tương thích dữ liệu cũ
     /// </summary>
     Level4 = 4,
 
     /// <summary>
-    /// Mức 5: Cực độ khẩn cấp (Thảm họa, thương vong hàng loạt, sập công trình)
+    /// [Legacy/Deprecated] Giữ tương thích dữ liệu cũ
     /// </summary>
     Level5 = 5
 }

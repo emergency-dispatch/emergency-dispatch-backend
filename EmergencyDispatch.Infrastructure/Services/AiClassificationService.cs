@@ -32,6 +32,14 @@ public class AiClassificationService : IAiClassificationService
         CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
+
+        // Ưu tiên 1: Gọi mô hình cục bộ đã fine-tune (Qwen2.5-VL LoRA Adapter trên GPU máy)
+        var localResult = await TryAnalyzeLocalAsync(mediaUrl, additionalContext, stopwatch, cancellationToken);
+        if (localResult != null)
+        {
+            return localResult;
+        }
+
         var apiKey = _configuration["OpenRouter:ApiKey"] ?? string.Empty;
         var baseUrl = _configuration["OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
         var modelName = _configuration["OpenRouter:Model"] ?? "qwen/qwen3-vl-32b-instruct";
@@ -179,6 +187,89 @@ public class AiClassificationService : IAiClassificationService
                 errorMessage: ex.Message,
                 rawResponse: rawResponseContent,
                 durationMs: stopwatch.ElapsedMilliseconds);
+        }
+    }
+
+    /// <summary>
+    /// Gọi microservice AI cục bộ (Qwen2.5-VL-3B LoRA Adapter trên GPU nội bộ)
+    /// </summary>
+    private async Task<AiClassificationResultDto?> TryAnalyzeLocalAsync(
+        string mediaUrl,
+        string? additionalContext,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken)
+    {
+        var useLocal = _configuration.GetValue<bool>("AiService:UseLocalModel");
+        var localUrl = _configuration["AiService:LocalServiceUrl"] ?? "http://127.0.0.1:8000/api/analyze-incident";
+        if (!useLocal)
+        {
+            return null;
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(45);
+
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(mediaUrl), "image_url");
+            if (!string.IsNullOrWhiteSpace(additionalContext))
+            {
+                form.Add(new StringContent(additionalContext), "citizen_note");
+            }
+
+            var response = await client.PostAsync(localUrl, form, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Local AI Service trả về mã {StatusCode}. Tự động chuyển fallback.", response.StatusCode);
+                return null;
+            }
+
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            var incidentType = root.TryGetProperty("incident_type", out var itProp) ? itProp.GetString() : "none";
+            var severityLevel = root.TryGetProperty("severity_level", out var slProp) ? slProp.GetInt32() : 0;
+            var trafficJam = root.TryGetProperty("traffic_jam", out var tjProp) && tjProp.GetBoolean();
+            var description = root.TryGetProperty("description", out var descProp) ? descProp.GetString() : string.Empty;
+            var confidence = root.TryGetProperty("confidence", out var confProp) ? confProp.GetDouble() : 0.95;
+
+            var tags = new List<string>();
+            if (root.TryGetProperty("tags", out var tagsProp) && tagsProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var tag in tagsProp.EnumerateArray())
+                {
+                    var t = tag.GetString();
+                    if (!string.IsNullOrWhiteSpace(t))
+                    {
+                        tags.Add(t);
+                    }
+                }
+            }
+
+            stopwatch.Stop();
+            _logger.LogInformation("Phân loại AI thành công bằng Local Qwen2.5-VL LoRA: Type={Type}, Level={Level}, Jam={Jam} ({Ms}ms)",
+                incidentType, severityLevel, trafficJam, stopwatch.ElapsedMilliseconds);
+
+            return new AiClassificationResultDto
+            {
+                IncidentType = incidentType,
+                SeverityScore = severityLevel,
+                IsTrafficJam = trafficJam,
+                HazardTags = tags,
+                Summary = description,
+                ConfidenceScore = confidence,
+                IsSuccess = true,
+                ModelName = "Qwen2.5-VL-3B-LoRA (Local GPU)",
+                RawResponse = content,
+                ProcessingDurationMs = stopwatch.ElapsedMilliseconds
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Local AI Service ({Url}) hiện không khả dụng. Chuyển sang dịch vụ AI đám mây/mô phỏng.", localUrl);
+            return null;
         }
     }
 

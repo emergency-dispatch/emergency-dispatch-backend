@@ -7,7 +7,7 @@ namespace EmergencyDispatch.Domain.Entities;
 /// </summary>
 public class EscalationRule : BaseEntity
 {
-    public SeverityLevel MinSeverityLevel { get; set; } = SeverityLevel.Level4;
+    public SeverityLevel MinSeverityLevel { get; set; } = SeverityLevel.Level3;
     public int TimeoutMinutes { get; set; } = 5;
     public string NotifyRoles { get; set; } = "[\"Admin\",\"Operator\"]";
     public int ExpandRadiusPercent { get; set; } = 50;

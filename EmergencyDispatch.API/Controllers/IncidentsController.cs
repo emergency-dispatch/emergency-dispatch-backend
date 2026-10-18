@@ -30,6 +30,7 @@ public class IncidentsController : ControllerBase
     /// Nếu AI lỗi, hệ thống tự động Fallback về mức Unclassified (0) và đẩy lên hàng đợi để Operator xác minh.
     /// </remarks>
     [HttpPost]
+    [HttpPost("sos")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status400BadRequest)]

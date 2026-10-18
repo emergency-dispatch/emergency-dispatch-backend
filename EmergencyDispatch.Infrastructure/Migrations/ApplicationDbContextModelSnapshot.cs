@@ -1134,6 +1134,85 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.ToTable("Stations");
                 });
 
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.TrafficHotspot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CongestionLevel")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<double>("Latitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("LocationAddress")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<double>("Longitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("MediaUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("ReportedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReporterName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReporterPhone")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ResolvedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("IX_TrafficHotspots_ExpiresAt");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("IX_TrafficHotspots_IsActive");
+
+                    b.HasIndex("ReportedByUserId")
+                        .HasDatabaseName("IX_TrafficHotspots_ReportedBy");
+
+                    b.ToTable("TrafficHotspots");
+                });
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1662,6 +1741,16 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Station");
                 });
 
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.TrafficHotspot", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "ReportedByUser")
+                        .WithMany("TrafficHotspots")
+                        .HasForeignKey("ReportedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ReportedByUser");
+                });
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>
                 {
                     b.HasOne("EmergencyDispatch.Domain.Entities.Station", "Station")
@@ -1746,6 +1835,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Notifications");
 
                     b.Navigation("RefreshTokens");
+
+                    b.Navigation("TrafficHotspots");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Vehicle", b =>

@@ -1,12 +1,19 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json.Serialization;
+using EmergencyDispatch.API.Filters;
+using EmergencyDispatch.API.Hubs;
+using EmergencyDispatch.API.Realtime;
 using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.Services;
 using EmergencyDispatch.Domain.Interfaces;
+using EmergencyDispatch.Infrastructure.BackgroundJobs;
 using FluentValidation;
 using EmergencyDispatch.Infrastructure.Data;
 using EmergencyDispatch.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
@@ -14,11 +21,17 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Controllers + JSON Enum serialize as string
+// 1. Controllers + JSON Enum serialize as string + SignalR
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
 // 2. CORS (Cho phép Frontend và Mobile gọi API)
@@ -30,6 +43,23 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowCredentials());
 });
+
+// 2.1. Cấu hình đa ngôn ngữ (Bilingual vi/en Localization)
+var supportedCultures = new[] { "vi", "en", "vi-VN", "en-US" };
+var localizationOptions = new RequestLocalizationOptions()
+    .SetDefaultCulture("vi")
+    .AddSupportedCultures(supportedCultures)
+    .AddSupportedUICultures(supportedCultures);
+
+// Bắt ngôn ngữ theo thứ tự: Header Accept-Language -> Query ?culture= -> Cookie
+localizationOptions.RequestCultureProviders = new List<IRequestCultureProvider>
+{
+    new AcceptLanguageHeaderRequestCultureProvider(),
+    new QueryStringRequestCultureProvider(),
+    new CookieRequestCultureProvider()
+};
+builder.Services.AddLocalization();
+builder.Services.AddSingleton<ILocalizationService, LocalizationService>();
 
 // 3. Database (PostgreSQL)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -87,6 +117,9 @@ builder.Services.AddSwaggerGen(c =>
     {
         c.IncludeXmlComments(appXmlPath);
     }
+
+    // Hỗ trợ chọn nhanh ngôn ngữ (vi / en) trực tiếp trên giao diện Swagger UI
+    c.OperationFilter<AcceptLanguageHeaderOperationFilter>();
 });
 
 // 5. Đăng ký Repositories (Scoped)
@@ -98,6 +131,8 @@ builder.Services.AddScoped<IRescueUnitRepository, RescueUnitRepository>();
 builder.Services.AddScoped<IDispatchAssignmentRepository, DispatchAssignmentRepository>();
 builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
 builder.Services.AddScoped<IIceContactRepository, IceContactRepository>();
+builder.Services.AddScoped<ITrafficHotspotRepository, TrafficHotspotRepository>();
+builder.Services.AddScoped<IEscalationRepository, EscalationRepository>();
 
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();
@@ -123,6 +158,18 @@ builder.Services.AddScoped<IRescueUnitService, RescueUnitService>();
 builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
+builder.Services.AddScoped<IDispatchService, DispatchService>();
+builder.Services.AddScoped<ITrafficService, TrafficService>();
+builder.Services.AddScoped<IEscalationService, EscalationService>();
+
+// 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
+builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();
+builder.Services.AddHostedService<AiAnalysisWorker>();
+builder.Services.AddHostedService<HotspotCleanupWorker>();
+builder.Services.AddHostedService<EscalationWorker>();
+
+// 8.2. Kênh thông báo Realtime (SignalR Notifier)
+builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
 // 9. Cấu hình JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
@@ -146,9 +193,24 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero
     };
+
+    // Hỗ trợ truyền JWT qua query string "access_token" cho kết nối WebSockets / SignalR
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
-// 8. Authorization
+// 10. Authorization
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
@@ -177,6 +239,9 @@ using (var scope = app.Services.CreateScope())
 // Pipeline Middleware
 app.UseCors("AllowAll");
 
+// Đặt RequestLocalization trước Authentication & Authorization để mọi middleware đều nhận đúng ngôn ngữ
+app.UseRequestLocalization(localizationOptions);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -196,5 +261,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// SignalR Hub endpoints
+app.MapHub<IncidentHub>("/hubs/incidents");
+app.MapHub<TrackingHub>("/hubs/tracking");
 
 app.Run();

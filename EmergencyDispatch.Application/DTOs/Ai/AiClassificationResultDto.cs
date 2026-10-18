@@ -21,6 +21,18 @@ public class AiClassificationResultDto
     public int SeverityScore { get; set; }
 
     /// <summary>
+    /// Loại sự cố nhận diện (fire, accident, none)
+    /// </summary>
+    [JsonPropertyName("incidentType")]
+    public string? IncidentType { get; set; }
+
+    /// <summary>
+    /// Phát hiện có ùn tắc giao thông tại hiện trường hay không
+    /// </summary>
+    [JsonPropertyName("isTrafficJam")]
+    public bool IsTrafficJam { get; set; }
+
+    /// <summary>
     /// Enum SeverityLevel tương ứng
     /// </summary>
     [JsonIgnore]
