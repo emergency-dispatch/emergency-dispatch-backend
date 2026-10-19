@@ -68,8 +68,6 @@ public class EscalationRepository : IEscalationRepository
 
         return await _context.Incidents
             .Include(i => i.DispatchAssignments)
-            .Include(i => i.StatusHistories)
-            .Include(i => i.AuditTrails)
             .Where(i => !i.IsDeleted
                         && i.Severity >= minSeverity
                         && i.CreatedAt <= cutoffTime

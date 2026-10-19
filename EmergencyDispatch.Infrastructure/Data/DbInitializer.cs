@@ -58,6 +58,69 @@ public static class DbInitializer
                     ""Comment"" text,
                     CONSTRAINT ""PK_CitizenFeedbacks"" PRIMARY KEY (""Id"")
                 );
+
+                CREATE TABLE IF NOT EXISTS ""IncidentStatusHistories"" (
+                    ""Id"" uuid NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone,
+                    ""IsDeleted"" boolean NOT NULL,
+                    ""IncidentId"" uuid NOT NULL,
+                    ""OldStatus"" integer NOT NULL,
+                    ""NewStatus"" integer NOT NULL,
+                    ""ChangedByUserId"" uuid,
+                    ""ChangedByRole"" character varying(50),
+                    ""Notes"" text,
+                    ""ChangedAt"" timestamp with time zone NOT NULL,
+                    CONSTRAINT ""PK_IncidentStatusHistories"" PRIMARY KEY (""Id"")
+                );
+
+                CREATE TABLE IF NOT EXISTS ""IncidentAuditTrails"" (
+                    ""Id"" uuid NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone,
+                    ""IsDeleted"" boolean NOT NULL,
+                    ""IncidentId"" uuid NOT NULL,
+                    ""Action"" character varying(100) NOT NULL,
+                    ""ActorId"" uuid,
+                    ""ActorRole"" character varying(50),
+                    ""Details"" text,
+                    ""PayloadJson"" text,
+                    ""IpAddress"" character varying(45),
+                    ""UserAgent"" character varying(500),
+                    CONSTRAINT ""PK_IncidentAuditTrails"" PRIMARY KEY (""Id"")
+                );
+
+                ALTER TABLE IF EXISTS ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""Action"" integer NOT NULL DEFAULT 0;
+                ALTER TABLE IF EXISTS ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""OldStateJson"" text;
+                ALTER TABLE IF EXISTS ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""NewStateJson"" text;
+                ALTER TABLE IF EXISTS ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""Description"" text;
+                ALTER TABLE IF EXISTS ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""Timestamp"" timestamp with time zone NOT NULL DEFAULT now();
+            ");
+        }
+        catch { }
+
+        // 0.1. Đồng bộ bảng IncidentAuditTrails cũ (schema legacy có cột ToStatus/FromStatus NOT NULL)
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""ActorId"" uuid;
+                ALTER TABLE ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""ActorRole"" character varying(50);
+                ALTER TABLE ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""IpAddress"" character varying(50);
+                ALTER TABLE ""IncidentAuditTrails"" ADD COLUMN IF NOT EXISTS ""UserAgent"" character varying(500);
+
+                DO $$
+                DECLARE col record;
+                BEGIN
+                    FOR col IN
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'IncidentAuditTrails'
+                          AND is_nullable = 'NO'
+                          AND column_name NOT IN ('Id','IncidentId','Action','Timestamp','CreatedAt','IsDeleted')
+                    LOOP
+                        EXECUTE format('ALTER TABLE ""IncidentAuditTrails"" ALTER COLUMN %I DROP NOT NULL', col.column_name);
+                    END LOOP;
+                END $$;
             ");
         }
         catch { }

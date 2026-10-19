@@ -161,6 +161,7 @@ builder.Services.AddScoped<IIncidentService, IncidentService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();
 builder.Services.AddScoped<ITrafficService, TrafficService>();
 builder.Services.AddScoped<IEscalationService, EscalationService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 
 // 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
 builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();

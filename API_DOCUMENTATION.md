@@ -677,6 +677,64 @@ export enum MediaType {
 
 ---
 
+### PHÂN HỆ 10: QUẢN TRỊ VIÊN & THỐNG KÊ DASHBOARD (ADMIN STATS & BACK-OFFICE)
+
+#### 10.1. Lấy toàn bộ số liệu thống kê & KPIs vận hành (`GET /api/dashboard/stats`)
+* **Endpoint**: `GET /api/dashboard/stats`
+* **Quyền hạn**: `Admin`, `Operator`
+* **Mô tả**: Trả về bức tranh toàn cảnh của hệ thống phục vụ Dashboard điều hành trung tâm:
+  - **Sự cố**: Tổng số, đang kích hoạt, chờ xử lý, đang điều phối, đã giải quyết, hủy, leo thang.
+  - **Mức độ nghiêm trọng**: Đếm số lượng sự cố Cấp 3 (Thảm họa/Khẩn cấp), Cấp 2 (Trung bình), Cấp 1 (Nhẹ).
+  - **Phương tiện cứu hộ**: Tổng số xe, đang sẵn sàng (Available), đang làm nhiệm vụ (OnMission), đang bảo dưỡng (Maintenance).
+  - **Hạ tầng trạm**: Tổng số trạm, số trạm đang hoạt động (Active).
+  - **Nhân sự**: Tổng tài khoản, phân bổ Điều phối viên (Operator), Cứu hộ (RescueStaff), Người dân (Citizen), Quản trị viên (Admin).
+  - **Chỉ số hiệu năng (KPIs)**: Thời gian phản hồi trung bình (phút), Tỷ lệ giải quyết hoàn tất sự cố (%).
+  - **Sự cố gần đây**: Top các sự cố mới nhất kèm trạng thái và vị trí.
+* **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Lấy số liệu thống kê quản trị thành công.",
+  "data": {
+    "totalIncidents": 15,
+    "activeIncidents": 12,
+    "pendingIncidents": 6,
+    "dispatchedIncidents": 1,
+    "resolvedIncidents": 0,
+    "cancelledIncidents": 3,
+    "escalatedIncidents": 0,
+    "criticalLevel3Incidents": 0,
+    "moderateLevel2Incidents": 2,
+    "minorLevel1Incidents": 2,
+    "totalRescueUnits": 6,
+    "availableUnits": 5,
+    "onMissionUnits": 1,
+    "maintenanceUnits": 0,
+    "totalStations": 2,
+    "activeStations": 2,
+    "totalUsers": 11,
+    "totalCitizens": 7,
+    "totalOperators": 1,
+    "totalRescueStaff": 1,
+    "totalAdmins": 2,
+    "averageResponseTimeMinutes": 0.0,
+    "incidentResolutionRatePercent": 0.0,
+    "recentIncidents": [
+      {
+        "id": "2df43391-ba46-4259-945b-1c4d6f3afc2b",
+        "title": "Báo động SOS Khẩn cấp",
+        "severity": "Unclassified",
+        "status": "AiProcessed",
+        "locationAddress": "Phường Long Trường, Thành phố Hồ Chí Minh",
+        "createdAt": "2026-09-29T08:42:24.806676Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
 ## 5. CODE MẪU TÍCH HỢP AXIOS (CLIENT CODE EXAMPLE)
 
 ### 5.1. Khởi tạo Axios Instance có gắn Token tự động
