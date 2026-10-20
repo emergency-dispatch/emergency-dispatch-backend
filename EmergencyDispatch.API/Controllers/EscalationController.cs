@@ -10,7 +10,7 @@ namespace EmergencyDispatch.API.Controllers;
 /// API Quản lý Quy tắc &amp; Nhật ký Leo thang Tự động (Escalation Rules &amp; Logs)
 /// </summary>
 [ApiController]
-[Route("api/v1")]
+[Route("api/escalation")]
 [Authorize]
 public class EscalationController : ControllerBase
 {
@@ -24,7 +24,7 @@ public class EscalationController : ControllerBase
     /// <summary>
     /// Lấy danh sách toàn bộ các quy tắc leo thang sự cố
     /// </summary>
-    [HttpGet("escalation-rules")]
+    [HttpGet("rules")]
     [Authorize(Roles = "Admin,Operator")]
     [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<EscalationRuleDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRules(CancellationToken cancellationToken)
@@ -36,7 +36,7 @@ public class EscalationController : ControllerBase
     /// <summary>
     /// Lấy chi tiết một quy tắc leo thang theo ID
     /// </summary>
-    [HttpGet("escalation-rules/{id:guid}")]
+    [HttpGet("rules/{id:guid}")]
     [Authorize(Roles = "Admin,Operator")]
     [ProducesResponseType(typeof(ApiResponseDto<EscalationRuleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<EscalationRuleDto>), StatusCodes.Status404NotFound)]
@@ -54,7 +54,7 @@ public class EscalationController : ControllerBase
     /// <summary>
     /// Tạo quy tắc leo thang mới (Chỉ dành cho Ban Quản trị)
     /// </summary>
-    [HttpPost("escalation-rules")]
+    [HttpPost("rules")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponseDto<EscalationRuleDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponseDto<EscalationRuleDto>), StatusCodes.Status400BadRequest)]
@@ -75,7 +75,7 @@ public class EscalationController : ControllerBase
     /// <summary>
     /// Cập nhật quy tắc leo thang (Chỉ dành cho Ban Quản trị)
     /// </summary>
-    [HttpPut("escalation-rules/{id:guid}")]
+    [HttpPut("rules/{id:guid}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponseDto<EscalationRuleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<EscalationRuleDto>), StatusCodes.Status404NotFound)]
@@ -96,7 +96,7 @@ public class EscalationController : ControllerBase
     /// <summary>
     /// Xóa mềm một quy tắc leo thang (Chỉ dành cho Ban Quản trị)
     /// </summary>
-    [HttpDelete("escalation-rules/{id:guid}")]
+    [HttpDelete("rules/{id:guid}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status404NotFound)]
@@ -114,7 +114,7 @@ public class EscalationController : ControllerBase
     /// <summary>
     /// Tra cứu lịch sử / nhật ký kích hoạt leo thang tự động của hệ thống
     /// </summary>
-    [HttpGet("escalation-logs")]
+    [HttpGet("logs")]
     [Authorize(Roles = "Admin,Operator")]
     [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<EscalationLogDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetLogs(
@@ -130,7 +130,7 @@ public class EscalationController : ControllerBase
     /// <summary>
     /// Kích hoạt chu kỳ quét leo thang thủ công ngay lập tức (Test / Benchmark / Quản trị)
     /// </summary>
-    [HttpPost("escalation/trigger-check")]
+    [HttpPost("trigger-check")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponseDto<int>), StatusCodes.Status200OK)]
     public async Task<IActionResult> TriggerCheck(CancellationToken cancellationToken)
