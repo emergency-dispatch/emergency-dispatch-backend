@@ -25,4 +25,9 @@ public interface IUserService
     Task<IceContactDto> CreateIceContactAsync(Guid userId, CreateIceContactDto dto);
     Task<IceContactDto> UpdateIceContactAsync(Guid userId, Guid contactId, UpdateIceContactDto dto);
     Task<bool> DeleteIceContactAsync(Guid userId, Guid contactId);
+
+    // Quản lý điều phối nhân sự, gán trạm & Tổ làm việc (Staff & Operator & Admin)
+    Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto);
+    Task<IReadOnlyList<TeamMemberSummaryDto>> GetStaffByStationAsync(Guid stationId);
+    Task<StaffTeamResponseDto> GetMyTeamAsync(Guid userId);
 }

@@ -12,11 +12,19 @@ public class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
     private readonly IIceContactRepository _iceContactRepository;
+    private readonly IStationRepository _stationRepository;
+    private readonly IRescueUnitRepository _rescueUnitRepository;
 
-    public UserService(IUserRepository userRepository, IIceContactRepository iceContactRepository)
+    public UserService(
+        IUserRepository userRepository,
+        IIceContactRepository iceContactRepository,
+        IStationRepository stationRepository,
+        IRescueUnitRepository rescueUnitRepository)
     {
         _userRepository = userRepository;
         _iceContactRepository = iceContactRepository;
+        _stationRepository = stationRepository;
+        _rescueUnitRepository = rescueUnitRepository;
     }
 
     public async Task<UserResponseDto> GetByIdAsync(Guid id)
@@ -110,6 +118,7 @@ public class UserService : IUserService
             Role = dto.Role,
             Status = UserStatus.Active,
             StationId = dto.StationId,
+            DependentsNote = dto.DependentsNote?.Trim(),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -137,6 +146,10 @@ public class UserService : IUserService
             user.Status = dto.Status.Value;
         }
         user.StationId = dto.StationId;
+        if (dto.DependentsNote != null)
+        {
+            user.DependentsNote = dto.DependentsNote.Trim();
+        }
         user.UpdatedAt = DateTime.UtcNow;
 
         await _userRepository.UpdateAsync(user);
@@ -310,6 +323,130 @@ public class UserService : IUserService
         }
 
         return true;
+    }
+
+    public async Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto)
+    {
+        var user = await _userRepository.GetByIdWithDetailsAsync(userId)
+            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {userId}");
+
+        if (dto.StationId.HasValue)
+        {
+            var station = await _stationRepository.GetByIdAsync(dto.StationId.Value)
+                ?? throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với Id = {dto.StationId.Value}");
+            user.StationId = dto.StationId;
+        }
+        else
+        {
+            user.StationId = null;
+        }
+
+        if (dto.TeamName != null)
+        {
+            user.DependentsNote = dto.TeamName.Trim();
+        }
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user);
+
+        var updatedUser = await _userRepository.GetByIdWithDetailsAsync(userId);
+        return MapToUserResponseDto(updatedUser ?? user);
+    }
+
+    public async Task<IReadOnlyList<TeamMemberSummaryDto>> GetStaffByStationAsync(Guid stationId)
+    {
+        var station = await _stationRepository.GetByIdAsync(stationId)
+            ?? throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với Id = {stationId}");
+
+        var staffList = await _userRepository.GetAllAsync(predicate: u => u.StationId == stationId && !u.IsDeleted);
+
+        return staffList
+            .OrderBy(u => u.DependentsNote)
+            .ThenBy(u => u.FullName)
+            .Select(u => new TeamMemberSummaryDto
+            {
+                Id = u.Id,
+                FullName = u.FullName,
+                Email = u.Email,
+                PhoneNumber = u.PhoneNumber,
+                AvatarUrl = u.AvatarUrl,
+                Role = u.Role.ToString(),
+                Status = u.Status.ToString(),
+                TeamName = u.DependentsNote
+            })
+            .ToList();
+    }
+
+    public async Task<StaffTeamResponseDto> GetMyTeamAsync(Guid userId)
+    {
+        var user = await _userRepository.GetByIdWithDetailsAsync(userId)
+            ?? throw new KeyNotFoundException("Không tìm thấy thông tin tài khoản.");
+
+        if (!user.StationId.HasValue)
+        {
+            return new StaffTeamResponseDto
+            {
+                MyTeamName = user.DependentsNote,
+                TeamMembers = new List<TeamMemberSummaryDto>
+                {
+                    new()
+                    {
+                        Id = user.Id,
+                        FullName = user.FullName,
+                        Email = user.Email,
+                        PhoneNumber = user.PhoneNumber,
+                        AvatarUrl = user.AvatarUrl,
+                        Role = user.Role.ToString(),
+                        Status = user.Status.ToString(),
+                        TeamName = user.DependentsNote
+                    }
+                }
+            };
+        }
+
+        var station = await _stationRepository.GetByIdWithUnitsAndStaffAsync(user.StationId.Value);
+        if (station == null)
+        {
+            return new StaffTeamResponseDto { MyTeamName = user.DependentsNote };
+        }
+
+        var staffMembers = station.StaffMembers?
+            .Where(s => !s.IsDeleted)
+            .OrderBy(s => s.DependentsNote)
+            .ThenBy(s => s.FullName)
+            .Select(s => new TeamMemberSummaryDto
+            {
+                Id = s.Id,
+                FullName = s.FullName,
+                Email = s.Email,
+                PhoneNumber = s.PhoneNumber,
+                AvatarUrl = s.AvatarUrl,
+                Role = s.Role.ToString(),
+                Status = s.Status.ToString(),
+                TeamName = s.DependentsNote
+            }).ToList() ?? new List<TeamMemberSummaryDto>();
+
+        var vehicles = station.RescueUnits?
+            .Select(v => new StationVehicleSummaryDto
+            {
+                Id = v.Id,
+                PlateNumber = v.PlateNumber,
+                UnitType = v.UnitType.ToString(),
+                Status = v.Status.ToString(),
+                CurrentLat = v.CurrentLat,
+                CurrentLng = v.CurrentLng
+            }).ToList() ?? new List<StationVehicleSummaryDto>();
+
+        return new StaffTeamResponseDto
+        {
+            StationId = station.Id,
+            StationName = station.Name,
+            StationAddress = station.Address,
+            StationPhoneNumber = station.PhoneNumber,
+            MyTeamName = user.DependentsNote,
+            TeamMembers = staffMembers,
+            StationVehicles = vehicles
+        };
     }
 
     private static UserResponseDto MapToUserResponseDto(User user) => new()

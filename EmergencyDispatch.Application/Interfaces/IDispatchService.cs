@@ -74,4 +74,11 @@ public interface IDispatchService
         ResolveDispatchDto dto,
         Guid rescuerUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lấy thông tin lộ trình đường di chuyển cứu hộ và vị trí xe thời gian thực dành cho Người dân (Citizen Live Tracking)
+    /// </summary>
+    Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
+        Guid incidentId,
+        CancellationToken cancellationToken = default);
 }

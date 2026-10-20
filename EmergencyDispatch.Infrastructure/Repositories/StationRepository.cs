@@ -23,7 +23,17 @@ public class StationRepository : GenericRepository<Station>, IStationRepository
     {
         return await _dbSet
             .Include(s => s.RescueUnits)
+            .Include(s => s.StaffMembers)
             .Where(s => s.IsActive)
+            .OrderBy(s => s.Name)
+            .ToListAsync();
+    }
+
+    public async Task<IReadOnlyList<Station>> GetAllWithUnitsAndStaffAsync()
+    {
+        return await _dbSet
+            .Include(s => s.RescueUnits)
+            .Include(s => s.StaffMembers)
             .OrderBy(s => s.Name)
             .ToListAsync();
     }

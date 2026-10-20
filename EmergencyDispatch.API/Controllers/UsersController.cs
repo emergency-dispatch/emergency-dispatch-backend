@@ -228,10 +228,10 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Lấy danh sách người dùng có phân trang và tìm kiếm (Dành cho Quản trị viên)
+    /// Lấy danh sách người dùng có phân trang và tìm kiếm (Dành cho Quản trị viên và Điều phối viên)
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = nameof(UserRole.Admin))]
+    [Authorize(Roles = $"{nameof(UserRole.Admin)},{nameof(UserRole.Operator)}")]
     [ProducesResponseType(typeof(ApiResponseDto<PaginatedResultDto<UserResponseDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int pageIndex = 1,
@@ -282,10 +282,10 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Tạo tài khoản người dùng mới (Operator, RescueStaff, Admin) (Dành cho Quản trị viên)
+    /// Tạo tài khoản người dùng mới (Dành cho Quản trị viên và Điều phối viên)
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = nameof(UserRole.Admin))]
+    [Authorize(Roles = $"{nameof(UserRole.Admin)},{nameof(UserRole.Operator)}")]
     [ProducesResponseType(typeof(ApiResponseDto<UserResponseDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto dto)
@@ -310,10 +310,10 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Cập nhật thông tin người dùng (Dành cho Quản trị viên)
+    /// Cập nhật thông tin người dùng, trạm và tổ làm việc (Dành cho Quản trị viên và Điều phối viên)
     /// </summary>
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = nameof(UserRole.Admin))]
+    [Authorize(Roles = $"{nameof(UserRole.Admin)},{nameof(UserRole.Operator)}")]
     [ProducesResponseType(typeof(ApiResponseDto<UserResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserDto dto)
@@ -352,6 +352,83 @@ public class UsersController : ControllerBase
             }
 
             return Ok(ApiResponseDto<object>.Ok(null!, "Xóa người dùng thành công."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
+    /// Lấy thông tin Tổ làm việc, đồng đội và danh sách xe trực ban thuộc trạm của tài khoản đang đăng nhập
+    /// </summary>
+    [HttpGet("my-team")]
+    [Authorize(Roles = "RescueStaff,Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<StaffTeamResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetMyTeam()
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(userIdStr, out var userId))
+            {
+                return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
+            }
+
+            var team = await _userService.GetMyTeamAsync(userId);
+            return Ok(ApiResponseDto<StaffTeamResponseDto>.Ok(team, "Lấy thông tin Tổ làm việc thành công."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
+    /// Phân công nhân viên vào Trạm cứu hộ và chỉ định Tổ làm việc (Dành cho Điều phối viên &amp; Admin)
+    /// </summary>
+    [HttpPut("{id:guid}/assign-station-team")]
+    [Authorize(Roles = $"{nameof(UserRole.Admin)},{nameof(UserRole.Operator)}")]
+    [ProducesResponseType(typeof(ApiResponseDto<UserResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AssignStationAndTeam(Guid id, [FromBody] AssignStaffToStationAndTeamDto dto)
+    {
+        try
+        {
+            var updated = await _userService.AssignStaffToStationAndTeamAsync(id, dto);
+            return Ok(ApiResponseDto<UserResponseDto>.Ok(updated, "Phân công nhân viên vào trạm và tổ làm việc thành công."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponseDto<object>.Fail(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
+    /// Lấy danh sách nhân viên trực thuộc một trạm cứu hộ kèm Tổ làm việc
+    /// </summary>
+    [HttpGet("station/{stationId:guid}")]
+    [Authorize(Roles = $"{nameof(UserRole.Admin)},{nameof(UserRole.Operator)},{nameof(UserRole.RescueStaff)}")]
+    [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<TeamMemberSummaryDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetStaffByStation(Guid stationId)
+    {
+        try
+        {
+            var staff = await _userService.GetStaffByStationAsync(stationId);
+            return Ok(ApiResponseDto<IReadOnlyList<TeamMemberSummaryDto>>.Ok(staff, "Lấy danh sách nhân viên trạm thành công."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponseDto<object>.Fail(ex.Message));
         }
         catch (Exception ex)
         {

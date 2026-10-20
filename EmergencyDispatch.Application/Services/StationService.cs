@@ -25,8 +25,7 @@ public class StationService : IStationService
         }
         else
         {
-            var all = await _stationRepository.GetAllAsync(include: q => q);
-            stations = all.OrderBy(s => s.Name).ToList();
+            stations = await _stationRepository.GetAllWithUnitsAndStaffAsync();
         }
 
         return stations.Select(MapToDto).ToList();
@@ -112,6 +111,18 @@ public class StationService : IStationService
             CreatedAt = r.CreatedAt
         }).ToList() ?? new List<RescueUnitResponseDto>();
 
+        var staff = station.StaffMembers?.Select(u => new StationStaffMemberDto
+        {
+            Id = u.Id,
+            FullName = u.FullName,
+            Email = u.Email,
+            PhoneNumber = u.PhoneNumber,
+            AvatarUrl = u.AvatarUrl,
+            Role = u.Role.ToString(),
+            Status = u.Status.ToString(),
+            TeamName = u.DependentsNote
+        }).ToList() ?? new List<StationStaffMemberDto>();
+
         return new StationResponseDto
         {
             Id = station.Id,
@@ -123,7 +134,9 @@ public class StationService : IStationService
             IsActive = station.IsActive,
             TotalUnitsCount = units.Count,
             ActiveUnitsCount = units.Count(u => u.Status == RescueUnitStatus.Available),
+            StaffCount = staff.Count,
             RescueUnits = units,
+            StaffMembers = staff,
             CreatedAt = station.CreatedAt
         };
     }

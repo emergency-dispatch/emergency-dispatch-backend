@@ -24,4 +24,10 @@ public class CreateUserDto
     public UserRole Role { get; set; }
 
     public Guid? StationId { get; set; }
+
+    /// <summary>
+    /// Tổ làm việc / Kíp trực / Đội cứu hộ (e.g. "Tổ phản ứng nhanh số 1", "Kíp cấp cứu 115")
+    /// </summary>
+    public string? DependentsNote { get; set; }
 }
+

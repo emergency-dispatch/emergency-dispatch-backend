@@ -105,4 +105,23 @@ public class StationsController : ControllerBase
             return NotFound(ApiResponseDto<object>.Fail(ex.Message));
         }
     }
+
+    /// <summary>
+    /// Lấy danh sách nhân viên trực thuộc trạm cứu hộ kèm Tổ làm việc
+    /// </summary>
+    [HttpGet("{id:guid}/staff")]
+    [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<StationStaffMemberDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetStationStaff(Guid id)
+    {
+        try
+        {
+            var station = await _stationService.GetByIdAsync(id);
+            return Ok(ApiResponseDto<IReadOnlyList<StationStaffMemberDto>>.Ok(station.StaffMembers, "Lấy danh sách nhân viên trạm thành công."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponseDto<object>.Fail(ex.Message));
+        }
+    }
 }

@@ -13,6 +13,20 @@ public class StationResponseDto
     public bool IsActive { get; set; }
     public int ActiveUnitsCount { get; set; }
     public int TotalUnitsCount { get; set; }
+    public int StaffCount { get; set; }
     public IReadOnlyList<RescueUnitResponseDto> RescueUnits { get; set; } = new List<RescueUnitResponseDto>();
+    public IReadOnlyList<StationStaffMemberDto> StaffMembers { get; set; } = new List<StationStaffMemberDto>();
     public DateTime CreatedAt { get; set; }
+}
+
+public class StationStaffMemberDto
+{
+    public Guid Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? AvatarUrl { get; set; }
+    public string Role { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? TeamName { get; set; } // Tổ làm việc
 }

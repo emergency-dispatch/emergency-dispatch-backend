@@ -118,13 +118,32 @@ public class DispatchController : ControllerBase
     }
 
     /// <summary>
-    /// Lấy danh sách các lượt điều phối của một sự cố
+    /// Lấy danh sách các lượt điều phối của một sự cố (Cho phép người dân theo dõi vị trí xe cứu hộ)
     /// </summary>
     [HttpGet("assignments/incident/{incidentId:guid}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAssignmentsByIncident(Guid incidentId, CancellationToken cancellationToken)
     {
         var result = await _dispatchService.GetAssignmentsByIncidentIdAsync(incidentId, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy thông tin đường di chuyển cứu hộ, tọa độ xe thời gian thực và thời gian dự kiến (ETA) cho Người dân
+    /// </summary>
+    [HttpGet("tracking/incident/{incidentId:guid}")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponseDto<CitizenTrackingResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<CitizenTrackingResponseDto>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCitizenTracking(Guid incidentId, CancellationToken cancellationToken)
+    {
+        var result = await _dispatchService.GetCitizenTrackingAsync(incidentId, cancellationToken);
+        if (!result.Success)
+        {
+            return NotFound(result);
+        }
+
         return Ok(result);
     }
 

@@ -505,6 +505,140 @@ public class DispatchService : IDispatchService
             "Nghiệm thu hiện trường thành công. Hồ sơ sự cố đã được đóng và ghi nhận KPI phản hồi.");
     }
 
+    public async Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
+        Guid incidentId,
+        CancellationToken cancellationToken = default)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
+        if (incident == null)
+        {
+            return ApiResponseDto<CitizenTrackingResponseDto>.FailureResult("Không tìm thấy thông tin sự cố.");
+        }
+
+        var assignments = await _assignmentRepository.GetByIncidentIdAsync(incidentId);
+        var activeAssignment = assignments
+            .OrderByDescending(a => a.DispatchedAt)
+            .FirstOrDefault();
+
+        if (activeAssignment == null)
+        {
+            return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(new CitizenTrackingResponseDto
+            {
+                IncidentId = incident.Id,
+                IncidentTitle = incident.Title,
+                IncidentAddress = incident.LocationAddress,
+                IncidentLat = incident.Latitude,
+                IncidentLng = incident.Longitude,
+                IncidentStatus = incident.Status.ToString(),
+                IncidentSeverity = incident.Severity.ToString(),
+                DispatchStatus = "PendingDispatch"
+            }, "Sự cố đang được Điều phối viên tiếp nhận và phân công đội cứu hộ.");
+        }
+
+        var unit = activeAssignment.RescueUnit ?? await _rescueUnitRepository.GetByIdWithDetailsAsync(activeAssignment.RescueUnitId);
+
+        var vehicleLat = (unit != null && unit.CurrentLat != 0) ? unit.CurrentLat : (unit?.Station?.Latitude ?? incident.Latitude);
+        var vehicleLng = (unit != null && unit.CurrentLng != 0) ? unit.CurrentLng : (unit?.Station?.Longitude ?? incident.Longitude);
+
+        var distanceKm = CalculateDistanceKm(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude);
+        var etaMinutes = (int)Math.Max(1, Math.Round(EstimateEtaMinutes(distanceKm)));
+
+        var trajectory = await GenerateRouteTrajectoryAsync(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude, cancellationToken);
+
+        var result = new CitizenTrackingResponseDto
+        {
+            IncidentId = incident.Id,
+            IncidentTitle = incident.Title,
+            IncidentAddress = incident.LocationAddress,
+            IncidentLat = incident.Latitude,
+            IncidentLng = incident.Longitude,
+            IncidentStatus = incident.Status.ToString(),
+            IncidentSeverity = incident.Severity.ToString(),
+            RescueUnitId = unit?.Id,
+            PlateNumber = unit?.PlateNumber,
+            UnitTypeName = unit?.UnitType.ToString(),
+            StationName = unit?.Station?.Name ?? string.Empty,
+            StationPhoneNumber = unit?.Station?.PhoneNumber,
+            VehicleLat = vehicleLat,
+            VehicleLng = vehicleLng,
+            LastLocationUpdateAt = unit?.LastLocationUpdateAt ?? activeAssignment.DispatchedAt,
+            RouteTrajectory = trajectory,
+            DistanceKm = distanceKm,
+            EstimatedArrivalMinutes = etaMinutes,
+            DispatchStatus = activeAssignment.Status.ToString(),
+            DispatchedAt = activeAssignment.DispatchedAt,
+            AcceptedAt = activeAssignment.AcceptedAt,
+            ArrivedAt = activeAssignment.ArrivedAt,
+            CompletedAt = activeAssignment.CompletedAt,
+            Notes = activeAssignment.Notes
+        };
+
+        return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result, "Lấy thông tin lộ trình di chuyển cứu hộ thành công.");
+    }
+
+    private static readonly HttpClient _routingHttpClient = new() { Timeout = TimeSpan.FromSeconds(3) };
+
+    private async Task<List<RoutePointDto>> GenerateRouteTrajectoryAsync(
+        double startLat,
+        double startLng,
+        double endLat,
+        double endLng,
+        CancellationToken cancellationToken)
+    {
+        var points = new List<RoutePointDto>();
+
+        try
+        {
+            var osrmUrl = FormattableString.Invariant(
+                $"http://router.project-osrm.org/route/v1/driving/{startLng:F6},{startLat:F6};{endLng:F6},{endLat:F6}?overview=full&geometries=geojson");
+            using var response = await _routingHttpClient.GetAsync(osrmUrl, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var doc = JsonDocument.Parse(content);
+                if (doc.RootElement.TryGetProperty("routes", out var routes) && routes.GetArrayLength() > 0)
+                {
+                    var geometry = routes[0].GetProperty("geometry");
+                    if (geometry.TryGetProperty("coordinates", out var coordinates))
+                    {
+                        foreach (var coord in coordinates.EnumerateArray())
+                        {
+                            var lng = coord[0].GetDouble();
+                            var lat = coord[1].GetDouble();
+                            points.Add(new RoutePointDto(lat, lng));
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không thể kết nối OSRM để tính lộ trình. Sử dụng thuật toán nội suy quỹ đạo tuyến đường.");
+        }
+
+        if (points.Count == 0)
+        {
+            const int totalSteps = 20;
+            for (int i = 0; i <= totalSteps; i++)
+            {
+                double t = (double)i / totalSteps;
+                double lat = startLat + t * (endLat - startLat);
+                double lng = startLng + t * (endLng - startLng);
+
+                if (i > 0 && i < totalSteps)
+                {
+                    double curveOffset = Math.Sin(t * Math.PI) * 0.0008;
+                    lat += curveOffset;
+                    lng += (curveOffset * 0.5);
+                }
+
+                points.Add(new RoutePointDto(Math.Round(lat, 6), Math.Round(lng, 6)));
+            }
+        }
+
+        return points;
+    }
+
     #region Private Helper Methods
 
     private async Task<int> CountActiveTasksForUnitAsync(Guid unitId)
