@@ -76,7 +76,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_AiClassifications_IncidentId");
 
-                    b.ToTable("AiClassifications");
+                    b.ToTable("AiClassifications", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiClassifications_SeverityScore", "\"SeverityScore\" BETWEEN 0 AND 3");
+                        });
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AssignmentStatusHistory", b =>
@@ -452,7 +455,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.HasIndex("MinSeverityLevel")
                         .HasDatabaseName("IX_EscalationRules_Severity");
 
-                    b.ToTable("EscalationRules");
+                    b.ToTable("EscalationRules", t =>
+                        {
+                            t.HasCheckConstraint("CK_EscalationRules_MinSeverityLevel", "\"MinSeverityLevel\" BETWEEN 1 AND 3");
+                        });
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IceContact", b =>
@@ -618,7 +624,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.HasIndex("Status", "Severity")
                         .HasDatabaseName("IX_Incidents_Queue");
 
-                    b.ToTable("Incidents");
+                    b.ToTable("Incidents", t =>
+                        {
+                            t.HasCheckConstraint("CK_Incidents_Severity", "\"Severity\" BETWEEN 0 AND 3");
+                        });
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentAssignment", b =>

@@ -74,17 +74,7 @@ public enum SeverityLevel
     /// <summary>
     /// Mức 3: Khẩn cấp / Thảm họa cao nhất (Cháy lớn toàn tòa nhà, cháy nổ nhà xưởng, sập công trình, nhiều nạn nhân - Tự động leo thang sau 5 phút nếu chưa tiếp nhận)
     /// </summary>
-    Level3 = 3,
-
-    /// <summary>
-    /// [Legacy/Deprecated] Giữ tương thích dữ liệu cũ
-    /// </summary>
-    Level4 = 4,
-
-    /// <summary>
-    /// [Legacy/Deprecated] Giữ tương thích dữ liệu cũ
-    /// </summary>
-    Level5 = 5
+    Level3 = 3
 }
 
 /// <summary>

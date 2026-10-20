@@ -56,12 +56,12 @@ public class AiClassificationService : IAiClassificationService
             return new AiClassificationResultDto
             {
                 HazardTags = new List<string> { "fire", "heavy_smoke", "residential_area" },
-                SeverityScore = 4, // Level 4
+                SeverityScore = 3, // Level 3
                 Summary = "[Mô phỏng AI Qwen2.5-VL] Phát hiện đám cháy bùng phát tại khu vực nhà ở kèm khói đen đặc, nguy cơ lan rộng cao.",
                 ConfidenceScore = 0.92,
                 IsSuccess = true,
                 ModelName = $"{modelName} (Simulated)",
-                RawResponse = "{\"hazardTags\":[\"fire\",\"heavy_smoke\",\"residential_area\"],\"severityScore\":4,\"summary\":\"Phát hiện đám cháy bùng phát tại khu vực nhà ở kèm khói đen đặc.\",\"confidenceScore\":0.92}",
+                RawResponse = "{\"hazardTags\":[\"fire\",\"heavy_smoke\",\"residential_area\"],\"severityScore\":3,\"summary\":\"Phát hiện đám cháy bùng phát tại khu vực nhà ở kèm khói đen đặc.\",\"confidenceScore\":0.92}",
                 ProcessingDurationMs = stopwatch.ElapsedMilliseconds
             };
         }
@@ -89,12 +89,16 @@ public class AiClassificationService : IAiClassificationService
                                "You MUST output ONLY a valid, raw JSON object (NO markdown backticks, NO ```json blocks, NO preamble) matching this schema:\n" +
                                "{\n" +
                                "  \"hazardTags\": [\"fire\", \"smoke\", \"trapped_victims\"],\n" +
-                               "  \"severityScore\": 4,\n" +
+                               "  \"severityScore\": 3,\n" +
                                "  \"summary\": \"Brief concise assessment in Vietnamese.\",\n" +
                                "  \"confidenceScore\": 0.95\n" +
                                "}\n" +
                                "Rules:\n" +
-                               "- severityScore MUST be an integer between 1 and 5 (1: Rất thấp, 2: Thấp, 3: Trung bình, 4: Cao, 5: Cực kỳ khẩn cấp).\n" +
+                               "- severityScore MUST be an integer between 0 and 3:\n" +
+                               "  0: Not an emergency / reject (cooking, BBQ, controlled burning, drills, normal traffic, blurry or irrelevant image).\n" +
+                               "  1: Minor (small trash or grass fire, minor collision, no one trapped).\n" +
+                               "  2: Moderate (one vehicle, room or kiosk on fire; overturned vehicle or injured people but nobody trapped).\n" +
+                               "  3: Critical (large building or factory fire, multi-vehicle crash, tanker involved, trapped or multiple victims).\n" +
                                "- hazardTags: concise lowercase English keywords.\n" +
                                "- summary: 1-2 Vietnamese sentences.\n" +
                                "- confidenceScore: float between 0.0 and 1.0.";
