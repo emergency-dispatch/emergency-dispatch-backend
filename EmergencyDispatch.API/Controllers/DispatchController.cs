@@ -14,7 +14,6 @@ namespace EmergencyDispatch.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Route("api/v1/[controller]")]
 [Authorize]
 public class DispatchController : ControllerBase
 {
