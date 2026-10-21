@@ -74,13 +74,13 @@ public class UserService : IUserService
         if (dto.MobilityLimitations != null) user.MobilityLimitations = dto.MobilityLimitations;
 
         // Special Info
-        user.PreferredLanguage = dto.PreferredLanguage?.Trim();
-        user.DependentsNote = dto.DependentsNote?.Trim();
-        user.HouseholdMembersCount = dto.HouseholdMembersCount;
+        if (dto.HasPreferredLanguage) user.PreferredLanguage = dto.PreferredLanguage?.Trim();
+        if (dto.HasDependentsNote) user.DependentsNote = dto.DependentsNote?.Trim();
+        if (dto.HasHouseholdMembersCount) user.HouseholdMembersCount = dto.HouseholdMembersCount;
 
         // SMS Config
         if (dto.AutoSendSmsOnSos.HasValue) user.AutoSendSmsOnSos = dto.AutoSendSmsOnSos.Value;
-        user.SmsTemplate = dto.SmsTemplate?.Trim();
+        if (dto.HasSmsTemplate) user.SmsTemplate = dto.SmsTemplate?.Trim();
 
         // Đồng bộ người liên hệ khẩn cấp chính
         user.EmergencyContactName = dto.EmergencyContactName?.Trim();

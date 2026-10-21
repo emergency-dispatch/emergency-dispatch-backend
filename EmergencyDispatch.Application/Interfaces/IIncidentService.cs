@@ -34,7 +34,7 @@ public interface IIncidentService
     /// <summary>
     /// Hủy sự cố (báo sai, báo khống, trùng lặp hoặc người dân/khách vãng lai tự hủy SOS)
     /// </summary>
-    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default, string? guestCancellationToken = null);
 
     /// <summary>
     /// Giữ / gia hạn khóa mềm 2 phút khi Operator mở sự cố (FR-OP-02, BR-15). Người khác đang giữ → CONFLICT (MSG32)

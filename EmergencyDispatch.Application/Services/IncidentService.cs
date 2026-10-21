@@ -30,6 +30,7 @@ public class IncidentService : IIncidentService
     private readonly INotificationService _notificationService;
     private readonly IValidator<CreateIncidentDto> _validator;
     private readonly ILogger<IncidentService> _logger;
+    private readonly IGuestCancellationTokenService _guestTokens;
 
     public IncidentService(
         IIncidentRepository incidentRepository,
@@ -40,7 +41,8 @@ public class IncidentService : IIncidentService
         IRealtimeNotifier realtimeNotifier,
         INotificationService notificationService,
         IValidator<CreateIncidentDto> validator,
-        ILogger<IncidentService> logger)
+        ILogger<IncidentService> logger,
+        IGuestCancellationTokenService guestTokens)
     {
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
@@ -51,6 +53,7 @@ public class IncidentService : IIncidentService
         _notificationService = notificationService;
         _validator = validator;
         _logger = logger;
+        _guestTokens = guestTokens;
     }
 
     public async Task<ApiResponseDto<IncidentResponseDto>> CreateIncidentAsync(
@@ -98,10 +101,11 @@ public class IncidentService : IIncidentService
                         : reportingUser.SmsTemplate;
 
                     var smsContent = template
+                        .Replace("{GPS_COORDS}", $"{dto.Latitude:F4},{dto.Longitude:F4}")
                         .Replace("{lat}", dto.Latitude.ToString("F4"))
                         .Replace("{lng}", dto.Longitude.ToString("F4"));
 
-                    smsDispatchLog = $"[SMS SOS DISPATCH]: Đã gửi tin nhắn cấp cứu tới người thân [{primaryIce.Name} ({primaryIce.Relationship}) - SĐT: {primaryIce.PhoneNumber}]: \"{smsContent}\"";
+                    smsDispatchLog = $"[SMS SOS PREPARED - NOT SENT]: Đã chuẩn bị nội dung cấp cứu cho người thân [{primaryIce.Name} ({primaryIce.Relationship}) - SĐT: {primaryIce.PhoneNumber}]: \"{smsContent}\"";
                     _logger.LogInformation("{Log}", smsDispatchLog);
                 }
             }
@@ -220,6 +224,8 @@ public class IncidentService : IIncidentService
         await _realtimeNotifier.IncidentCreatedAsync(MapToResponseDto(incident, null, smsDispatchLog), cancellationToken);
         var responseDto = MapToResponseDto(incident, null, smsDispatchLog, revealPhone: true);
 
+        // Return the secret only to the creator, after publishing the realtime event.
+        if (!userId.HasValue) responseDto.GuestCancellationToken = _guestTokens.Create(incident.Id);
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(
             responseDto,
             willAnalyze
@@ -476,7 +482,8 @@ public class IncidentService : IIncidentService
         Guid id,
         string reason,
         Guid? cancelledByUserId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? guestCancellationToken = null)
     {
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
         if (incident == null)
@@ -519,7 +526,7 @@ public class IncidentService : IIncidentService
 
             // BR-08 / BR-CIT-03 (MSG20): khóa tự hủy khi đội cứu hộ đã được điều động
             var unitsMobilized = incident.Status is IncidentStatus.Dispatched or IncidentStatus.InProgress
-                || incident.DispatchAssignments.Any(a => a.IsActive);
+                || (incident.DispatchAssignments != null && incident.DispatchAssignments.Any(a => a.IsActive));
             if (unitsMobilized)
             {
                 return ApiResponseDto<IncidentResponseDto>.FailureResult(
@@ -527,7 +534,7 @@ public class IncidentService : IIncidentService
             }
         }
 
-        var actorDescription = cancelledByUserId.HasValue ? $"User {cancelledByUserId.Value}" : "Người dân/Khách vãng lai";
+        var actorDescription = $"{cancellingUser.Role} {cancellingUser.FullName} ({cancellingUser.Id})";
 
         // Thực tế: Nếu xe đã xuất phát (Dispatched / EnRoute / OnScene), hủy sự cố sẽ tự động THU HỒI XE về trạng thái Sẵn sàng (Available)
         var recalledUnitsCount = 0;

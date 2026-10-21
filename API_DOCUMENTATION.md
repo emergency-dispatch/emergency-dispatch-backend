@@ -193,7 +193,7 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
     "success": true,
     "message": "Lấy thông tin cá nhân thành công.",
     "data": {
-      "id": "70d2a8b9-...",
+      "id": "70d2a8b9-2095-4fa5-9e16-6b51ec92703a",
       "fullName": "Lê Người Dân",
       "email": "citizen@emergencydispatch.com",
       "phoneNumber": "0904567890",
@@ -212,7 +212,36 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
       "emergencyContactRelationship": "Vợ",
       "fcmToken": null,
       "stationId": null,
-      "stationName": null
+      "stationName": null,
+      "chronicConditions": [
+        "Hen suyễn"
+      ],
+      "allergies": [
+        "Penicillin"
+      ],
+      "currentMedications": [
+        "Thuốc theo chỉ định"
+      ],
+      "mobilityLimitations": [
+        "Sử dụng xe lăn"
+      ],
+      "preferredLanguage": "Tiếng Việt",
+      "dependentsNote": "Có trẻ nhỏ và người cao tuổi sống cùng",
+      "householdMembersCount": 4,
+      "autoSendSmsOnSos": true,
+      "smsTemplate": "SOS tại {GPS_COORDS}. Tôi cần hỗ trợ khẩn cấp!",
+      "iceContacts": [
+        {
+          "id": "1c918986-144d-4f58-a2dc-d92b67593967",
+          "userId": "70d2a8b9-2095-4fa5-9e16-6b51ec92703a",
+          "name": "Lê Thị Thân",
+          "phoneNumber": "0911223344",
+          "relationship": "Vợ",
+          "isPrimary": true,
+          "createdAt": "2026-10-21T03:00:00Z",
+          "updatedAt": null
+        }
+      ]
     }
   }
   ```
@@ -234,9 +263,49 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
     "medicalNotes": "Dị ứng thuốc kháng sinh nhóm Penicillin; Tiền sử huyết áp thấp.",
     "emergencyContactName": "Lê Thị Thân",
     "emergencyContactPhone": "0911223344",
-    "emergencyContactRelationship": "Vợ"
+    "emergencyContactRelationship": "Vợ",
+    "chronicConditions": [
+      "Hen suyễn"
+    ],
+    "allergies": [
+      "Penicillin"
+    ],
+    "currentMedications": [
+      "Thuốc theo chỉ định"
+    ],
+    "mobilityLimitations": [
+      "Sử dụng xe lăn"
+    ],
+    "preferredLanguage": "Tiếng Việt",
+    "dependentsNote": "Có trẻ nhỏ và người cao tuổi sống cùng",
+    "householdMembersCount": 4,
+    "autoSendSmsOnSos": true,
+    "smsTemplate": "SOS tại {GPS_COORDS}. Tôi cần hỗ trợ khẩn cấp!"
   }
   ```
+
+* **Trường mở rộng** (GET trả về, PUT cập nhật):
+
+  | Trường | Kiểu dữ liệu | Ý nghĩa / giới hạn |
+  |---|---|---|
+  | `chronicConditions` | `string[]` | Bệnh nền |
+  | `allergies` | `string[]` | Dị ứng |
+  | `currentMedications` | `string[]` | Thuốc đang sử dụng |
+  | `mobilityLimitations` | `string[]` | Hạn chế thể chất / khuyết tật |
+  | `preferredLanguage` | `string / null` | Ngôn ngữ ưu tiên, tối đa 50 ký tự |
+  | `dependentsNote` | `string / null` | Người phụ thuộc, tối đa 1.000 ký tự |
+  | `householdMembersCount` | `integer / null` | Số thành viên gia đình, từ 0 đến 100 |
+  | `autoSendSmsOnSos` | `boolean` | Bật/tắt chuẩn bị SMS khi SOS |
+  | `smsTemplate` | `string / null` | Mẫu SMS, tối đa 500 ký tự |
+
+* **Quy tắc cập nhật**:
+  * `fullName` bắt buộc, tối đa 100 ký tự.
+  * Bốn mảng Medical ID: bỏ trường hoặc gửi `null` thì giữ nguyên; gửi `[]` thì xóa danh sách.
+  * `preferredLanguage`, `dependentsNote`, `householdMembersCount`, `smsTemplate`: bỏ trường thì giữ nguyên; gửi `null` thì xóa.
+  * `autoSendSmsOnSos`: bỏ trường hoặc gửi `null` thì giữ nguyên; gửi `false` để tắt.
+  * Các quy tắc giữ nguyên trên chỉ áp dụng cho những trường được liệt kê. Với trường hồ sơ cũ như số điện thoại, ngày sinh, địa chỉ, nhóm máu, ghi chú y tế và ba trường `emergencyContact...`, bỏ trường trong PUT có thể xóa dữ liệu đang lưu; client cần gửi lại giá trị muốn giữ.
+  * `iceContacts` là danh sách trả về; quản lý từng liên hệ bằng API ở mục 1.14.
+* **SMS hiện tại**: khi người dùng đã đăng nhập bật cấu hình và có ICE, BE chọn primary (hoặc người đầu tiên nếu không có primary), thay `{GPS_COORDS}`, `{lat}`, `{lng}` trong mẫu. Mẫu trống dùng nội dung mặc định. BE chỉ chuẩn bị nội dung và ghi log `SMS SOS PREPARED - NOT SENT`, **chưa tích hợp dịch vụ gửi SMS thật**.
 
 #### 1.13. Cập nhật FCM Token (`PUT /api/users/fcm-token`)
 * **Header**: `Authorization: Bearer <token>`
@@ -267,6 +336,35 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
     "isPrimary": true
   }
   ```
+
+* **Response GET (200 OK)**:
+  ```json
+  {
+    "success": true,
+    "message": "Lấy danh bạ người thân khẩn cấp thành công.",
+    "data": [
+      {
+        "id": "1c918986-144d-4f58-a2dc-d92b67593967",
+        "userId": "70d2a8b9-2095-4fa5-9e16-6b51ec92703a",
+        "name": "Lê Thị Thân",
+        "phoneNumber": "0911223344",
+        "relationship": "Vợ",
+        "isPrimary": true,
+        "createdAt": "2026-10-21T03:00:00Z",
+        "updatedAt": null
+      }
+    ],
+    "errors": null
+  }
+  ```
+
+* POST/PUT thành công trả **200 OK**, `data` là một đối tượng liên hệ có cấu trúc như phần tử trong danh sách trên. DELETE thành công trả **200 OK**, `data: null`.
+* **Quy tắc primary**:
+  * Người đầu tiên tự động là primary, kể cả khi gửi `isPrimary:false`.
+  * Tạo/chuyển một người thành primary sẽ bỏ primary cũ và đồng bộ `emergencyContactName`, `emergencyContactPhone`, `emergencyContactRelationship` trên User.
+  * Xóa primary sẽ chọn một người còn lại thay thế; nếu không còn ai thì xóa ba trường liên hệ cũ.
+* **Giới hạn hiện tại**: PUT primary thành `isPrimary:false` chưa tự chọn người thay thế hoặc làm sạch ba trường liên hệ cũ; nên đặt người thay thế thành primary trước. Sửa ba trường `emergencyContact...` qua PUT `/api/users/me` chưa cập nhật ngược danh sách ICE; nên dùng API ICE để quản lý danh bạ.
+* **Quyền và validation**: chỉ quản lý danh bạ của tài khoản đang đăng nhập. Chưa đăng nhập trả **401**; PUT/DELETE liên hệ không tồn tại hoặc thuộc người khác trả **404**. POST/PUT bắt buộc `name` (tối đa 100 ký tự), `phoneNumber` (đúng định dạng điện thoại, tối đa 20 ký tự), `relationship` (tối đa 50 ký tự); dữ liệu không hợp lệ trả **400**.
 
 ---
 
@@ -316,7 +414,9 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
           "mediaType": "Photo"
         }
       ],
-      "aiClassification": null
+      "aiClassification": null,
+      "reportedByUserId": null,
+      "guestCancellationToken": "<mã hủy Guest do BE sinh khi tạo sự cố>"
     }
   }
   ```
@@ -332,6 +432,14 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
     "processingDurationMs": 1420
   }
   ```
+
+* **Mã hủy Guest SOS**:
+  * Khi tạo SOS chưa đăng nhập, response có `data.guestCancellationToken` tương ứng `data.id`, hiệu lực **24 giờ**.
+  * Client cần lưu cặp ID/mã để hủy theo mục 2.6. Mã là bí mật, không phải JWT.
+  * Chỉ trả mã trong response tạo Guest SOS; không trả qua GET chi tiết, danh sách, hàng đợi hoặc sự kiện realtime. SOS tạo khi đã đăng nhập không có mã này.
+  * Guest SOS cũ hoặc mất mã cần Operator/Admin hỗ trợ hủy; không có API lấy lại mã.
+  * Token dùng ASP.NET Core Data Protection; khi triển khai cần giữ key ring qua các lần khởi động và chia sẻ key ring giữa các API instance để xác minh token trong thời hạn.
+* **Hồ sơ và SMS trong response**: SOS gắn tài khoản khi tìm được hồ sơ có `reporterMedicalProfile` gồm Medical ID, Special Info và `iceContacts`. Guest không có hồ sơ tài khoản liên kết. `emergencySmsDispatchLog` chứa thông tin chuẩn bị SMS nếu bật cấu hình và có ICE; **không xác nhận đã gửi SMS**.
 
 #### 2.2. Hàng đợi sự cố chờ duyệt dành cho Điều phối viên (`GET /api/incidents/queue`)
 * **Mô tả**: Lấy danh sách sự cố chưa duyệt (`Pending`, `AiProcessing` hoặc `AiProcessed`).
@@ -382,14 +490,26 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
 * **Response (200 OK)**: Sự cố chuyển sang trạng thái `Verified`.
 
 #### 2.6. Hủy sự cố báo sai / báo khống (`PUT /api/incidents/{id}/cancel`)
-* **Quyền hạn**: Công khai (người báo tự hủy) hoặc Operator.
-* **Request Body**:
+* **Quyền hạn**:
+  * Citizen đã đăng nhập: chỉ hủy SOS của chính mình, dùng `Authorization: Bearer <token>`.
+  * Operator/Admin: được hủy sự cố bằng JWT.
+  * Guest: không cần đăng nhập nhưng phải gửi đúng `cancellationToken` tương ứng ID sự cố. Cho phép anonymous không có nghĩa ai cũng được hủy mọi sự cố.
+* **Request Body cho Guest**:
   ```json
   {
-    "reason": "Báo khống, đã gọi lại xác minh không có hiện trường"
+    "reason": "Người báo xác nhận bấm nhầm SOS",
+    "cancellationToken": "<guestCancellationToken trả về khi tạo Guest SOS>"
   }
   ```
-* **Response (200 OK)**: Sự cố chuyển sang trạng thái `Cancelled`.
+* **Request Body khi dùng JWT và có quyền hủy**:
+  ```json
+  {
+    "reason": "Đã xác minh báo nhầm sự cố"
+  }
+  ```
+* `reason` không bắt buộc, tối đa 500 ký tự; bỏ trống dùng lý do mặc định. `cancellationToken` tối đa 2.048 ký tự, chỉ dùng cho Guest SOS.
+* **200 OK**: `success:true`, `data.status: "Cancelled"`. Các phân công đang hoạt động được hủy/thu hồi, đơn vị tương ứng được cập nhật theo logic xử lý sự cố và phát cập nhật realtime.
+* **400 Bad Request**: không tìm thấy sự cố; đã `Completed`/`Cancelled`; không có quyền; mã Guest thiếu, sai, hết hạn hoặc thuộc sự cố khác. Các lỗi quyền trong luồng này hiện trả 400 thay vì 401/403.
 
 ---
 

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using EmergencyDispatch.Domain.Enums;
 
 namespace EmergencyDispatch.Application.DTOs.User;
@@ -32,19 +33,47 @@ public class UpdateProfileDto
 
     // Thông tin đặc thù cứu nạn tại hiện trường (Special Info)
     [MaxLength(50, ErrorMessage = "Ngôn ngữ ưu tiên tối đa 50 ký tự")]
-    public string? PreferredLanguage { get; set; }
+    public string? PreferredLanguage
+    {
+        get => _preferredLanguage;
+        set { _preferredLanguage = value; HasPreferredLanguage = true; }
+    }
+    private string? _preferredLanguage;
+    [JsonIgnore]
+    public bool HasPreferredLanguage { get; private set; }
 
     [MaxLength(1000, ErrorMessage = "Ghi chú người phụ thuộc tối đa 1000 ký tự")]
-    public string? DependentsNote { get; set; }
+    public string? DependentsNote
+    {
+        get => _dependentsNote;
+        set { _dependentsNote = value; HasDependentsNote = true; }
+    }
+    private string? _dependentsNote;
+    [JsonIgnore]
+    public bool HasDependentsNote { get; private set; }
 
     [Range(0, 100, ErrorMessage = "Số lượng thành viên trong gia đình không hợp lệ")]
-    public int? HouseholdMembersCount { get; set; }
+    public int? HouseholdMembersCount
+    {
+        get => _householdMembersCount;
+        set { _householdMembersCount = value; HasHouseholdMembersCount = true; }
+    }
+    private int? _householdMembersCount;
+    [JsonIgnore]
+    public bool HasHouseholdMembersCount { get; private set; }
 
     // Cấu hình gửi SMS khẩn cấp
     public bool? AutoSendSmsOnSos { get; set; }
 
     [MaxLength(500, ErrorMessage = "Mẫu tin nhắn SMS tối đa 500 ký tự")]
-    public string? SmsTemplate { get; set; }
+    public string? SmsTemplate
+    {
+        get => _smsTemplate;
+        set { _smsTemplate = value; HasSmsTemplate = true; }
+    }
+    private string? _smsTemplate;
+    [JsonIgnore]
+    public bool HasSmsTemplate { get; private set; }
 
     // Người liên hệ khẩn cấp chính (Backward compatibility)
     public string? EmergencyContactName { get; set; }

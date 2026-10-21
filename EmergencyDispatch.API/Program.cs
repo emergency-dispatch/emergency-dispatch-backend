@@ -232,6 +232,8 @@ builder.Services.AddAuthentication(options =>
 
 // 10. Authorization
 builder.Services.AddAuthorization();
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<IGuestCancellationTokenService, EmergencyDispatch.API.Services.GuestCancellationTokenService>();
 
 // 11. Rate Limiting chống spam endpoint công khai (BR-CIT-01, chống dò mật khẩu)
 builder.Services.AddRateLimiter(options =>
