@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Mvc;
 namespace EmergencyDispatch.API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
 [Route("api/rescue-units")]
 public class RescueUnitsController : ControllerBase
 {

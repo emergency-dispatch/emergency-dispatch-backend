@@ -11,7 +11,7 @@ public class AiClassification : BaseEntity
     public Incident? Incident { get; set; }
 
     /// <summary>
-    /// Mức độ nghiêm trọng do AI đề xuất (Level 0: Unclassified / Fallback, Level 1-5)
+    /// Mức độ nghiêm trọng do AI đề xuất (Level 0: Reject / Unclassified / Fallback, Level 1-3)
     /// </summary>
     public SeverityLevel SeverityScore { get; set; } = SeverityLevel.Unclassified;
 

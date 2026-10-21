@@ -15,7 +15,7 @@ public class AiClassificationResultDto
     public List<string> HazardTags { get; set; } = new();
 
     /// <summary>
-    /// Điểm mức độ nghiêm trọng (0: Unclassified, 1: Rất thấp, ..., 5: Cực độ khẩn cấp)
+    /// Điểm mức độ nghiêm trọng (0: Reject / Unclassified, 1: Nhẹ, 2: Trung bình, 3: Khẩn cấp cao nhất)
     /// </summary>
     [JsonPropertyName("severityScore")]
     public int SeverityScore { get; set; }
@@ -33,10 +33,10 @@ public class AiClassificationResultDto
     public bool IsTrafficJam { get; set; }
 
     /// <summary>
-    /// Enum SeverityLevel tương ứng
+    /// Enum SeverityLevel tương ứng (chuẩn 0-3; điểm ngoài khoảng được kẹp về 0 hoặc Level3)
     /// </summary>
     [JsonIgnore]
-    public SeverityLevel SeverityLevel => (SeverityLevel)Math.Clamp(SeverityScore, 0, 5);
+    public SeverityLevel SeverityLevel => (SeverityLevel)Math.Clamp(SeverityScore, 0, 3);
 
     /// <summary>
     /// Tóm tắt nhanh nhận định của AI về hiện trường sự cố

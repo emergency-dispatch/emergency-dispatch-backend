@@ -92,7 +92,7 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
             .Include(i => i.AiClassification)
             .Where(i => i.Status == IncidentStatus.Pending || i.Status == IncidentStatus.AiProcessed)
             .OrderByDescending(i => i.Severity == SeverityLevel.Unclassified) // Unclassified lên đầu
-            .ThenByDescending(i => i.Severity)                               // Sau đó giảm dần 5 -> 1
+            .ThenByDescending(i => i.Severity)                               // Sau đó giảm dần 3 -> 1
             .ThenBy(i => i.CreatedAt)                                        // Cùng mức thì ai đến trước xử lý trước (FIFO)
             .ToListAsync(cancellationToken);
     }

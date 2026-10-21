@@ -8,6 +8,7 @@ namespace EmergencyDispatch.Application.DTOs.Escalation;
 /// </summary>
 public class UpdateEscalationRuleDto
 {
+    [Range(1, 3, ErrorMessage = "Mức độ leo thang tối thiểu phải từ 1 đến 3")]
     public SeverityLevel? MinSeverityLevel { get; set; }
 
     [Range(1, 60, ErrorMessage = "Thời gian timeout phải từ 1 đến 60 phút")]

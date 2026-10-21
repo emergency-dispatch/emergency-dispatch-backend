@@ -8,7 +8,7 @@ namespace EmergencyDispatch.Application.Interfaces;
 public interface IAiClassificationService
 {
     /// <summary>
-    /// Gửi media (ảnh/video) đến mô hình Vision-Language để phát hiện nguy cơ và chấm điểm Severity (1-5)
+    /// Gửi media (ảnh/video) đến mô hình Vision-Language để phát hiện nguy cơ và chấm điểm Severity (0-3)
     /// Đảm bảo luôn trả về kết quả an toàn (Fallback Severity = 0 nếu có lỗi).
     /// </summary>
     /// <param name="mediaUrl">Đường dẫn ảnh hoặc video</param>

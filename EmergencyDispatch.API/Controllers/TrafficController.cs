@@ -12,7 +12,6 @@ namespace EmergencyDispatch.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Route("api/v1/[controller]")]
 public class TrafficController : ControllerBase
 {
     private readonly ITrafficService _trafficService;

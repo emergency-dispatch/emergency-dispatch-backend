@@ -197,6 +197,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Incident>(entity =>
         {
             entity.HasKey(i => i.Id);
+            entity.ToTable(t => t.HasCheckConstraint("CK_Incidents_Severity", "\"Severity\" BETWEEN 0 AND 3"));
             entity.HasIndex(i => i.Status).HasDatabaseName("IX_Incidents_Status");
             entity.HasIndex(i => i.Severity).HasDatabaseName("IX_Incidents_Severity");
             entity.HasIndex(i => new { i.Status, i.Severity }).HasDatabaseName("IX_Incidents_Queue");
@@ -280,6 +281,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<AiClassification>(entity =>
         {
             entity.HasKey(a => a.Id);
+            entity.ToTable(t => t.HasCheckConstraint("CK_AiClassifications_SeverityScore", "\"SeverityScore\" BETWEEN 0 AND 3"));
             entity.HasIndex(a => a.IncidentId).IsUnique().HasDatabaseName("IX_AiClassifications_IncidentId");
 
             entity.Property(a => a.ModelName).HasMaxLength(200);
@@ -462,6 +464,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<EscalationRule>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.ToTable(t => t.HasCheckConstraint("CK_EscalationRules_MinSeverityLevel", "\"MinSeverityLevel\" BETWEEN 1 AND 3"));
             entity.HasIndex(e => e.MinSeverityLevel).HasDatabaseName("IX_EscalationRules_Severity");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_EscalationRules_Active");
 
