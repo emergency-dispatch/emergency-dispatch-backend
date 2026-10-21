@@ -1,4 +1,5 @@
 using BCrypt.Net;
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.User;
 using EmergencyDispatch.Application.Interfaces;
@@ -35,7 +36,7 @@ public class UserService : IUserService
     public async Task<UserResponseDto> GetByIdAsync(Guid id)
     {
         var user = await _userRepository.GetByIdWithDetailsAsync(id)
-            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {id}");
+            ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy người dùng với Id = {0}", id));
 
         return MapToUserResponseDto(user);
     }
@@ -136,7 +137,7 @@ public class UserService : IUserService
     public async Task<UserResponseDto> UpdateUserAsync(Guid id, UpdateUserDto dto, UserRole actorRole)
     {
         var user = await _userRepository.GetByIdWithDetailsAsync(id)
-            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {id}");
+            ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy người dùng với Id = {0}", id));
 
         EnsureCanManageRole(actorRole, user.Role);
         if (dto.Role.HasValue)
@@ -305,7 +306,7 @@ public class UserService : IUserService
         var contact = await _iceContactRepository.GetByIdAsync(contactId);
         if (contact == null || contact.UserId != userId)
         {
-            throw new KeyNotFoundException($"Không tìm thấy người thân liên hệ với Id = {contactId}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy người thân liên hệ với Id = {0}", contactId));
         }
 
         if (dto.IsPrimary && !contact.IsPrimary)
@@ -392,14 +393,14 @@ public class UserService : IUserService
     public async Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto, UserRole actorRole)
     {
         var user = await _userRepository.GetByIdWithDetailsAsync(userId)
-            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {userId}");
+            ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy người dùng với Id = {0}", userId));
 
         EnsureCanManageRole(actorRole, user.Role);
 
         if (dto.StationId.HasValue)
         {
             var station = await _stationRepository.GetByIdAsync(dto.StationId.Value)
-                ?? throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với Id = {dto.StationId.Value}");
+                ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với Id = {0}", dto.StationId.Value));
             user.StationId = dto.StationId;
         }
         else
@@ -427,7 +428,7 @@ public class UserService : IUserService
     public async Task<IReadOnlyList<TeamMemberSummaryDto>> GetStaffByStationAsync(Guid stationId)
     {
         var station = await _stationRepository.GetByIdAsync(stationId)
-            ?? throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với Id = {stationId}");
+            ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với Id = {0}", stationId));
 
         var staffList = await _userRepository.GetByStationWithTeamAsync(stationId);
 

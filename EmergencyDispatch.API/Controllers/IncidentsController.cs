@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Incident;
 using EmergencyDispatch.Application.Interfaces;
@@ -177,7 +178,7 @@ public class IncidentsController : ControllerBase
             return Unauthorized(ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn chưa xác thực tài khoản."));
         }
 
-        var reason = !string.IsNullOrWhiteSpace(dto?.Reason) ? dto.Reason : "Người dùng tự hủy sự cố";
+        var reason = !string.IsNullOrWhiteSpace(dto?.Reason) ? dto.Reason : LocalizationHelper.Localize("Người dùng tự hủy sự cố");
         var response = await _incidentService.CancelIncidentAsync(id, reason, currentUserId, cancellationToken);
         return this.ToHttpResult(response);
     }

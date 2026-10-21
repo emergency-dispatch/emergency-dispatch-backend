@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Incident;
@@ -97,15 +99,16 @@ public class IncidentService : IIncidentService
                     var primaryIce = reportingUser.IceContacts.FirstOrDefault(c => c.IsPrimary) 
                                      ?? reportingUser.IceContacts.First();
                     var template = string.IsNullOrWhiteSpace(reportingUser.SmsTemplate)
-                        ? "CẤP CỨU: Tôi vừa bấm SOS tại tọa độ {lat},{lng}. Cần hỗ trợ khẩn cấp!"
+                        ? LocalizationHelper.Localize("CẤP CỨU: Tôi vừa bấm SOS tại tọa độ {lat},{lng}. Cần hỗ trợ khẩn cấp!")
                         : reportingUser.SmsTemplate;
 
                     var smsContent = template
-                        .Replace("{GPS_COORDS}", $"{dto.Latitude:F4},{dto.Longitude:F4}")
-                        .Replace("{lat}", dto.Latitude.ToString("F4"))
-                        .Replace("{lng}", dto.Longitude.ToString("F4"));
+                        .Replace("{GPS_COORDS}", FormattableString.Invariant($"{dto.Latitude:F4},{dto.Longitude:F4}"))
+                        .Replace("{lat}", dto.Latitude.ToString("F4", CultureInfo.InvariantCulture))
+                        .Replace("{lng}", dto.Longitude.ToString("F4", CultureInfo.InvariantCulture));
 
-                    smsDispatchLog = $"[SMS SOS PREPARED - NOT SENT]: Đã chuẩn bị nội dung cấp cứu cho người thân [{primaryIce.Name} ({primaryIce.Relationship}) - SĐT: {primaryIce.PhoneNumber}]: \"{smsContent}\"";
+                    smsDispatchLog = LocalizationHelper.Localize("[SMS SOS PREPARED - NOT SENT]: Đã chuẩn bị nội dung cấp cứu cho người thân [{0} ({1}) - SĐT: {2}]: \"{3}\"",
+                        primaryIce.Name, primaryIce.Relationship, primaryIce.PhoneNumber, smsContent);
                     _logger.LogInformation("{Log}", smsDispatchLog);
                 }
             }
@@ -385,14 +388,15 @@ public class IncidentService : IIncidentService
             || (incident.Status == IncidentStatus.Escalated && incident.VerifiedAt == null);
         if (!awaitingVerification)
         {
-            return ApiResponseDto<IncidentResponseDto>.FailureResult($"Sự cố đang ở trạng thái '{incident.Status}', không thể xác minh lại.");
+            return ApiResponseDto<IncidentResponseDto>.FailureResult(LocalizationHelper.Localize("Sự cố đang ở trạng thái '{0}', không thể xác minh lại.", incident.Status));
         }
 
         // BR-15: không được thao tác khi Operator khác đang giữ khóa
         if (incident.IsLockedByOther(operatorId, DateTime.UtcNow))
         {
             return ApiResponseDto<IncidentResponseDto>.ConflictResult(
-                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}. Vui lòng chờ khóa hết hạn.");
+                LocalizationHelper.Localize("Sự cố đang được xử lý bởi {0}. Vui lòng chờ khóa hết hạn.",
+                    incident.LockedByOperator?.FullName ?? LocalizationHelper.Localize("điều phối viên khác")));
         }
 
         var oldStatus = incident.Status;
@@ -513,7 +517,8 @@ public class IncidentService : IIncidentService
         if (isCommandCenter && incident.IsLockedByOther(cancellingUser.Id, DateTime.UtcNow))
         {
             return ApiResponseDto<IncidentResponseDto>.ConflictResult(
-                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}. Vui lòng chờ khóa hết hạn.");
+                LocalizationHelper.Localize("Sự cố đang được xử lý bởi {0}. Vui lòng chờ khóa hết hạn.",
+                    incident.LockedByOperator?.FullName ?? LocalizationHelper.Localize("điều phối viên khác")));
         }
 
         if (!isCommandCenter)
@@ -546,7 +551,7 @@ public class IncidentService : IIncidentService
                     assignment.Status != DispatchAssignmentStatus.Cancelled)
                 {
                     assignment.Status = DispatchAssignmentStatus.Cancelled;
-                    assignment.Notes = $"[THU HỒI XE]: Sự cố bị hủy bởi {actorDescription}. Lý do: {reason}";
+                    assignment.Notes = LocalizationHelper.Localize("[THU HỒI XE]: Sự cố bị hủy bởi {0}. Lý do: {1}", actorDescription, reason);
                     assignment.UpdatedAt = DateTime.UtcNow;
 
                     if (assignment.RescueUnit != null)
@@ -566,8 +571,8 @@ public class IncidentService : IIncidentService
             incident.VerifiedAt = DateTime.UtcNow;
         }
 
-        var recallNote = recalledUnitsCount > 0 ? $" (Đã thu hồi {recalledUnitsCount} xe đang xuất phát)" : string.Empty;
-        incident.OperatorNotes = $"[ĐÃ HỦY bởi {actorDescription}{recallNote}]: {reason}".Trim();
+        var recallNote = recalledUnitsCount > 0 ? " " + LocalizationHelper.Localize("(Đã thu hồi {0} xe đang xuất phát)", recalledUnitsCount) : string.Empty;
+        incident.OperatorNotes = LocalizationHelper.Localize("[ĐÃ HỦY bởi {0}{1}]: {2}", actorDescription, recallNote, reason).Trim();
         incident.UpdatedAt = DateTime.UtcNow;
 
         await _incidentRepository.UpdateAsync(incident);
@@ -576,7 +581,7 @@ public class IncidentService : IIncidentService
             id, actorDescription, recalledUnitsCount, reason);
 
         var successMessage = recalledUnitsCount > 0
-            ? $"Đã hủy sự cố thành công và tự động phát lệnh thu hồi {recalledUnitsCount} xe cứu hộ quay về trạm."
+            ? LocalizationHelper.Localize("Đã hủy sự cố thành công và tự động phát lệnh thu hồi {0} xe cứu hộ quay về trạm.", recalledUnitsCount)
             : "Đã hủy sự cố thành công.";
 
         var responseDto = MapToResponseDto(incident);

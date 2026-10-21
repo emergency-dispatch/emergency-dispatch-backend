@@ -28,7 +28,8 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
-    });
+    })
+    .ConfigureApiBehaviorOptions(LocalizedValidationResponseFactory.Configure);
 
 builder.Services.AddSignalR()
     .AddJsonProtocol(options =>
