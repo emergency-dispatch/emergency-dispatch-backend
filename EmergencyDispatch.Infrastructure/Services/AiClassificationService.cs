@@ -137,7 +137,8 @@ public class AiClassificationService : IAiClassificationService
                     }
                 },
                 temperature = 0.2,
-                max_tokens = 600
+                // JSON kết quả chỉ ~150 token; để thấp giúp không bị 402 khi tài khoản còn ít credit
+                max_tokens = _configuration.GetValue("OpenRouter:MaxTokens", 300)
             };
 
             var jsonContent = new StringContent(
@@ -219,7 +220,8 @@ public class AiClassificationService : IAiClassificationService
         try
         {
             var client = _httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(45);
+            // Lần suy luận đầu sau khi bật GPU có thể mất > 30s
+            client.Timeout = TimeSpan.FromSeconds(_configuration.GetValue("AiService:LocalTimeoutSeconds", 90));
 
             using var form = new MultipartFormDataContent();
             form.Add(new StringContent(mediaUrl), "image_url");
@@ -231,7 +233,9 @@ public class AiClassificationService : IAiClassificationService
             var response = await client.PostAsync(localUrl, form, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Local AI Service trả về mã {StatusCode}. Tự động chuyển fallback.", response.StatusCode);
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Local AI Service trả về mã {StatusCode}: {Body}. Tự động chuyển fallback.",
+                    (int)response.StatusCode, errorBody.Length > 300 ? errorBody[..300] : errorBody);
                 return null;
             }
 
@@ -276,9 +280,10 @@ public class AiClassificationService : IAiClassificationService
                 ProcessingDurationMs = stopwatch.ElapsedMilliseconds
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogDebug(ex, "Local AI Service ({Url}) hiện không khả dụng. Chuyển sang dịch vụ AI đám mây/mô phỏng.", localUrl);
+            _logger.LogWarning("Local AI Service ({Url}) không khả dụng: {Reason}. Chuyển sang dịch vụ AI đám mây/mô phỏng.",
+                localUrl, ex is TaskCanceledException ? "quá thời gian chờ" : ex.Message);
             return null;
         }
     }
