@@ -18,10 +18,12 @@ namespace EmergencyDispatch.API.Controllers;
 public class DispatchController : ControllerBase
 {
     private readonly IDispatchService _dispatchService;
+    private readonly IIncidentService _incidentService;
 
-    public DispatchController(IDispatchService dispatchService)
+    public DispatchController(IDispatchService dispatchService, IIncidentService incidentService)
     {
         _dispatchService = dispatchService;
+        _incidentService = incidentService;
     }
 
     /// <summary>
@@ -30,7 +32,7 @@ public class DispatchController : ControllerBase
     /// <param name="incidentId">Mã định danh sự cố</param>
     /// <param name="algorithm">Thuật toán lựa chọn: NearestAvailable (0) hoặc LoadAware (1)</param>
     /// <param name="unitType">Tùy chọn lọc theo loại phương tiện (vd: Ambulance, FireTruck...)</param>
-    /// <param name="maxDistanceKm">Bán kính quét tối đa tính từ hiện trường (mặc định 15 km)</param>
+    /// <param name="maxDistanceKm">Bán kính quét cố định (km). Bỏ trống để tự mở rộng theo các nấc 10 → 15 → 22.5 → 30 km (BR-12)</param>
     /// <param name="cancellationToken">Cancellation Token</param>
     [HttpGet("recommend")]
     [Authorize(Roles = "Operator,Admin")]
@@ -40,7 +42,7 @@ public class DispatchController : ControllerBase
         [FromQuery] Guid incidentId,
         [FromQuery] DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
         [FromQuery] RescueUnitType? unitType = null,
-        [FromQuery] double maxDistanceKm = 15.0,
+        [FromQuery] double? maxDistanceKm = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _dispatchService.GetRecommendationsAsync(
@@ -50,12 +52,7 @@ public class DispatchController : ControllerBase
             maxDistanceKm,
             cancellationToken);
 
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
+        return this.ToHttpResult(result);
     }
 
     /// <summary>
@@ -66,16 +63,11 @@ public class DispatchController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<List<RecommendedUnitResponseDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAvailableUnits(
         [FromQuery] Guid incidentId,
-        [FromQuery] double maxDistanceKm = 15.0,
+        [FromQuery] double? maxDistanceKm = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _dispatchService.GetAvailableUnitsNearbyAsync(incidentId, maxDistanceKm, cancellationToken);
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
+        return this.ToHttpResult(result);
     }
 
     /// <summary>
@@ -83,20 +75,16 @@ public class DispatchController : ControllerBase
     /// </summary>
     [HttpPost("assign")]
     [Authorize(Roles = "Operator,Admin")]
-    [ProducesResponseType(typeof(ApiResponseDto<DispatchAssignmentResponseDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponseDto<DispatchAssignmentResponseDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> AssignUnit(
         [FromBody] AssignDispatchDto dto,
         CancellationToken cancellationToken)
     {
         var operatorId = GetCurrentUserId();
         var result = await _dispatchService.AssignUnitAsync(dto, operatorId, cancellationToken);
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
+        return this.ToHttpResult(result);
     }
 
     /// <summary>
@@ -120,10 +108,15 @@ public class DispatchController : ControllerBase
     /// Lấy danh sách các lượt điều phối của một sự cố (Cho phép người dân theo dõi vị trí xe cứu hộ)
     /// </summary>
     [HttpGet("assignments/incident/{incidentId:guid}")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAssignmentsByIncident(Guid incidentId, CancellationToken cancellationToken)
     {
+        if (!await _incidentService.CanAccessIncidentAsync(incidentId, GetCurrentUserId(), cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult("Bạn không có quyền xem phân công của sự cố này."));
+        }
+
         var result = await _dispatchService.GetAssignmentsByIncidentIdAsync(incidentId, cancellationToken);
         return Ok(result);
     }
@@ -132,11 +125,18 @@ public class DispatchController : ControllerBase
     /// Lấy thông tin đường di chuyển cứu hộ, tọa độ xe thời gian thực và thời gian dự kiến (ETA) cho Người dân
     /// </summary>
     [HttpGet("tracking/incident/{incidentId:guid}")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponseDto<CitizenTrackingResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<CitizenTrackingResponseDto>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponseDto<CitizenTrackingResponseDto>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetCitizenTracking(Guid incidentId, CancellationToken cancellationToken)
     {
+        // FR-CIT-03 / BR-CIT-05: vị trí xe chỉ dành cho người báo và nhân sự điều phối
+        if (!await _incidentService.CanAccessIncidentAsync(incidentId, GetCurrentUserId(), cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseDto<CitizenTrackingResponseDto>.FailureResult("Bạn không có quyền theo dõi sự cố này."));
+        }
+
         var result = await _dispatchService.GetCitizenTrackingAsync(incidentId, cancellationToken);
         if (!result.Success)
         {
@@ -173,16 +173,28 @@ public class DispatchController : ControllerBase
     {
         var rescuerUserId = GetCurrentUserId();
         var result = await _dispatchService.UpdateAssignmentStatusAsync(id, dto, rescuerUserId, cancellationToken);
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
+        return this.ToHttpResult(result);
     }
 
     /// <summary>
-    /// Nghiệm thu hiện trường, gửi báo cáo hoàn thành và đóng hồ sơ sự cố (Ghi nhận KPI T_Response)
+    /// Đội cứu hộ từ chối lệnh điều phối kèm lý do bắt buộc (FR-RS-01, BR-22). Xe hỏng → chuyển Maintenance.
+    /// </summary>
+    [HttpPost("assignments/{id:guid}/reject")]
+    [Authorize(Roles = "RescueStaff,Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<DispatchAssignmentResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<DispatchAssignmentResponseDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<DispatchAssignmentResponseDto>), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> RejectAssignment(
+        Guid id,
+        [FromBody] RejectAssignmentDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _dispatchService.RejectAssignmentAsync(id, dto, GetCurrentUserId(), cancellationToken);
+        return this.ToHttpResult(result);
+    }
+
+    /// <summary>
+    /// Nghiệm thu hiện trường của một xe (FR-RS-03). Sự cố chỉ đóng khi mọi xe đã nghiệm thu (BR-14); xe vào CoolDown 5 phút (BR-27)
     /// </summary>
     [HttpPost("assignments/{id:guid}/resolve")]
     [Authorize(Roles = "RescueStaff,Operator,Admin")]
@@ -195,12 +207,7 @@ public class DispatchController : ControllerBase
     {
         var rescuerUserId = GetCurrentUserId();
         var result = await _dispatchService.ResolveAssignmentAsync(id, dto, rescuerUserId, cancellationToken);
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
+        return this.ToHttpResult(result);
     }
 
     private Guid GetCurrentUserId()

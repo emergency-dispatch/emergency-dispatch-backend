@@ -52,6 +52,7 @@ public class StationService : IStationService
             Longitude = dto.Longitude,
             PhoneNumber = dto.PhoneNumber?.Trim(),
             IsActive = dto.IsActive,
+            CoverageRadiusKm = dto.CoverageRadiusKm,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -73,6 +74,7 @@ public class StationService : IStationService
         station.Longitude = dto.Longitude;
         station.PhoneNumber = dto.PhoneNumber?.Trim();
         station.IsActive = dto.IsActive;
+        station.CoverageRadiusKm = dto.CoverageRadiusKm;
         station.UpdatedAt = DateTime.UtcNow;
 
         await _stationRepository.UpdateAsync(station);
@@ -87,9 +89,27 @@ public class StationService : IStationService
             throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với ID: {id}");
         }
 
-        if (station.RescueUnits.Any(r => r.Status == RescueUnitStatus.Dispatched || r.Status == RescueUnitStatus.OnScene))
+        // BR-AD-03: không xóa trạm khi còn xe đang làm nhiệm vụ
+        if (station.RescueUnits.Any(r => !r.IsDeleted && RescueUnitService.IsOnMission(r.Status)))
         {
             throw new InvalidOperationException("Không thể xóa hoặc tạm ngưng trạm đang có xe thực hiện nhiệm vụ cứu nạn.");
+        }
+
+        // BR-AD-02: xóa mềm trạm → xe trực thuộc chuyển OutOfService, nhân sự được gỡ khỏi trạm
+        var now = DateTime.UtcNow;
+        foreach (var unit in station.RescueUnits.Where(r => !r.IsDeleted))
+        {
+            unit.Status = RescueUnitStatus.OutOfService;
+            unit.UpdatedAt = now;
+        }
+        foreach (var staff in station.StaffMembers.ToList())
+        {
+            staff.StationId = null;
+            staff.UpdatedAt = now;
+            if (staff.TeamMembership != null)
+            {
+                staff.TeamMembership.IsDeleted = true;
+            }
         }
 
         await _stationRepository.DeleteAsync(station);
@@ -120,7 +140,7 @@ public class StationService : IStationService
             AvatarUrl = u.AvatarUrl,
             Role = u.Role.ToString(),
             Status = u.Status.ToString(),
-            TeamName = u.DependentsNote
+            TeamName = u.TeamMembership?.Team?.Name
         }).ToList() ?? new List<StationStaffMemberDto>();
 
         return new StationResponseDto
@@ -132,6 +152,7 @@ public class StationService : IStationService
             Longitude = station.Longitude,
             PhoneNumber = station.PhoneNumber,
             IsActive = station.IsActive,
+            CoverageRadiusKm = station.CoverageRadiusKm,
             TotalUnitsCount = units.Count,
             ActiveUnitsCount = units.Count(u => u.Status == RescueUnitStatus.Available),
             StaffCount = staff.Count,

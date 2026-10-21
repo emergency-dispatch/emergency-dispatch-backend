@@ -25,4 +25,10 @@ public class UpdateStationDto
     public string? PhoneNumber { get; set; }
 
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Bán kính phụ trách mặc định của trạm (FR-AD-01: 5–50 km)
+    /// </summary>
+    [Range(5.0, 50.0, ErrorMessage = "Bán kính phụ trách phải từ 5 đến 50 km.")]
+    public double CoverageRadiusKm { get; set; } = 10;
 }

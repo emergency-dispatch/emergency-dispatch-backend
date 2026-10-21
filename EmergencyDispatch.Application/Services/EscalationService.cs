@@ -1,4 +1,5 @@
 using EmergencyDispatch.Application.DTOs.Escalation;
+using EmergencyDispatch.Application.DTOs.Notification;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
@@ -11,15 +12,21 @@ public class EscalationService : IEscalationService
 {
     private readonly IEscalationRepository _escalationRepository;
     private readonly IRealtimeNotifier _realtimeNotifier;
+    private readonly ISystemSettingsService _settingsService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<EscalationService> _logger;
 
     public EscalationService(
         IEscalationRepository escalationRepository,
         IRealtimeNotifier realtimeNotifier,
+        ISystemSettingsService settingsService,
+        INotificationService notificationService,
         ILogger<EscalationService> logger)
     {
         _escalationRepository = escalationRepository;
         _realtimeNotifier = realtimeNotifier;
+        _settingsService = settingsService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -151,11 +158,11 @@ public class EscalationService : IEscalationService
             {
                 Id = Guid.NewGuid(),
                 MinSeverityLevel = SeverityLevel.Level3,
-                TimeoutMinutes = 3,
+                TimeoutMinutes = 5,
                 NotifyRoles = "[\"Admin\",\"Operator\"]",
-                ExpandRadiusPercent = 50,
+                ExpandRadiusPercent = 100,
                 IsActive = true,
-                Description = "Quy tắc mặc định: Tự động leo thang sự cố từ Level 3 trở lên nếu quá 3 phút chưa có đơn vị tiếp nhận",
+                Description = "Quy tắc mặc định: leo thang sự cố Level 3 và Level 0 chưa có đơn vị tiếp nhận quá ngưỡng cấu hình (ngày 5 phút / đêm 2.5 phút)",
                 CreatedAt = DateTime.UtcNow
             };
             await _escalationRepository.AddRuleAsync(defaultRule, cancellationToken);
@@ -165,16 +172,23 @@ public class EscalationService : IEscalationService
 
         int totalEscalated = 0;
 
+        // FR-SYS-02 / BR-19: ngưỡng chờ đọc từ Settings, ban đêm (22:00–06:00) rút ngắn
+        var settings = await _settingsService.GetEscalationSettingsAsync(cancellationToken);
+        var nowUtc = DateTime.UtcNow;
+        var thresholdMinutes = EscalationTiming.GetThresholdMinutes(nowUtc, settings);
+        var isNight = EscalationTiming.IsNightShift(nowUtc, settings.NightStart, settings.NightEnd);
+
         foreach (var rule in rules)
         {
-            var cutoffTime = DateTime.UtcNow.AddMinutes(-rule.TimeoutMinutes);
-            var candidates = await _escalationRepository.GetEscalatableIncidentsAsync(rule.MinSeverityLevel, cutoffTime, cancellationToken);
+            var cutoffTime = nowUtc.AddMinutes(-thresholdMinutes);
+            var severities = EscalationTiming.SeveritiesInScope(rule.MinSeverityLevel);
+            var candidates = await _escalationRepository.GetEscalatableIncidentsAsync(severities, cutoffTime, cancellationToken);
 
             foreach (var incident in candidates)
             {
                 // Kiểm tra xem sự cố này đã được kích hoạt log với quy tắc này gần đây chưa
                 var hasRecentLog = await _escalationRepository.HasRecentEscalationLogAsync(
-                    incident.Id, rule.Id, DateTime.UtcNow.AddMinutes(-rule.TimeoutMinutes), cancellationToken);
+                    incident.Id, rule.Id, nowUtc.AddMinutes(-thresholdMinutes), cancellationToken);
 
                 if (hasRecentLog)
                 {
@@ -193,7 +207,7 @@ public class EscalationService : IEscalationService
                     OldStatus = oldStatus,
                     NewStatus = IncidentStatus.Escalated,
                     ChangedByRole = "System (EscalationRuleEngine)",
-                    Notes = $"Tự động leo thang: Sự cố {incident.Severity} chưa có đơn vị tiếp nhận sau {rule.TimeoutMinutes} phút. Mở rộng bán kính +{rule.ExpandRadiusPercent}%.",
+                    Notes = $"Tự động leo thang: Sự cố {incident.Severity} chưa có đơn vị tiếp nhận sau {thresholdMinutes} phút ({(isNight ? "ca đêm" : "ca ngày")}). Bán kính tìm xe ×{settings.RadiusMultiplier}.",
                     ChangedAt = DateTime.UtcNow
                 });
 
@@ -204,7 +218,7 @@ public class EscalationService : IEscalationService
                     IncidentId = incident.Id,
                     Action = AuditAction.Escalated,
                     ActorRole = "System",
-                    Description = $"Kích hoạt leo thang tự động bởi quy tắc '{rule.Description ?? rule.Id.ToString()}'. Mở rộng bán kính điều phối +{rule.ExpandRadiusPercent}%.",
+                    Description = $"Kích hoạt leo thang tự động bởi quy tắc '{rule.Description ?? rule.Id.ToString()}' (ngưỡng {thresholdMinutes} phút). Bán kính tìm xe ×{settings.RadiusMultiplier}, tối đa {settings.MaxRadiusKm} km.",
                     OldStateJson = $"{{\"status\":\"{oldStatus}\"}}",
                     NewStateJson = $"{{\"status\":\"{IncidentStatus.Escalated}\"}}",
                     Timestamp = DateTime.UtcNow
@@ -217,7 +231,7 @@ public class EscalationService : IEscalationService
                     EscalationRuleId = rule.Id,
                     EscalationLevel = 1,
                     NotifiedRoles = rule.NotifyRoles,
-                    ActionTaken = $"Phát cảnh báo khẩn cấp hệ thống & mở rộng bán kính điều phối +{rule.ExpandRadiusPercent}%",
+                    ActionTaken = $"Phát cảnh báo khẩn cấp hệ thống & mở rộng bán kính tìm xe ×{settings.RadiusMultiplier} (tối đa {settings.MaxRadiusKm} km)",
                     TriggerTime = DateTime.UtcNow
                 };
 
@@ -240,11 +254,21 @@ public class EscalationService : IEscalationService
                     Latitude = incident.Latitude,
                     Longitude = incident.Longitude,
                     RuleId = rule.Id,
-                    TimeoutMinutes = rule.TimeoutMinutes,
+                    TimeoutMinutes = (int)Math.Ceiling(thresholdMinutes),
                     ElapsedMinutes = elapsedMinutes,
                     ActionTaken = escalationLog.ActionTaken,
                     ExpandRadiusPercent = rule.ExpandRadiusPercent,
                     TriggeredAt = escalationLog.TriggerTime
+                }, cancellationToken);
+
+                // FR-SYS-02: còi báo động tới toàn bộ Operator và Admin
+                await _notificationService.NotifyRolesAsync(new[] { UserRole.Operator, UserRole.Admin }, new NotificationRequest
+                {
+                    Type = NotificationType.Escalation,
+                    Title = $"LEO THANG KHẨN CẤP {incident.Severity}",
+                    Message = $"{incident.Title} — {incident.LocationAddress}: chưa có đơn vị tiếp nhận sau {elapsedMinutes} phút.",
+                    IncidentId = incident.Id,
+                    HighPriority = true
                 }, cancellationToken);
 
                 totalEscalated++;

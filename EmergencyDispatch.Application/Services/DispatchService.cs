@@ -1,6 +1,7 @@
 using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Dispatch;
+using EmergencyDispatch.Application.DTOs.Notification;
 using EmergencyDispatch.Application.DTOs.RescueUnit;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Entities;
@@ -12,11 +13,16 @@ namespace EmergencyDispatch.Application.Services;
 
 public class DispatchService : IDispatchService
 {
+    private const int MaxUnitsLevel3 = 5;
+    private const int MaxUnitsDefault = 1;
+
     private readonly IDispatchAssignmentRepository _assignmentRepository;
     private readonly IRescueUnitRepository _rescueUnitRepository;
     private readonly IIncidentRepository _incidentRepository;
     private readonly IUserRepository _userRepository;
     private readonly IRealtimeNotifier _realtimeNotifier;
+    private readonly ISystemSettingsService _settingsService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<DispatchService> _logger;
 
     public DispatchService(
@@ -25,6 +31,8 @@ public class DispatchService : IDispatchService
         IIncidentRepository incidentRepository,
         IUserRepository userRepository,
         IRealtimeNotifier realtimeNotifier,
+        ISystemSettingsService settingsService,
+        INotificationService notificationService,
         ILogger<DispatchService> logger)
     {
         _assignmentRepository = assignmentRepository;
@@ -32,6 +40,8 @@ public class DispatchService : IDispatchService
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
         _realtimeNotifier = realtimeNotifier;
+        _settingsService = settingsService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -39,7 +49,7 @@ public class DispatchService : IDispatchService
         Guid incidentId,
         DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
         RescueUnitType? unitType = null,
-        double maxDistanceKm = 15.0,
+        double? maxDistanceKm = null,
         CancellationToken cancellationToken = default)
     {
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
@@ -48,93 +58,111 @@ public class DispatchService : IDispatchService
             return ApiResponseDto<List<RecommendedUnitResponseDto>>.FailureResult("Không tìm thấy sự cố cần điều phối.");
         }
 
-        // Tự động suy luận loại phương tiện cần ưu tiên nếu chưa chỉ định rõ
-        var targetType = unitType ?? DeduceRecommendedUnitType(incident);
+        var dispatchSettings = await _settingsService.GetDispatchSettingsAsync(cancellationToken);
+        var escalationSettings = await _settingsService.GetEscalationSettingsAsync(cancellationToken);
 
-        // Lấy tất cả phương tiện kèm thông tin trạm
-        var allUnits = await _rescueUnitRepository.GetAllWithStationAsync();
+        // BR-13: khớp loại xe theo nhánh sự cố (hoặc theo loại Operator chỉ định)
+        var matchingTypes = unitType.HasValue
+            ? new HashSet<RescueUnitType> { unitType.Value }
+            : DispatchScoring.MatchingUnitTypes(
+                incident.AiClassification?.EventType ?? IncidentEventType.None,
+                incident.AiClassification?.HazardTags ?? new List<string>(),
+                $"{incident.Title} {incident.Description}",
+                incident.Severity);
 
-        var candidates = new List<RecommendedUnitResponseDto>();
+        // BR-12: nấc bán kính tự mở rộng; Operator chỉ định bán kính thì quét đúng một nấc
+        var radii = maxDistanceKm.HasValue
+            ? new List<double> { maxDistanceKm.Value }
+            : DispatchScoring.BuildSearchRadii(
+                dispatchSettings.RadiusStepsKm,
+                incident.Status == IncidentStatus.Escalated,
+                escalationSettings.RadiusMultiplier,
+                escalationSettings.MaxRadiusKm);
 
-        foreach (var unit in allUnits)
-        {
-            // Bỏ qua xe bảo trì hoặc đã bị xóa
-            if (unit.Status == RescueUnitStatus.Maintenance || unit.IsDeleted)
+        var allUnits = (await _rescueUnitRepository.GetAllWithStationAsync()).Where(u => !u.IsDeleted).ToList();
+        var activeAssignments = await _assignmentRepository.GetAllActiveAsync();
+
+        // LoadRatio(S): tỷ lệ xe đang bận của trạm; ActiveMissions(S): số sự cố trạm đang xử lý
+        var unitById = allUnits.ToDictionary(u => u.Id);
+        var stationStats = allUnits
+            .GroupBy(u => u.StationId)
+            .ToDictionary(g => g.Key, g =>
             {
-                continue;
-            }
-
-            // Nếu chỉ định loại xe cụ thể, lọc đúng loại
-            if (targetType.HasValue && unit.UnitType != targetType.Value)
-            {
-                continue;
-            }
-
-            var distKm = CalculateDistanceKm(incident.Latitude, incident.Longitude, unit.CurrentLat, unit.CurrentLng);
-            if (distKm > maxDistanceKm)
-            {
-                continue;
-            }
-
-            var activeTasks = await CountActiveTasksForUnitAsync(unit.Id);
-            var etaMinutes = EstimateEtaMinutes(distKm);
-
-            double score;
-            string reason;
-
-            if (algorithm == DispatchAlgorithm.NearestAvailable)
-            {
-                // Heuristic 1: Ưu tiên khoảng cách ngắn nhất, chỉ chọn Available hoặc Returning
-                var availabilityMultiplier = unit.Status == RescueUnitStatus.Available ? 1.0 : 0.7;
-                score = Math.Round((100.0 / (1.0 + distKm)) * availabilityMultiplier, 2);
-                reason = $"Khoảng cách: {distKm:F2} km ({etaMinutes:F0} phút). Trạng thái: {unit.Status}.";
-            }
-            else
-            {
-                // Heuristic 2 (RQ2: Load-Aware Dispatch): Cân bằng tải kết hợp cự ly
-                // Điểm = (Điểm cự ly cơ sở) - (Hệ số phạt tải công việc đang xử lý)
-                var distanceScore = 100.0 / (1.0 + distKm);
-                var loadPenalty = activeTasks * 18.0;
-
-                // Nếu xe đang rảnh tuyệt đối (Available) cộng điểm thưởng
-                var statusBonus = unit.Status == RescueUnitStatus.Available ? 10.0 : 0.0;
-
-                score = Math.Round(Math.Max(0.0, distanceScore - loadPenalty + statusBonus), 2);
-                reason = $"Load-Aware: cự ly {distKm:F2} km, {activeTasks} nhiệm vụ hiện hành. Điểm tối ưu: {score}.";
-            }
-
-            candidates.Add(new RecommendedUnitResponseDto
-            {
-                RescueUnitId = unit.Id,
-                PlateNumber = unit.PlateNumber,
-                UnitType = unit.UnitType,
-                Status = unit.Status,
-                StationId = unit.StationId,
-                StationName = unit.Station?.Name ?? "Trạm chưa xác định",
-                CurrentLat = unit.CurrentLat,
-                CurrentLng = unit.CurrentLng,
-                DistanceKm = distKm,
-                EstimatedEtaMinutes = etaMinutes,
-                ActiveTasksCount = activeTasks,
-                Score = score,
-                AlgorithmUsed = algorithm,
-                RecommendationReason = reason
+                var operational = g.Count(u => u.Status != RescueUnitStatus.Maintenance && u.Status != RescueUnitStatus.OutOfService);
+                var busy = g.Count(u => u.Status is RescueUnitStatus.Dispatched or RescueUnitStatus.OnScene
+                                         or RescueUnitStatus.Returning or RescueUnitStatus.CoolDown);
+                var missions = activeAssignments
+                    .Where(a => unitById.TryGetValue(a.RescueUnitId, out var au) && au.StationId == g.Key)
+                    .Select(a => a.IncidentId)
+                    .Distinct()
+                    .Count();
+                return (Load: operational > 0 ? busy / (double)operational : 0.0, Missions: missions);
             });
+        var tasksByUnit = activeAssignments.GroupBy(a => a.RescueUnitId).ToDictionary(g => g.Key, g => g.Count());
+
+        // BR-DSP-01 / BR-20: chỉ xe Available, đúng chủng loại, không có nhiệm vụ đang chạy mới được gợi ý
+        var eligible = allUnits
+            .Where(u => u.Status == RescueUnitStatus.Available && !tasksByUnit.ContainsKey(u.Id))
+            .Where(u => matchingTypes == null || matchingTypes.Contains(u.UnitType))
+            .Select(u => (Unit: u, DistanceKm: CalculateDistanceKm(incident.Latitude, incident.Longitude, u.CurrentLat, u.CurrentLng)))
+            .ToList();
+
+        var firstRadius = radii[0];
+        foreach (var radiusKm in radii)
+        {
+            var inRadius = eligible.Where(c => c.DistanceKm <= radiusKm).ToList();
+            if (inRadius.Count == 0) continue;
+
+            var candidates = inRadius.Select(c =>
+            {
+                var stats = stationStats.TryGetValue(c.Unit.StationId, out var st) ? st : (Load: 0.0, Missions: 0);
+                var cost = DispatchScoring.LoadAwareCost(c.DistanceKm, radiusKm, stats.Load, stats.Missions, dispatchSettings.Weights);
+                var eta = EstimateEtaMinutes(c.DistanceKm);
+                var reason = algorithm == DispatchAlgorithm.NearestAvailable
+                    ? $"Nearest-Available: cách {c.DistanceKm:F2} km (~{eta:F0} phút)."
+                    : $"Load-Aware: cách {c.DistanceKm:F2} km, tải trạm {stats.Load:P0}, trạm đang xử lý {stats.Missions} sự cố. Cost = {cost:F3}.";
+
+                return new RecommendedUnitResponseDto
+                {
+                    RescueUnitId = c.Unit.Id,
+                    PlateNumber = c.Unit.PlateNumber,
+                    UnitType = c.Unit.UnitType,
+                    Status = c.Unit.Status,
+                    StationId = c.Unit.StationId,
+                    StationName = c.Unit.Station?.Name ?? "Trạm chưa xác định",
+                    CurrentLat = c.Unit.CurrentLat,
+                    CurrentLng = c.Unit.CurrentLng,
+                    DistanceKm = Math.Round(c.DistanceKm, 3),
+                    EstimatedEtaMinutes = eta,
+                    ActiveTasksCount = 0,
+                    StationLoad = Math.Round(stats.Load, 3),
+                    StationActiveMissions = stats.Missions,
+                    Cost = Math.Round(cost, 4),
+                    Score = Math.Round((1 - cost) * 100, 2),
+                    SearchRadiusKm = radiusKm,
+                    RadiusExpanded = radiusKm > firstRadius,
+                    AlgorithmUsed = algorithm,
+                    RecommendationReason = reason
+                };
+            });
+
+            var ranked = algorithm == DispatchAlgorithm.NearestAvailable
+                ? candidates.OrderBy(c => c.DistanceKm).ThenBy(c => c.Cost).ToList()
+                : candidates.OrderBy(c => c.Cost).ThenBy(c => c.DistanceKm).ToList();
+
+            return ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
+                ranked,
+                $"Đề xuất theo '{algorithm}' trong bán kính {radiusKm} km: {ranked.Count} phương tiện phù hợp.");
         }
 
-        // Sắp xếp: Với NearestAvailable sắp xếp theo Distance tăng dần, LoadAware sắp xếp theo Score giảm dần
-        var ranked = algorithm == DispatchAlgorithm.NearestAvailable
-            ? candidates.OrderBy(c => c.DistanceKm).ThenBy(c => c.ActiveTasksCount).ToList()
-            : candidates.OrderByDescending(c => c.Score).ThenBy(c => c.DistanceKm).ToList();
-
         return ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
-            ranked,
-            $"Đã tạo danh sách đề xuất thành công theo thuật toán '{algorithm}' (Tìm thấy {ranked.Count} phương tiện).");
+            new List<RecommendedUnitResponseDto>(),
+            $"Không có phương tiện phù hợp đang sẵn sàng trong bán kính {radii[^1]} km.");
     }
 
     public async Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetAvailableUnitsNearbyAsync(
         Guid incidentId,
-        double maxDistanceKm = 15.0,
+        double? maxDistanceKm = null,
         CancellationToken cancellationToken = default)
     {
         return await GetRecommendationsAsync(
@@ -145,72 +173,141 @@ public class DispatchService : IDispatchService
             cancellationToken);
     }
 
-    public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> AssignUnitAsync(
+    public async Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignUnitAsync(
         AssignDispatchDto dto,
         Guid operatorId,
         CancellationToken cancellationToken = default)
     {
+        var unitIds = dto.GetUnitIds();
+        if (unitIds.Count == 0)
+        {
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult("Cần chọn ít nhất một phương tiện cứu hộ.");
+        }
+
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(dto.IncidentId, cancellationToken);
         if (incident == null)
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy sự cố cần điều phối.");
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.NotFoundResult("Không tìm thấy sự cố cần điều phối.");
         }
 
-        if (incident.Status == IncidentStatus.Completed || incident.Status == IncidentStatus.Cancelled)
+        if (incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult($"Không thể điều phối cho sự cố đã ở trạng thái '{incident.Status}'.");
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult($"Không thể điều phối cho sự cố đã ở trạng thái '{incident.Status}'.");
         }
 
-        var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(dto.RescueUnitId);
-        if (unit == null)
+        // BR-01 / FR-OP-04: mọi sự cố (kể cả Level 0) phải được Operator xác minh trước khi điều xe
+        if (incident.VerifiedAt == null || incident.Severity == SeverityLevel.Unclassified)
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy phương tiện cứu hộ yêu cầu.");
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
+                "Sự cố phải được xác minh và phân loại Level 1–3 trước khi điều phối đội cứu hộ.");
         }
 
-        if (unit.Status == RescueUnitStatus.Maintenance)
+        // BR-15: Operator khác đang giữ khóa xử lý sự cố
+        if (incident.IsLockedByOther(operatorId, DateTime.UtcNow))
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Phương tiện hiện đang trong lịch bảo trì, không thể xuất xe.");
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(
+                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}.");
         }
 
-        // Kiểm tra xem xe đã được gán vào sự cố này chưa (tránh phát lệnh trùng)
-        var existing = incident.DispatchAssignments
-            .FirstOrDefault(d => d.RescueUnitId == unit.Id &&
-                                 d.Status != DispatchAssignmentStatus.Completed &&
-                                 d.Status != DispatchAssignmentStatus.Cancelled);
-        if (existing != null)
+        // BR-14: Level 3 điều tối đa 5 xe; Level 1–2 mặc định 1 xe (vượt giới hạn phải có lý do)
+        var activeCount = incident.DispatchAssignments.Count(a => a.IsActive);
+        var maxUnits = incident.Severity == SeverityLevel.Level3 ? MaxUnitsLevel3 : MaxUnitsDefault;
+        var overrideAllowed = dto.AllowExtraUnits && (dto.Notes?.Trim().Length ?? 0) >= 5 && incident.Severity != SeverityLevel.Level3;
+        if (activeCount + unitIds.Count > maxUnits && !overrideAllowed)
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult($"Phương tiện {unit.PlateNumber} đã được phát lệnh cho sự cố này trước đó.");
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
+                $"Sự cố {incident.Severity} chỉ được điều tối đa {maxUnits} xe (đang có {activeCount} xe). " +
+                (incident.Severity == SeverityLevel.Level3 ? string.Empty : "Đặt allowExtraUnits = true và ghi lý do vào notes nếu cần thêm xe."));
         }
 
-        var assignment = new DispatchAssignment
+        var activeUnitIds = incident.DispatchAssignments.Where(a => a.IsActive).Select(a => a.RescueUnitId).ToHashSet();
+        var units = new List<RescueUnit>();
+        foreach (var unitId in unitIds)
         {
-            IncidentId = incident.Id,
-            RescueUnitId = unit.Id,
-            DispatchedAt = DateTime.UtcNow,
-            Status = DispatchAssignmentStatus.Dispatched,
-            Notes = dto.Notes?.Trim()
-        };
+            var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(unitId);
+            if (unit == null || unit.IsDeleted)
+            {
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.NotFoundResult($"Không tìm thấy phương tiện cứu hộ {unitId}.");
+            }
 
-        // Cập nhật trạng thái xe và sự cố
-        unit.Status = RescueUnitStatus.Dispatched;
-        unit.UpdatedAt = DateTime.UtcNow;
+            if (activeUnitIds.Contains(unit.Id))
+            {
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult($"Phương tiện {unit.PlateNumber} đã được phát lệnh cho sự cố này trước đó.");
+            }
 
+            units.Add(unit);
+        }
+
+        // BR-DSP-01 / MSG32: giữ chỗ từng xe một cách nguyên tử; nếu một xe vừa bị Operator khác giao thì hoàn tác toàn bộ
+        var reserved = new List<RescueUnit>();
+        foreach (var unit in units)
+        {
+            if (!await _rescueUnitRepository.TryReserveForDispatchAsync(unit.Id, cancellationToken))
+            {
+                foreach (var r in reserved)
+                {
+                    await _rescueUnitRepository.ReleaseReservationAsync(r.Id, cancellationToken);
+                }
+
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(
+                    $"Phương tiện {unit.PlateNumber} không còn sẵn sàng (trạng thái {unit.Status}) hoặc vừa được điều phối cho sự cố khác. Vui lòng tải lại danh sách gợi ý.");
+            }
+
+            reserved.Add(unit);
+            unit.Status = RescueUnitStatus.Dispatched;
+        }
+
+        var now = DateTime.UtcNow;
         var oldIncidentStatus = incident.Status;
-        incident.Status = IncidentStatus.Dispatched;
-        incident.UpdatedAt = DateTime.UtcNow;
+        if (incident.Status != IncidentStatus.InProgress)
+        {
+            incident.Status = IncidentStatus.Dispatched;
+        }
+        incident.UpdatedAt = now;
 
-        // Telemetry RQ3: Thời gian từ khi tạo sự cố đến khi phát lệnh điều phối (Dispatch Time)
-        incident.DispatchTimeMs = (long)(DateTime.UtcNow - incident.CreatedAt).TotalMilliseconds;
+        // Telemetry RQ3: thời gian từ khi tạo sự cố đến lần phát lệnh điều phối đầu tiên
+        incident.DispatchTimeMs ??= (long)(now - incident.CreatedAt).TotalMilliseconds;
 
-        // Ghi lịch sử và Audit Trail
+        var assignments = new List<DispatchAssignment>();
+        foreach (var unit in units)
+        {
+            var distanceKm = CalculateDistanceKm(incident.Latitude, incident.Longitude, unit.CurrentLat, unit.CurrentLng);
+            var assignment = new DispatchAssignment
+            {
+                IncidentId = incident.Id,
+                RescueUnitId = unit.Id,
+                DispatchedAt = now,
+                Status = DispatchAssignmentStatus.Dispatched,
+                Notes = dto.Notes?.Trim(),
+                AssignedByUserId = operatorId,
+                DispatchAlgorithm = dto.Algorithm?.ToString(),
+                DistanceKm = Math.Round(distanceKm, 3),
+                EstimatedArrivalMinutes = EstimateEtaMinutes(distanceKm)
+            };
+
+            assignment.StatusHistories.Add(new AssignmentStatusHistory
+            {
+                AssignmentId = assignment.Id,
+                OldStatus = DispatchAssignmentStatus.Dispatched,
+                NewStatus = DispatchAssignmentStatus.Dispatched,
+                ChangedByUserId = operatorId,
+                Notes = "Phát lệnh điều phối",
+                ChangedAt = now
+            });
+
+            incident.DispatchAssignments.Add(assignment);
+            assignments.Add(assignment);
+        }
+
+        var plates = string.Join(", ", units.Select(u => u.PlateNumber));
         await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
         {
             IncidentId = incident.Id,
             OldStatus = oldIncidentStatus,
-            NewStatus = IncidentStatus.Dispatched,
+            NewStatus = incident.Status,
             ChangedByUserId = operatorId,
             ChangedByRole = UserRole.Operator.ToString(),
-            Notes = $"Phát lệnh điều phối phương tiện {unit.PlateNumber} ({unit.UnitType})."
+            Notes = $"Phát lệnh điều phối {units.Count} phương tiện: {plates}."
         }, cancellationToken);
 
         await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
@@ -218,32 +315,193 @@ public class DispatchService : IDispatchService
             IncidentId = incident.Id,
             ActorId = operatorId,
             ActorRole = UserRole.Operator.ToString(),
-            Action = AuditAction.Dispatched,
-            Description = $"Điều phối phương tiện {unit.PlateNumber} (Mã: {unit.Id})",
+            Action = activeCount > 0 ? AuditAction.ReDispatched : AuditAction.Dispatched,
+            Description = $"Điều phối {units.Count} phương tiện: {plates}",
             NewStateJson = JsonSerializer.Serialize(new
             {
-                unitId = unit.Id,
-                plateNumber = unit.PlateNumber,
+                unitIds = units.Select(u => u.Id),
+                plates = units.Select(u => u.PlateNumber),
+                algorithm = dto.Algorithm?.ToString(),
+                extraUnitsOverride = overrideAllowed && activeCount + unitIds.Count > maxUnits,
                 dispatchTimeMs = incident.DispatchTimeMs
             })
         }, cancellationToken);
 
-        await _assignmentRepository.AddAsync(assignment);
-        await _rescueUnitRepository.UpdateAsync(unit);
         await _incidentRepository.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Operator {OpId} đã điều phối xe {Plate} tới sự cố {IncId} (DispatchTime={Ms}ms)",
-            operatorId, unit.PlateNumber, incident.Id, incident.DispatchTimeMs);
+        _logger.LogInformation("Operator {OpId} đã điều phối {Count} xe ({Plates}) tới sự cố {IncId} (DispatchTime={Ms}ms)",
+            operatorId, units.Count, plates, incident.Id, incident.DispatchTimeMs);
+
+        var dtos = assignments
+            .Select(a => MapToAssignmentDto(a, incident, units.First(u => u.Id == a.RescueUnitId)))
+            .ToList();
+
+        foreach (var assignmentDto in dtos)
+        {
+            await _realtimeNotifier.JobAssignedAsync(assignmentDto, cancellationToken);
+        }
+        await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
+
+        // FR-RS-01 / BR-21: còi hú tới đội cứu hộ của từng trạm; FR-CIT-04 (MSG37): báo người dân
+        foreach (var stationGroup in units.GroupBy(u => u.StationId))
+        {
+            await _notificationService.NotifyStationStaffAsync(stationGroup.Key, new NotificationRequest
+            {
+                Type = NotificationType.JobAssigned,
+                Title = $"LỆNH ĐIỀU PHỐI {incident.Severity}",
+                Message = $"{incident.Title} — {incident.LocationAddress}. Xe: {string.Join(", ", stationGroup.Select(u => u.PlateNumber))}.",
+                IncidentId = incident.Id,
+                Data = new { assignmentIds = assignments.Where(a => stationGroup.Any(u => u.Id == a.RescueUnitId)).Select(a => a.Id) },
+                HighPriority = true
+            }, cancellationToken);
+        }
+
+        if (incident.ReportedByUserId.HasValue)
+        {
+            await _notificationService.NotifyUsersAsync(new[] { incident.ReportedByUserId.Value }, new NotificationRequest
+            {
+                Type = NotificationType.StatusUpdate,
+                Title = "Đã điều động đội cứu hộ",
+                Message = $"Trung tâm đã điều {units.Count} xe ({plates}) tới vị trí của bạn.",
+                IncidentId = incident.Id
+            }, cancellationToken);
+        }
+
+        return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(
+            dtos,
+            $"Đã phát lệnh điều phối {units.Count} phương tiện: {plates}.");
+    }
+
+    public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> RejectAssignmentAsync(
+        Guid id,
+        RejectAssignmentDto dto,
+        Guid rescuerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (dto.Reason == RejectionReason.Other && (dto.Notes?.Trim().Length ?? 0) < 5)
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Vui lòng mô tả lý do từ chối (tối thiểu 5 ký tự).");
+        }
+
+        var assignment = await _assignmentRepository.GetByIdWithDetailsAsync(id);
+        if (assignment == null)
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.NotFoundResult("Không tìm thấy thông tin phân công.");
+        }
+
+        var rescuer = await _userRepository.GetByIdAsync(rescuerUserId);
+        var isCommandCenter = rescuer?.Role is UserRole.Operator or UserRole.Admin;
+        var unit = assignment.RescueUnit ?? await _rescueUnitRepository.GetByIdWithDetailsAsync(assignment.RescueUnitId);
+        var incident = assignment.Incident ?? await _incidentRepository.GetByIdAsync(assignment.IncidentId);
+
+        if (!isCommandCenter && (unit == null || rescuer?.StationId != unit.StationId))
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn chỉ được từ chối nhiệm vụ của xe thuộc trạm mình.");
+        }
+
+        if (!assignment.CanTransitionTo(DispatchAssignmentStatus.Rejected))
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(
+                $"Không thể từ chối nhiệm vụ đang ở trạng thái '{assignment.Status}'.");
+        }
+
+        var now = DateTime.UtcNow;
+        var oldStatus = assignment.Status;
+        assignment.Status = DispatchAssignmentStatus.Rejected;
+        assignment.RejectionReason = dto.Reason;
+        assignment.RejectionNotes = dto.Notes?.Trim();
+        assignment.RejectedAt = now;
+        assignment.UpdatedAt = now;
+
+        await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
+        {
+            AssignmentId = assignment.Id,
+            OldStatus = oldStatus,
+            NewStatus = DispatchAssignmentStatus.Rejected,
+            ChangedByUserId = rescuerUserId,
+            RejectionReason = dto.Reason,
+            Notes = dto.Notes?.Trim(),
+            ChangedAt = now
+        });
+
+        // FR-RS-02 (EC-R01): xe hỏng → chuyển bảo trì; lý do khác → xe trở lại sẵn sàng
+        if (unit != null)
+        {
+            unit.Status = dto.Reason == RejectionReason.VehicleBreakdown ? RescueUnitStatus.Maintenance : RescueUnitStatus.Available;
+            unit.UpdatedAt = now;
+            await _rescueUnitRepository.UpdateAsync(unit);
+        }
+
+        var remainingActive = 0;
+        if (incident != null)
+        {
+            var siblings = await _assignmentRepository.GetByIncidentIdAsync(incident.Id);
+            remainingActive = siblings.Count(a => a.Id != assignment.Id && a.IsActive);
+
+            // Không còn xe nào đang xử lý → trả sự cố về hàng chờ điều phối để Operator giao xe thay thế
+            if (remainingActive == 0 && incident.Status is IncidentStatus.Dispatched or IncidentStatus.InProgress)
+            {
+                var oldIncidentStatus = incident.Status;
+                incident.Status = IncidentStatus.Verified;
+                incident.UpdatedAt = now;
+
+                await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
+                {
+                    IncidentId = incident.Id,
+                    OldStatus = oldIncidentStatus,
+                    NewStatus = IncidentStatus.Verified,
+                    ChangedByUserId = rescuerUserId,
+                    ChangedByRole = rescuer?.Role.ToString(),
+                    Notes = $"Xe {unit?.PlateNumber} từ chối nhiệm vụ ({dto.Reason}). Cần điều phối xe thay thế."
+                }, cancellationToken);
+            }
+
+            await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+            {
+                IncidentId = incident.Id,
+                ActorId = rescuerUserId,
+                ActorRole = rescuer?.Role.ToString() ?? UserRole.RescueStaff.ToString(),
+                Action = AuditAction.AssignmentRejected,
+                Description = $"Xe {unit?.PlateNumber} từ chối nhiệm vụ: {dto.Reason}",
+                NewStateJson = JsonSerializer.Serialize(new
+                {
+                    assignmentId = assignment.Id,
+                    reason = dto.Reason.ToString(),
+                    notes = dto.Notes,
+                    remainingActiveAssignments = remainingActive
+                })
+            }, cancellationToken);
+        }
+
+        await _assignmentRepository.UpdateAsync(assignment);
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+
+        _logger.LogWarning("Nhiệm vụ {AssignmentId} bị từ chối bởi {User}: {Reason}", assignment.Id, rescuer?.FullName, dto.Reason);
 
         var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
+        await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, cancellationToken);
+        if (incident != null)
+        {
+            await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
+        }
 
-        // Phát SignalR thông báo
-        await _realtimeNotifier.JobAssignedAsync(assignmentDto, cancellationToken);
-        await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
+        // BR-22: cảnh báo trung tâm để điều xe thay thế ngay
+        await _notificationService.NotifyRolesAsync(new[] { UserRole.Operator, UserRole.Admin }, new NotificationRequest
+        {
+            Type = NotificationType.StatusUpdate,
+            Title = "Đội cứu hộ từ chối nhiệm vụ",
+            Message = $"Xe {unit?.PlateNumber} từ chối sự cố \"{incident?.Title}\" ({dto.Reason}). " +
+                      (remainingActive == 0 ? "Cần điều xe thay thế." : $"Còn {remainingActive} xe đang xử lý."),
+            IncidentId = incident?.Id,
+            Data = new { assignmentId = assignment.Id, reason = dto.Reason.ToString() },
+            HighPriority = remainingActive == 0
+        }, cancellationToken);
 
         return ApiResponseDto<DispatchAssignmentResponseDto>.SuccessResult(
             assignmentDto,
-            $"Đã phát lệnh điều phối phương tiện {unit.PlateNumber} thành công.");
+            remainingActive == 0
+                ? "Đã từ chối nhiệm vụ. Trung tâm điều phối sẽ giao xe thay thế."
+                : "Đã từ chối nhiệm vụ.");
     }
 
     public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> GetAssignmentByIdAsync(
@@ -316,9 +574,46 @@ public class DispatchService : IDispatchService
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy thông tin phân công.");
         }
 
-        if (assignment.Status == DispatchAssignmentStatus.Completed || assignment.Status == DispatchAssignmentStatus.Cancelled)
+        if (!assignment.IsActive)
         {
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult($"Nhiệm vụ đã ở trạng thái '{assignment.Status}', không thể thay đổi.");
+        }
+
+        if (dto.Status == DispatchAssignmentStatus.Completed)
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Hoàn tất nhiệm vụ phải gửi báo cáo nghiệm thu qua API resolve.");
+        }
+
+        if (dto.Status == DispatchAssignmentStatus.Rejected)
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Từ chối nhiệm vụ phải dùng API reject kèm lý do (BR-22).");
+        }
+
+        var rescuer = await _userRepository.GetByIdAsync(rescuerUserId);
+        var actorName = rescuer?.FullName ?? $"Rescuer {rescuerUserId}";
+        var isCommandCenter = rescuer?.Role is UserRole.Operator or UserRole.Admin;
+
+        var incident = assignment.Incident ?? await _incidentRepository.GetByIdAsync(assignment.IncidentId);
+        var unit = assignment.RescueUnit ?? await _rescueUnitRepository.GetByIdAsync(assignment.RescueUnitId);
+
+        if (!isCommandCenter)
+        {
+            if (unit == null || rescuer?.StationId != unit.StationId)
+            {
+                return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn chỉ được cập nhật nhiệm vụ của xe thuộc trạm mình.");
+            }
+
+            if (dto.Status == DispatchAssignmentStatus.Cancelled)
+            {
+                return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Chỉ trung tâm điều phối mới được hủy lệnh điều phối.");
+            }
+        }
+
+        // BR-24: trạng thái phải đi tuần tự, không nhảy cóc hoặc lùi lại
+        if (!assignment.CanTransitionTo(dto.Status))
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(
+                $"Không thể chuyển nhiệm vụ từ '{assignment.Status}' sang '{dto.Status}'. Thứ tự hợp lệ: Dispatched → Accepted → EnRoute → OnScene.");
         }
 
         var oldStatus = assignment.Status;
@@ -329,19 +624,30 @@ public class DispatchService : IDispatchService
             assignment.Notes = dto.Notes.Trim();
         }
 
-        var rescuer = await _userRepository.GetByIdAsync(rescuerUserId);
-        var actorName = rescuer?.FullName ?? $"Rescuer {rescuerUserId}";
-
-        var incident = assignment.Incident ?? await _incidentRepository.GetByIdAsync(assignment.IncidentId);
-        var unit = assignment.RescueUnit ?? await _rescueUnitRepository.GetByIdAsync(assignment.RescueUnitId);
-
         switch (dto.Status)
         {
             case DispatchAssignmentStatus.Accepted:
                 assignment.AcceptedAt = DateTime.UtcNow;
+                // FR-RS-01: đội đã nhận lệnh → sự cố chuyển sang đang xử lý
+                if (incident != null && incident.Status is IncidentStatus.Dispatched or IncidentStatus.Escalated)
+                {
+                    incident.Status = IncidentStatus.InProgress;
+                    incident.UpdatedAt = DateTime.UtcNow;
+                    await _incidentRepository.UpdateAsync(incident);
+                }
+                break;
+
+            case DispatchAssignmentStatus.Cancelled:
+                if (unit != null)
+                {
+                    unit.Status = RescueUnitStatus.Available;
+                    unit.UpdatedAt = DateTime.UtcNow;
+                    await _rescueUnitRepository.UpdateAsync(unit);
+                }
                 break;
 
             case DispatchAssignmentStatus.EnRoute:
+                assignment.EnRouteAt = DateTime.UtcNow;
                 if (unit != null)
                 {
                     unit.Status = RescueUnitStatus.Dispatched;
@@ -367,6 +673,16 @@ public class DispatchService : IDispatchService
                 break;
         }
 
+        await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
+        {
+            AssignmentId = assignment.Id,
+            OldStatus = oldStatus,
+            NewStatus = dto.Status,
+            ChangedByUserId = rescuerUserId,
+            Notes = dto.Notes?.Trim(),
+            ChangedAt = DateTime.UtcNow
+        });
+
         await _assignmentRepository.UpdateAsync(assignment);
 
         if (incident != null)
@@ -375,7 +691,7 @@ public class DispatchService : IDispatchService
             {
                 IncidentId = incident.Id,
                 ActorId = rescuerUserId,
-                ActorRole = UserRole.RescueStaff.ToString(),
+                ActorRole = rescuer?.Role.ToString() ?? UserRole.RescueStaff.ToString(),
                 Action = AuditAction.StatusChanged,
                 Description = $"Đội cứu hộ {unit?.PlateNumber} cập nhật trạng thái nhiệm vụ: {oldStatus} ➔ {dto.Status}",
                 NewStateJson = JsonSerializer.Serialize(new { assignmentId = assignment.Id, status = dto.Status.ToString() })
@@ -395,6 +711,21 @@ public class DispatchService : IDispatchService
             await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
         }
 
+        // FR-CIT-04 (MSG37, MSG40): báo người dân khi xe xuất phát và khi tới hiện trường
+        if (incident?.ReportedByUserId != null && dto.Status is DispatchAssignmentStatus.EnRoute or DispatchAssignmentStatus.OnScene)
+        {
+            await _notificationService.NotifyUsersAsync(new[] { incident.ReportedByUserId.Value }, new NotificationRequest
+            {
+                Type = NotificationType.StatusUpdate,
+                Title = dto.Status == DispatchAssignmentStatus.EnRoute ? "Xe cứu hộ đang trên đường" : "Đội cứu hộ đã tới hiện trường",
+                Message = dto.Status == DispatchAssignmentStatus.EnRoute
+                    ? $"Xe {unit?.PlateNumber} đang di chuyển tới vị trí của bạn (dự kiến ~{assignment.EstimatedArrivalMinutes ?? 0:F0} phút)."
+                    : $"Xe {unit?.PlateNumber} đã có mặt tại hiện trường. Đội cứu hộ đang triển khai.",
+                IncidentId = incident.Id,
+                Data = new { assignmentId = assignment.Id, status = dto.Status.ToString() }
+            }, cancellationToken);
+        }
+
         return ApiResponseDto<DispatchAssignmentResponseDto>.SuccessResult(
             assignmentDto,
             $"Cập nhật trạng thái nhiệm vụ thành '{dto.Status}' thành công.");
@@ -412,9 +743,9 @@ public class DispatchService : IDispatchService
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy thông tin phân công.");
         }
 
-        if (assignment.Status == DispatchAssignmentStatus.Completed)
+        if (!assignment.IsActive)
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Nhiệm vụ này đã được hoàn tất trước đó.");
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult($"Nhiệm vụ đã ở trạng thái '{assignment.Status}', không thể nghiệm thu.");
         }
 
         var incident = assignment.Incident ?? await _incidentRepository.GetByIdAsync(assignment.IncidentId);
@@ -424,75 +755,137 @@ public class DispatchService : IDispatchService
         }
 
         var unit = assignment.RescueUnit ?? await _rescueUnitRepository.GetByIdAsync(assignment.RescueUnitId);
+        var rescuer = await _userRepository.GetByIdAsync(rescuerUserId);
+        var actorRole = rescuer?.Role.ToString() ?? UserRole.RescueStaff.ToString();
+        var isCommandCenter = rescuer?.Role is UserRole.Operator or UserRole.Admin;
 
-        // 1. Hoàn tất lượt phân công
-        assignment.Status = DispatchAssignmentStatus.Completed;
-        assignment.CompletedAt = DateTime.UtcNow;
-        assignment.UpdatedAt = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(dto.HandoverNotes))
+        if (!isCommandCenter)
         {
-            assignment.Notes = $"[BÀN GIAO]: {dto.HandoverNotes.Trim()}";
-        }
-        await _assignmentRepository.UpdateAsync(assignment);
-
-        // 2. Trả phương tiện về trạng thái Sẵn sàng (Available)
-        if (unit != null)
-        {
-            unit.Status = RescueUnitStatus.Available;
-            unit.UpdatedAt = DateTime.UtcNow;
-            await _rescueUnitRepository.UpdateAsync(unit);
-        }
-
-        // 3. Đóng hồ sơ sự cố (Close Incident & Telemetry RQ3: T_Response)
-        var oldIncidentStatus = incident.Status;
-        incident.Close(rescuerUserId, dto.ResolutionSummary.Trim());
-        incident.ResolutionTimeMs = (long)(DateTime.UtcNow - incident.CreatedAt).TotalMilliseconds;
-
-        // Lưu ảnh bằng chứng nghiệm thu hiện trường vào IncidentMedia
-        if (dto.EvidenceMediaUrls != null && dto.EvidenceMediaUrls.Any())
-        {
-            foreach (var url in dto.EvidenceMediaUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+            if (unit == null || rescuer?.StationId != unit.StationId)
             {
-                incident.MediaItems.Add(new IncidentMedia
-                {
-                    IncidentId = incident.Id,
-                    MediaUrl = url.Trim(),
-                    MediaType = MediaType.Photo,
-                    CreatedAt = DateTime.UtcNow
-                });
+                return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn chỉ được nghiệm thu nhiệm vụ của xe thuộc trạm mình.");
+            }
+
+            // BR-24: đội cứu hộ chỉ nghiệm thu được sau khi đã có mặt tại hiện trường
+            if (!assignment.CanTransitionTo(DispatchAssignmentStatus.Completed))
+            {
+                return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(
+                    $"Nhiệm vụ đang ở trạng thái '{assignment.Status}'. Chỉ nghiệm thu được sau khi xác nhận OnScene.");
             }
         }
 
-        // 4. Ghi lịch sử chuyển trạng thái và Audit Trail
-        await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
+        var now = DateTime.UtcNow;
+        var evidenceUrls = (dto.EvidenceMediaUrls ?? new List<string>())
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Select(u => u.Trim())
+            .ToList();
+        if (evidenceUrls.Count == 0)
         {
-            IncidentId = incident.Id,
-            OldStatus = oldIncidentStatus,
-            NewStatus = IncidentStatus.Completed,
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Cần ít nhất một ảnh hiện trường sau xử lý (MSG42).");
+        }
+
+        // 1. Hoàn tất lượt phân công của xe này
+        var oldAssignmentStatus = assignment.Status;
+        assignment.Status = DispatchAssignmentStatus.Completed;
+        assignment.CompletedAt = now;
+        assignment.UpdatedAt = now;
+
+        // FR-RS-03 / BR-25 / BR-26: lưu báo cáo nghiệm thu kèm ảnh bằng chứng và thông tin bàn giao
+        var report = new CompletionReport
+        {
+            AssignmentId = assignment.Id,
+            SubmittedByUserId = rescuerUserId,
+            ActionsSummary = dto.ResolutionSummary.Trim(),
+            VictimsAssistedCount = dto.VictimsAssistedCount ?? 0,
+            EquipmentUsed = dto.EquipmentUsed?.Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e.Trim()).ToList() ?? new List<string>(),
+            HandoverEntity = dto.HandoverEntity?.Trim(),
+            HandoverContactName = dto.HandoverContactName?.Trim(),
+            HandoverContactPhone = dto.HandoverContactPhone?.Trim(),
+            HandoverNotes = dto.HandoverNotes?.Trim(),
+            SubmittedAt = now
+        };
+        foreach (var url in evidenceUrls)
+        {
+            report.MediaItems.Add(new CompletionReportMedia { MediaUrl = url, MediaType = MediaType.Photo });
+        }
+        await _assignmentRepository.AddCompletionReportAsync(report);
+        assignment.CompletionReport = report;
+
+        await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
+        {
+            AssignmentId = assignment.Id,
+            OldStatus = oldAssignmentStatus,
+            NewStatus = DispatchAssignmentStatus.Completed,
             ChangedByUserId = rescuerUserId,
-            ChangedByRole = UserRole.RescueStaff.ToString(),
-            Notes = $"Nghiệm thu đóng sự cố: {dto.ResolutionSummary.Trim()}"
-        }, cancellationToken);
+            Notes = "Nộp báo cáo nghiệm thu",
+            ChangedAt = now
+        });
+        await _assignmentRepository.UpdateAsync(assignment);
+
+        // 2. BR-27: xe hồi sức (CoolDown) trước khi quay lại nhận lệnh mới
+        if (unit != null)
+        {
+            var dispatchSettings = await _settingsService.GetDispatchSettingsAsync(cancellationToken);
+            unit.Status = RescueUnitStatus.CoolDown;
+            unit.CoolDownUntil = now.AddMinutes(dispatchSettings.RecoveryMinutes);
+            unit.UpdatedAt = now;
+            await _rescueUnitRepository.UpdateAsync(unit);
+        }
+
+
+        // 3. BR-14: sự cố nhiều xe chỉ đóng khi mọi xe còn hiệu lực đều đã nghiệm thu
+        var siblingAssignments = await _assignmentRepository.GetByIncidentIdAsync(incident.Id);
+        var remainingActive = siblingAssignments.Count(a => a.Id != assignment.Id && a.IsActive);
+        var incidentClosed = remainingActive == 0;
+        var oldIncidentStatus = incident.Status;
+
+        if (incidentClosed)
+        {
+            incident.Close(rescuerUserId, dto.ResolutionSummary.Trim());
+            incident.ResolutionTimeMs = (long)(DateTime.UtcNow - incident.CreatedAt).TotalMilliseconds;
+
+            await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
+            {
+                IncidentId = incident.Id,
+                OldStatus = oldIncidentStatus,
+                NewStatus = IncidentStatus.Completed,
+                ChangedByUserId = rescuerUserId,
+                ChangedByRole = actorRole,
+                Notes = $"Nghiệm thu đóng sự cố: {dto.ResolutionSummary.Trim()}"
+            }, cancellationToken);
+        }
+        else if (incident.Status != IncidentStatus.InProgress)
+        {
+            incident.Status = IncidentStatus.InProgress;
+            incident.UpdatedAt = DateTime.UtcNow;
+        }
 
         await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
         {
             IncidentId = incident.Id,
             ActorId = rescuerUserId,
-            ActorRole = UserRole.RescueStaff.ToString(),
-            Action = AuditAction.Completed,
-            Description = "Nghiệm thu hiện trường và hoàn tất sự cố",
+            ActorRole = actorRole,
+            Action = incidentClosed ? AuditAction.Completed : AuditAction.StatusChanged,
+            Description = incidentClosed
+                ? "Nghiệm thu hiện trường và hoàn tất sự cố"
+                : $"Xe {unit?.PlateNumber} nghiệm thu xong, còn {remainingActive} xe đang xử lý",
             NewStateJson = JsonSerializer.Serialize(new
             {
+                assignmentId = assignment.Id,
+                incidentClosed,
+                remainingActiveAssignments = remainingActive,
                 resolutionTimeMs = incident.ResolutionTimeMs,
-                closedBy = rescuerUserId,
-                evidencePhotosCount = dto.EvidenceMediaUrls?.Count ?? 0
+                closedBy = incidentClosed ? rescuerUserId : (Guid?)null,
+                evidencePhotosCount = evidenceUrls.Count,
+                victimsAssisted = report.VictimsAssistedCount
             })
         }, cancellationToken);
 
         await _incidentRepository.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Sự cố {IncidentId} đã hoàn tất xử lý và đóng hồ sơ (T_Response={Ms}ms)",
-            incident.Id, incident.ResolutionTimeMs);
+        _logger.LogInformation(
+            "Nhiệm vụ {AssignmentId} nghiệm thu xong. Sự cố {IncidentId} {State} (T_Response={Ms}ms)",
+            assignment.Id, incident.Id, incidentClosed ? "đã đóng" : $"còn {remainingActive} xe", incident.ResolutionTimeMs);
 
         var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
 
@@ -500,9 +893,23 @@ public class DispatchService : IDispatchService
         await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, cancellationToken);
         await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
 
+        // FR-CIT-04: báo người dân khi toàn bộ cứu hộ hoàn tất
+        if (incidentClosed && incident.ReportedByUserId.HasValue)
+        {
+            await _notificationService.NotifyUsersAsync(new[] { incident.ReportedByUserId.Value }, new NotificationRequest
+            {
+                Type = NotificationType.StatusUpdate,
+                Title = "Cứu hộ đã hoàn tất",
+                Message = $"Sự cố \"{incident.Title}\" đã được xử lý xong. Cảm ơn bạn đã báo tin.",
+                IncidentId = incident.Id
+            }, cancellationToken);
+        }
+
         return ApiResponseDto<DispatchAssignmentResponseDto>.SuccessResult(
             assignmentDto,
-            "Nghiệm thu hiện trường thành công. Hồ sơ sự cố đã được đóng và ghi nhận KPI phản hồi.");
+            incidentClosed
+                ? "Nghiệm thu hiện trường thành công. Hồ sơ sự cố đã được đóng và ghi nhận KPI phản hồi."
+                : $"Nghiệm thu xe thành công. Sự cố vẫn mở vì còn {remainingActive} xe đang xử lý.");
     }
 
     public async Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
@@ -512,38 +919,8 @@ public class DispatchService : IDispatchService
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
         if (incident == null)
         {
-            return ApiResponseDto<CitizenTrackingResponseDto>.FailureResult("Không tìm thấy thông tin sự cố.");
+            return ApiResponseDto<CitizenTrackingResponseDto>.NotFoundResult("Không tìm thấy thông tin sự cố.");
         }
-
-        var assignments = await _assignmentRepository.GetByIncidentIdAsync(incidentId);
-        var activeAssignment = assignments
-            .OrderByDescending(a => a.DispatchedAt)
-            .FirstOrDefault();
-
-        if (activeAssignment == null)
-        {
-            return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(new CitizenTrackingResponseDto
-            {
-                IncidentId = incident.Id,
-                IncidentTitle = incident.Title,
-                IncidentAddress = incident.LocationAddress,
-                IncidentLat = incident.Latitude,
-                IncidentLng = incident.Longitude,
-                IncidentStatus = incident.Status.ToString(),
-                IncidentSeverity = incident.Severity.ToString(),
-                DispatchStatus = "PendingDispatch"
-            }, "Sự cố đang được Điều phối viên tiếp nhận và phân công đội cứu hộ.");
-        }
-
-        var unit = activeAssignment.RescueUnit ?? await _rescueUnitRepository.GetByIdWithDetailsAsync(activeAssignment.RescueUnitId);
-
-        var vehicleLat = (unit != null && unit.CurrentLat != 0) ? unit.CurrentLat : (unit?.Station?.Latitude ?? incident.Latitude);
-        var vehicleLng = (unit != null && unit.CurrentLng != 0) ? unit.CurrentLng : (unit?.Station?.Longitude ?? incident.Longitude);
-
-        var distanceKm = CalculateDistanceKm(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude);
-        var etaMinutes = (int)Math.Max(1, Math.Round(EstimateEtaMinutes(distanceKm)));
-
-        var trajectory = await GenerateRouteTrajectoryAsync(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude, cancellationToken);
 
         var result = new CitizenTrackingResponseDto
         {
@@ -554,26 +931,80 @@ public class DispatchService : IDispatchService
             IncidentLng = incident.Longitude,
             IncidentStatus = incident.Status.ToString(),
             IncidentSeverity = incident.Severity.ToString(),
-            RescueUnitId = unit?.Id,
-            PlateNumber = unit?.PlateNumber,
-            UnitTypeName = unit?.UnitType.ToString(),
-            StationName = unit?.Station?.Name ?? string.Empty,
-            StationPhoneNumber = unit?.Station?.PhoneNumber,
-            VehicleLat = vehicleLat,
-            VehicleLng = vehicleLng,
-            LastLocationUpdateAt = unit?.LastLocationUpdateAt ?? activeAssignment.DispatchedAt,
-            RouteTrajectory = trajectory,
-            DistanceKm = distanceKm,
-            EstimatedArrivalMinutes = etaMinutes,
-            DispatchStatus = activeAssignment.Status.ToString(),
-            DispatchedAt = activeAssignment.DispatchedAt,
-            AcceptedAt = activeAssignment.AcceptedAt,
-            ArrivedAt = activeAssignment.ArrivedAt,
-            CompletedAt = activeAssignment.CompletedAt,
-            Notes = activeAssignment.Notes
+            DispatchStatus = "PendingDispatch"
         };
 
-        return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result, "Lấy thông tin lộ trình di chuyển cứu hộ thành công.");
+        // FR-CIT-03: hiển thị mọi xe đang xử lý; nếu đã xong hết thì hiển thị các xe đã hoàn thành
+        var assignments = await _assignmentRepository.GetByIncidentIdAsync(incidentId);
+        var shown = assignments.Where(a => a.IsActive).ToList();
+        if (shown.Count == 0)
+        {
+            shown = assignments.Where(a => a.Status == DispatchAssignmentStatus.Completed).ToList();
+        }
+
+        if (shown.Count == 0)
+        {
+            return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result,
+                "Sự cố đang được Điều phối viên tiếp nhận và phân công đội cứu hộ.");
+        }
+
+        foreach (var assignment in shown.OrderBy(a => a.DispatchedAt))
+        {
+            var unit = assignment.RescueUnit ?? await _rescueUnitRepository.GetByIdWithDetailsAsync(assignment.RescueUnitId);
+
+            var vehicleLat = (unit != null && unit.CurrentLat != 0) ? unit.CurrentLat : (unit?.Station?.Latitude ?? incident.Latitude);
+            var vehicleLng = (unit != null && unit.CurrentLng != 0) ? unit.CurrentLng : (unit?.Station?.Longitude ?? incident.Longitude);
+            var distanceKm = CalculateDistanceKm(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude);
+            var arrived = assignment.Status is DispatchAssignmentStatus.OnScene or DispatchAssignmentStatus.Completed;
+
+            result.Units.Add(new TrackedUnitDto
+            {
+                AssignmentId = assignment.Id,
+                RescueUnitId = unit?.Id ?? assignment.RescueUnitId,
+                PlateNumber = unit?.PlateNumber,
+                UnitTypeName = unit?.UnitType.ToString(),
+                StationName = unit?.Station?.Name,
+                StationPhoneNumber = unit?.Station?.PhoneNumber,
+                VehicleLat = vehicleLat,
+                VehicleLng = vehicleLng,
+                LastLocationUpdateAt = unit?.LastLocationUpdateAt ?? assignment.DispatchedAt,
+                RouteTrajectory = arrived
+                    ? new List<RoutePointDto>()
+                    : await GenerateRouteTrajectoryAsync(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude, cancellationToken),
+                DistanceKm = arrived ? 0 : distanceKm,
+                EstimatedArrivalMinutes = arrived ? 0 : (int)Math.Max(1, Math.Round(EstimateEtaMinutes(distanceKm))),
+                DispatchStatus = assignment.Status.ToString(),
+                DispatchedAt = assignment.DispatchedAt,
+                AcceptedAt = assignment.AcceptedAt,
+                EnRouteAt = assignment.EnRouteAt,
+                ArrivedAt = assignment.ArrivedAt,
+                CompletedAt = assignment.CompletedAt,
+                Notes = assignment.Notes
+            });
+        }
+
+        // Giữ các trường đơn (xe đầu tiên) để tương thích với client cũ
+        var primary = result.Units[0];
+        result.RescueUnitId = primary.RescueUnitId;
+        result.PlateNumber = primary.PlateNumber;
+        result.UnitTypeName = primary.UnitTypeName;
+        result.StationName = primary.StationName ?? string.Empty;
+        result.StationPhoneNumber = primary.StationPhoneNumber;
+        result.VehicleLat = primary.VehicleLat;
+        result.VehicleLng = primary.VehicleLng;
+        result.LastLocationUpdateAt = primary.LastLocationUpdateAt;
+        result.RouteTrajectory = primary.RouteTrajectory;
+        result.DistanceKm = primary.DistanceKm;
+        result.EstimatedArrivalMinutes = primary.EstimatedArrivalMinutes;
+        result.DispatchStatus = primary.DispatchStatus;
+        result.DispatchedAt = primary.DispatchedAt;
+        result.AcceptedAt = primary.AcceptedAt;
+        result.ArrivedAt = primary.ArrivedAt;
+        result.CompletedAt = primary.CompletedAt;
+        result.Notes = primary.Notes;
+
+        return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result,
+            $"Lấy thông tin lộ trình di chuyển của {result.Units.Count} xe cứu hộ thành công.");
     }
 
     private static readonly HttpClient _routingHttpClient = new() { Timeout = TimeSpan.FromSeconds(3) };
@@ -641,35 +1072,6 @@ public class DispatchService : IDispatchService
 
     #region Private Helper Methods
 
-    private async Task<int> CountActiveTasksForUnitAsync(Guid unitId)
-    {
-        var assignments = await _assignmentRepository.GetByRescueUnitIdAsync(unitId);
-        return assignments.Count(a => a.Status == DispatchAssignmentStatus.Dispatched ||
-                                      a.Status == DispatchAssignmentStatus.Accepted ||
-                                      a.Status == DispatchAssignmentStatus.EnRoute ||
-                                      a.Status == DispatchAssignmentStatus.OnScene);
-    }
-
-    private static RescueUnitType? DeduceRecommendedUnitType(Incident incident)
-    {
-        var titleAndDesc = $"{incident.Title} {incident.Description}".ToLower();
-        var hazardTags = incident.AiClassification?.HazardTags ?? new List<string>();
-        var tagsStr = string.Join(" ", hazardTags).ToLower();
-
-        if (tagsStr.Contains("fire") || tagsStr.Contains("smoke") || titleAndDesc.Contains("cháy") || titleAndDesc.Contains("hỏa hoạn"))
-        {
-            return RescueUnitType.FireTruck;
-        }
-
-        if (tagsStr.Contains("injury") || tagsStr.Contains("casualty") || tagsStr.Contains("medical") ||
-            titleAndDesc.Contains("cấp cứu") || titleAndDesc.Contains("bị thương") || titleAndDesc.Contains("ngất xỉu"))
-        {
-            return RescueUnitType.Ambulance;
-        }
-
-        return null;
-    }
-
     private static double CalculateDistanceKm(double lat1, double lon1, double lat2, double lon2)
     {
         if (lat1 == 0 || lon1 == 0 || lat2 == 0 || lon2 == 0) return 999.0;
@@ -732,8 +1134,30 @@ public class DispatchService : IDispatchService
             AcceptedAt = assignment.AcceptedAt,
             ArrivedAt = assignment.ArrivedAt,
             CompletedAt = assignment.CompletedAt,
+            EnRouteAt = assignment.EnRouteAt,
             Status = assignment.Status,
-            Notes = assignment.Notes
+            Notes = assignment.Notes,
+            DispatchAlgorithm = assignment.DispatchAlgorithm,
+            DistanceKm = assignment.DistanceKm,
+            EstimatedArrivalMinutes = assignment.EstimatedArrivalMinutes,
+            AssignedByUserId = assignment.AssignedByUserId,
+            RejectionReason = assignment.RejectionReason,
+            RejectionNotes = assignment.RejectionNotes,
+            RejectedAt = assignment.RejectedAt,
+            CompletionReport = assignment.CompletionReport == null ? null : new CompletionReportDto
+            {
+                Id = assignment.CompletionReport.Id,
+                ActionsSummary = assignment.CompletionReport.ActionsSummary,
+                VictimsAssistedCount = assignment.CompletionReport.VictimsAssistedCount,
+                EquipmentUsed = assignment.CompletionReport.EquipmentUsed,
+                EvidenceMediaUrls = assignment.CompletionReport.MediaItems.Select(m => m.MediaUrl).ToList(),
+                HandoverEntity = assignment.CompletionReport.HandoverEntity,
+                HandoverContactName = assignment.CompletionReport.HandoverContactName,
+                HandoverContactPhone = assignment.CompletionReport.HandoverContactPhone,
+                HandoverNotes = assignment.CompletionReport.HandoverNotes,
+                SubmittedByUserId = assignment.CompletionReport.SubmittedByUserId,
+                SubmittedAt = assignment.CompletionReport.SubmittedAt
+            }
         };
     }
 
@@ -751,7 +1175,7 @@ public class DispatchService : IDispatchService
             Severity = incident.Severity,
             ReportedByUserId = incident.ReportedByUserId,
             ReporterName = incident.ReporterName,
-            ReporterPhone = incident.ReporterPhone,
+            ReporterPhone = PhoneMasking.Mask(incident.ReporterPhone),
             VerifiedByUserId = incident.VerifiedByUserId,
             VerifiedAt = incident.VerifiedAt,
             OperatorNotes = incident.OperatorNotes,

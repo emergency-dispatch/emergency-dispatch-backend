@@ -64,7 +64,17 @@ public enum RescueUnitStatus
     /// <summary>
     /// Tạm ngưng hoạt động để bảo trì, tiếp nhiên liệu
     /// </summary>
-    Maintenance = 4
+    Maintenance = 4,
+
+    /// <summary>
+    /// Hồi sức 5 phút sau khi nghiệm thu nhiệm vụ (BR-27), chưa nhận lệnh mới
+    /// </summary>
+    CoolDown = 5,
+
+    /// <summary>
+    /// Ngừng phục vụ do trạm trực thuộc bị xóa (BR-AD-02)
+    /// </summary>
+    OutOfService = 6
 }
 
 /// <summary>
@@ -100,5 +110,10 @@ public enum DispatchAssignmentStatus
     /// <summary>
     /// Lệnh điều phối bị hủy (do điều xe khác hoặc báo sai)
     /// </summary>
-    Cancelled = 5
+    Cancelled = 5,
+
+    /// <summary>
+    /// Đội xe từ chối nhận lệnh kèm lý do (BR-22)
+    /// </summary>
+    Rejected = 6
 }

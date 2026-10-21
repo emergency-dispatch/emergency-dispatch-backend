@@ -39,4 +39,9 @@ public interface IRealtimeNotifier
     /// Cảnh báo leo thang khẩn cấp (Sự cố Level 3/4 chưa được điều phối hoặc tiếp nhận sau thời gian quy định)
     /// </summary>
     Task EscalationAlertAsync(EscalationAlertDto alert, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Thông báo cá nhân vừa được tạo (gửi riêng tới người dùng)
+    /// </summary>
+    Task NotificationCreatedAsync(Guid userId, EmergencyDispatch.Application.DTOs.Notification.NotificationDto notification, CancellationToken cancellationToken = default);
 }

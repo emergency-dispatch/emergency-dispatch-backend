@@ -109,6 +109,13 @@ public class Incident : BaseEntity
     public string? ResolutionSummary { get; set; }
 
     /// <summary>
+    /// Khóa mềm 2 phút khi một Operator đang xử lý sự cố (FR-OP-02, BR-15)
+    /// </summary>
+    public Guid? LockedByOperatorId { get; set; }
+    public User? LockedByOperator { get; set; }
+    public DateTime? LockExpiresAt { get; set; }
+
+    /// <summary>
     /// Thời gian phản hồi tính bằng mili-giây (từ khi tạo đến khi Operator xác minh)
     /// </summary>
     public long? ResponseTimeMs { get; set; }
@@ -127,10 +134,18 @@ public class Incident : BaseEntity
     public ICollection<IncidentMedia> MediaItems { get; set; } = new List<IncidentMedia>();
     public AiClassification? AiClassification { get; set; }
     public ICollection<DispatchAssignment> DispatchAssignments { get; set; } = new List<DispatchAssignment>();
-    public ICollection<IncidentAssignment> IncidentAssignments { get; set; } = new List<IncidentAssignment>();
     public ICollection<IncidentStatusHistory> StatusHistories { get; set; } = new List<IncidentStatusHistory>();
     public ICollection<IncidentAuditTrail> AuditTrails { get; set; } = new List<IncidentAuditTrail>();
     public CitizenFeedback? CitizenFeedback { get; set; }
+
+    /// <summary>
+    /// Sự cố đang bị một Operator khác giữ khóa mềm còn hiệu lực (BR-15)
+    /// </summary>
+    public bool IsLockedByOther(Guid operatorId, DateTime utcNow)
+        => LockedByOperatorId.HasValue
+           && LockedByOperatorId.Value != operatorId
+           && LockExpiresAt.HasValue
+           && LockExpiresAt.Value > utcNow;
 
     /// <summary>
     /// Cập nhật trạng thái sự cố

@@ -37,4 +37,7 @@ public static class RealtimeContract
 
     /// <summary>Cảnh báo khẩn cấp leo thang sự cố quá hạn phản hồi (gửi tới Operator và Admin kèm âm thanh báo động)</summary>
     public const string ReceiveEscalationAlert = "ReceiveEscalationAlert";
+
+    /// <summary>Thông báo cá nhân mới (gửi riêng tới từng người dùng theo userId)</summary>
+    public const string ReceiveNotification = "ReceiveNotification";
 }

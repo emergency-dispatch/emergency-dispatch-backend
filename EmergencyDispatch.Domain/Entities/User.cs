@@ -56,16 +56,26 @@ public class User : BaseEntity
     public string? PasswordResetToken { get; set; }
     public DateTime? PasswordResetTokenExpiry { get; set; }
 
+    // Khóa tạm do đăng nhập sai liên tiếp (MSG07) và khóa thủ công bởi Admin
+    public int FailedLoginCount { get; set; }
+    public DateTime? LockoutEndUtc { get; set; }
+    public string? LockReason { get; set; }
+    public DateTime? LockedAt { get; set; }
+    public Guid? LockedByUserId { get; set; }
+
     // Foreign Keys
     public Guid? StationId { get; set; }
 
     // Navigation Properties
     public Station? Station { get; set; }
+
+    /// <summary>
+    /// Tổ làm việc của nhân viên cứu hộ trong trạm (tối đa 1 tổ)
+    /// </summary>
+    public StationTeamMember? TeamMembership { get; set; }
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public ICollection<IceContact> IceContacts { get; set; } = new List<IceContact>();
-    public ICollection<IncidentAssignment> AssignedJobs { get; set; } = new List<IncidentAssignment>();
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
-    public ICollection<LocationUpdate> LocationUpdates { get; set; } = new List<LocationUpdate>();
     public ICollection<CitizenFeedback> CitizenFeedbacks { get; set; } = new List<CitizenFeedback>();
     public ICollection<TrafficHotspot> TrafficHotspots { get; set; } = new List<TrafficHotspot>();
 }

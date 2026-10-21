@@ -18,4 +18,14 @@ public interface IUserRepository : IGenericRepository<User>
         string? search,
         UserRole? role,
         UserStatus? status);
+
+    /// <summary>
+    /// Nhân sự thuộc trạm kèm tổ làm việc
+    /// </summary>
+    Task<IReadOnlyList<User>> GetByStationWithTeamAsync(Guid stationId);
+
+    /// <summary>
+    /// Người dùng đang hoạt động theo danh sách vai trò (VD gửi thông báo cho toàn bộ Operator/Admin)
+    /// </summary>
+    Task<IReadOnlyList<User>> GetActiveByRolesAsync(IReadOnlyCollection<EmergencyDispatch.Domain.Enums.UserRole> roles);
 }

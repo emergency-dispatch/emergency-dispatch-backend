@@ -1,20 +1,25 @@
 using System.Security.Claims;
 using EmergencyDispatch.API.Realtime;
+using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Enums;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace EmergencyDispatch.API.Hubs;
 
 /// <summary>
 /// Hub sự cố: đẩy sự cố mới / cập nhật tới Operator, và trạng thái sự cố tới người báo đang theo dõi.
-/// Endpoint: /hubs/incidents (JWT qua query string access_token, cho phép khách vãng lai theo dõi SOS của mình)
+/// Endpoint: /hubs/incidents (bắt buộc JWT qua query string access_token)
 /// </summary>
+[Authorize]
 public class IncidentHub : Hub
 {
+    private readonly IIncidentService _incidentService;
     private readonly ILogger<IncidentHub> _logger;
 
-    public IncidentHub(ILogger<IncidentHub> logger)
+    public IncidentHub(IIncidentService incidentService, ILogger<IncidentHub> logger)
     {
+        _incidentService = incidentService;
         _logger = logger;
     }
 
@@ -27,10 +32,18 @@ public class IncidentHub : Hub
     }
 
     /// <summary>
-    /// Người báo (kể cả khách) đăng ký theo dõi trạng thái một sự cố
+    /// Đăng ký theo dõi một sự cố. Chỉ người báo, Operator/Admin và đội cứu hộ được phân công mới được tham gia (FR-CIT-03, BR-CIT-05)
     /// </summary>
-    public Task SubscribeIncident(Guid incidentId)
-        => Groups.AddToGroupAsync(Context.ConnectionId, RealtimeContract.IncidentGroup(incidentId));
+    public async Task SubscribeIncident(Guid incidentId)
+    {
+        var userId = Guid.TryParse(Context.User?.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
+        if (userId == Guid.Empty || !await _incidentService.CanAccessIncidentAsync(incidentId, userId))
+        {
+            throw new HubException("Bạn không có quyền theo dõi sự cố này.");
+        }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, RealtimeContract.IncidentGroup(incidentId));
+    }
 
     /// <summary>
     /// Hủy theo dõi sự cố

@@ -11,6 +11,7 @@ public class StationResponseDto
     public double Longitude { get; set; }
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; }
+    public double CoverageRadiusKm { get; set; }
     public int ActiveUnitsCount { get; set; }
     public int TotalUnitsCount { get; set; }
     public int StaffCount { get; set; }

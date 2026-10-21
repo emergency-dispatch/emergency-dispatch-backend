@@ -15,9 +15,11 @@ public interface IUserService
         string? search,
         UserRole? role,
         UserStatus? status);
-    Task<UserResponseDto> CreateUserAsync(CreateUserDto dto);
-    Task<UserResponseDto> UpdateUserAsync(Guid id, UpdateUserDto dto);
+    Task<UserResponseDto> CreateUserAsync(CreateUserDto dto, UserRole actorRole);
+    Task<UserResponseDto> UpdateUserAsync(Guid id, UpdateUserDto dto, UserRole actorRole);
     Task<bool> DeleteUserAsync(Guid id);
+    Task<UserResponseDto> LockUserAsync(Guid id, string reason, Guid actorUserId, UserRole actorRole);
+    Task<UserResponseDto> UnlockUserAsync(Guid id, UserRole actorRole);
     Task<bool> UpdateFcmTokenAsync(Guid userId, string fcmToken);
 
     // Quản lý danh bạ người thân khẩn cấp (ICE - In Case of Emergency)
@@ -27,7 +29,7 @@ public interface IUserService
     Task<bool> DeleteIceContactAsync(Guid userId, Guid contactId);
 
     // Quản lý điều phối nhân sự, gán trạm & Tổ làm việc (Staff & Operator & Admin)
-    Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto);
+    Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto, UserRole actorRole);
     Task<IReadOnlyList<TeamMemberSummaryDto>> GetStaffByStationAsync(Guid stationId);
     Task<StaffTeamResponseDto> GetMyTeamAsync(Guid userId);
 }

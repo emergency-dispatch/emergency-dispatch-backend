@@ -55,6 +55,8 @@ public class AiClassificationService : IAiClassificationService
 
             return new AiClassificationResultDto
             {
+                IncidentType = "fire",
+                IsTrafficJam = false,
                 HazardTags = new List<string> { "fire", "heavy_smoke", "residential_area" },
                 SeverityScore = 3, // Level 3
                 Summary = "[Mô phỏng AI Qwen2.5-VL] Phát hiện đám cháy bùng phát tại khu vực nhà ở kèm khói đen đặc, nguy cơ lan rộng cao.",
@@ -88,6 +90,8 @@ public class AiClassificationService : IAiClassificationService
                                "Analyze the provided emergency image and context with extreme precision. " +
                                "You MUST output ONLY a valid, raw JSON object (NO markdown backticks, NO ```json blocks, NO preamble) matching this schema:\n" +
                                "{\n" +
+                               "  \"incidentType\": \"fire\",\n" +
+                               "  \"isTrafficJam\": false,\n" +
                                "  \"hazardTags\": [\"fire\", \"smoke\", \"trapped_victims\"],\n" +
                                "  \"severityScore\": 3,\n" +
                                "  \"summary\": \"Brief concise assessment in Vietnamese.\",\n" +
@@ -99,6 +103,8 @@ public class AiClassificationService : IAiClassificationService
                                "  1: Minor (small trash or grass fire, minor collision, no one trapped).\n" +
                                "  2: Moderate (one vehicle, room or kiosk on fire; overturned vehicle or injured people but nobody trapped).\n" +
                                "  3: Critical (large building or factory fire, multi-vehicle crash, tanker involved, trapped or multiple victims).\n" +
+                               "- incidentType MUST be one of: \"fire\" (fire / explosion), \"accident\" (traffic accident), \"none\" (neither).\n" +
+                               "- isTrafficJam: true if vehicles block the road and would delay rescue access.\n" +
                                "- hazardTags: concise lowercase English keywords.\n" +
                                "- summary: 1-2 Vietnamese sentences.\n" +
                                "- confidenceScore: float between 0.0 and 1.0.";

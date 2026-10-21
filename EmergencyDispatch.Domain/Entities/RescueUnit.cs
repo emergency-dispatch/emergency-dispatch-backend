@@ -38,6 +38,11 @@ public class RescueUnit : BaseEntity
     public DateTime? LastLocationUpdateAt { get; set; }
 
     /// <summary>
+    /// Thời điểm kết thúc hồi sức sau nhiệm vụ (BR-27); null khi xe không ở trạng thái CoolDown
+    /// </summary>
+    public DateTime? CoolDownUntil { get; set; }
+
+    /// <summary>
     /// Trạm cứu hộ trực thuộc
     /// </summary>
     public Guid StationId { get; set; }

@@ -150,4 +150,17 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
             _logger.LogWarning(ex, "Không đẩy được cảnh báo leo thang sự cố {IncidentId} qua SignalR.", alert.IncidentId);
         }
     }
+
+    public async Task NotificationCreatedAsync(Guid userId, EmergencyDispatch.Application.DTOs.Notification.NotificationDto notification, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _incidentHub.Clients.User(userId.ToString())
+                .SendAsync(RealtimeContract.ReceiveNotification, notification, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không đẩy được thông báo {NotificationId} tới người dùng {UserId}.", notification.Id, userId);
+        }
+    }
 }

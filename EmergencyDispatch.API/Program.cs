@@ -1,3 +1,5 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -133,19 +135,29 @@ builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
 builder.Services.AddScoped<IIceContactRepository, IceContactRepository>();
 builder.Services.AddScoped<ITrafficHotspotRepository, TrafficHotspotRepository>();
 builder.Services.AddScoped<IEscalationRepository, EscalationRepository>();
+builder.Services.AddScoped<IBlockedPhoneRepository, BlockedPhoneRepository>();
+builder.Services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
+builder.Services.AddScoped<IStationTeamRepository, StationTeamRepository>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();
 
-// 7. Cấu hình Resilient HTTP Client cho AI Qwen2.5-VL (OpenRouter)
+// 7. Cấu hình Resilient HTTP Client cho AI Qwen2.5-VL (OpenRouter) theo FR-SYS-01:
+//    timeout 20s/lần, retry 3 lần backoff 1s → 2s → 4s, circuit breaker mở khi 5 lỗi liên tiếp trong 2 phút, nghỉ 30s
 builder.Services.AddHttpClient("OpenRouterClient")
     .AddStandardResilienceHandler(options =>
     {
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(60);
-        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(25);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-        options.Retry.MaxRetryAttempts = 2;
-        options.Retry.Delay = TimeSpan.FromSeconds(2);
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(20);
+        options.Retry.MaxRetryAttempts = 3;
+        options.Retry.BackoffType = Polly.DelayBackoffType.Exponential;
+        options.Retry.UseJitter = false;
+        options.Retry.Delay = TimeSpan.FromSeconds(1);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(90);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(2);
+        options.CircuitBreaker.MinimumThroughput = 5;
+        options.CircuitBreaker.FailureRatio = 1.0;
+        options.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
     });
 
 // 8. Đăng ký Application Services (Scoped)
@@ -158,16 +170,23 @@ builder.Services.AddScoped<IRescueUnitService, RescueUnitService>();
 builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
+builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();
 builder.Services.AddScoped<ITrafficService, TrafficService>();
 builder.Services.AddScoped<IEscalationService, EscalationService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IBlockedNumberService, BlockedNumberService>();
+builder.Services.AddScoped<IStationTeamService, StationTeamService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<ITelemetryService, TelemetryService>();
+builder.Services.AddSingleton<IPushNotificationSender, EmergencyDispatch.Infrastructure.Services.FcmPushNotificationSender>();
 
 // 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
 builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();
 builder.Services.AddHostedService<AiAnalysisWorker>();
 builder.Services.AddHostedService<HotspotCleanupWorker>();
 builder.Services.AddHostedService<EscalationWorker>();
+builder.Services.AddHostedService<VehicleCoolDownWorker>();
 
 // 8.2. Kênh thông báo Realtime (SignalR Notifier)
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
@@ -213,6 +232,22 @@ builder.Services.AddAuthentication(options =>
 
 // 10. Authorization
 builder.Services.AddAuthorization();
+
+// 11. Rate Limiting chống spam endpoint công khai (BR-CIT-01, chống dò mật khẩu)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // SOS: tối đa 5 yêu cầu / phút / địa chỉ IP
+    options.AddPolicy("sos", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+
+    // Đăng nhập: tối đa 10 lần / phút / địa chỉ IP
+    options.AddPolicy("login", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 
 var app = builder.Build();
 
@@ -260,6 +295,7 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 

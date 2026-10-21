@@ -47,6 +47,11 @@ public class UserResponseDto
 
     // Trạng thái tài khoản & Trạm
     public bool IsEmailVerified { get; set; }
+
+    // Trạng thái khóa tài khoản (Admin khóa thủ công hoặc khóa tạm do đăng nhập sai — MSG07)
+    public string? LockReason { get; set; }
+    public DateTime? LockedAt { get; set; }
+    public DateTime? LockoutEndUtc { get; set; }
     public string? FcmToken { get; set; }
     public Guid? StationId { get; set; }
     public string? StationName { get; set; }

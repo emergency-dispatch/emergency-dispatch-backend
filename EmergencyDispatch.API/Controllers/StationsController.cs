@@ -1,5 +1,6 @@
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Station;
+using EmergencyDispatch.Application.DTOs.Team;
 using EmergencyDispatch.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,10 +12,12 @@ namespace EmergencyDispatch.API.Controllers;
 public class StationsController : ControllerBase
 {
     private readonly IStationService _stationService;
+    private readonly IStationTeamService _teamService;
 
-    public StationsController(IStationService stationService)
+    public StationsController(IStationService stationService, IStationTeamService teamService)
     {
         _stationService = stationService;
+        _teamService = teamService;
     }
 
     /// <summary>
@@ -110,6 +113,7 @@ public class StationsController : ControllerBase
     /// Lấy danh sách nhân viên trực thuộc trạm cứu hộ kèm Tổ làm việc
     /// </summary>
     [HttpGet("{id:guid}/staff")]
+    [Authorize(Roles = "Admin,Operator,RescueStaff")]
     [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<StationStaffMemberDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetStationStaff(Guid id)
@@ -124,4 +128,42 @@ public class StationsController : ControllerBase
             return NotFound(ApiResponseDto<object>.Fail(ex.Message));
         }
     }
+
+    /// <summary>
+    /// Danh sách tổ làm việc của trạm (tên, xe phụ trách, thành viên kèm vai trò kíp)
+    /// </summary>
+    [HttpGet("{id:guid}/teams")]
+    [Authorize(Roles = "Admin,Operator,RescueStaff")]
+    [ProducesResponseType(typeof(ApiResponseDto<List<StationTeamDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTeams(Guid id, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _teamService.GetTeamsAsync(id, cancellationToken));
+
+    /// <summary>
+    /// Tạo tổ làm việc: tối đa 6 người, tối đa 1 tổ trưởng (Commander), thành viên là RescueStaff của trạm, mỗi xe tối đa 1 tổ
+    /// </summary>
+    [HttpPost("{id:guid}/teams")]
+    [Authorize(Roles = "Admin,Operator")]
+    [ProducesResponseType(typeof(ApiResponseDto<StationTeamDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<StationTeamDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateTeam(Guid id, [FromBody] StationTeamInputDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _teamService.CreateAsync(id, dto, cancellationToken));
+
+    /// <summary>
+    /// Cập nhật tên, xe phụ trách và danh sách thành viên của tổ (gửi đầy đủ danh sách thành viên mong muốn)
+    /// </summary>
+    [HttpPut("{id:guid}/teams/{teamId:guid}")]
+    [Authorize(Roles = "Admin,Operator")]
+    [ProducesResponseType(typeof(ApiResponseDto<StationTeamDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<StationTeamDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpdateTeam(Guid id, Guid teamId, [FromBody] StationTeamInputDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _teamService.UpdateAsync(id, teamId, dto, cancellationToken));
+
+    /// <summary>
+    /// Xóa tổ (thành viên vẫn thuộc trạm)
+    /// </summary>
+    [HttpDelete("{id:guid}/teams/{teamId:guid}")]
+    [Authorize(Roles = "Admin,Operator")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteTeam(Guid id, Guid teamId, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _teamService.DeleteAsync(id, teamId, cancellationToken));
 }

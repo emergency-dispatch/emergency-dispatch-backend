@@ -33,6 +33,32 @@ public class AiClassificationResultDto
     public bool IsTrafficJam { get; set; }
 
     /// <summary>
+    /// Nhánh sự kiện chuẩn hóa (FR-SYS-01): FireExplosion / TrafficAccident / None
+    /// </summary>
+    [JsonPropertyName("eventType")]
+    public IncidentEventType EventType => ParseEventType(IncidentType);
+
+    /// <summary>
+    /// Chuẩn hóa nhãn loại sự cố tự do của mô hình ("fire", "accident", "FireExplosion"...) về enum
+    /// </summary>
+    public static IncidentEventType ParseEventType(string? raw) => raw?.Trim().ToLowerInvariant() switch
+    {
+        "fire" or "fireexplosion" or "fire_explosion" or "explosion" => IncidentEventType.FireExplosion,
+        "accident" or "trafficaccident" or "traffic_accident" or "crash" => IncidentEventType.TrafficAccident,
+        _ => IncidentEventType.None
+    };
+
+    /// <summary>
+    /// Nhãn chuẩn lưu vào incidentType khi map ngược từ DB
+    /// </summary>
+    public static string ToIncidentTypeLabel(IncidentEventType eventType) => eventType switch
+    {
+        IncidentEventType.FireExplosion => "fire",
+        IncidentEventType.TrafficAccident => "accident",
+        _ => "none"
+    };
+
+    /// <summary>
     /// Enum SeverityLevel tương ứng (chuẩn 0-3; điểm ngoài khoảng được kẹp về 0 hoặc Level3)
     /// </summary>
     [JsonIgnore]

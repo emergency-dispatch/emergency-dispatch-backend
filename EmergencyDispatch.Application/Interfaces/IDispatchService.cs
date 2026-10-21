@@ -17,7 +17,7 @@ public interface IDispatchService
         Guid incidentId,
         DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
         RescueUnitType? unitType = null,
-        double maxDistanceKm = 15.0,
+        double? maxDistanceKm = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -25,13 +25,13 @@ public interface IDispatchService
     /// </summary>
     Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetAvailableUnitsNearbyAsync(
         Guid incidentId,
-        double maxDistanceKm = 15.0,
+        double? maxDistanceKm = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Điều phối xe cứu hộ tới hiện trường sự cố
     /// </summary>
-    Task<ApiResponseDto<DispatchAssignmentResponseDto>> AssignUnitAsync(
+    Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignUnitAsync(
         AssignDispatchDto dto,
         Guid operatorId,
         CancellationToken cancellationToken = default);
@@ -69,6 +69,15 @@ public interface IDispatchService
     /// <summary>
     /// Nghiệm thu hoàn thành nhiệm vụ và đóng hồ sơ sự cố (Resolution Report &amp; Telemetry KPI T_Response)
     /// </summary>
+    /// <summary>
+    /// Đội cứu hộ từ chối nhiệm vụ kèm lý do bắt buộc (FR-RS-01, BR-22)
+    /// </summary>
+    Task<ApiResponseDto<DispatchAssignmentResponseDto>> RejectAssignmentAsync(
+        Guid id,
+        RejectAssignmentDto dto,
+        Guid rescuerUserId,
+        CancellationToken cancellationToken = default);
+
     Task<ApiResponseDto<DispatchAssignmentResponseDto>> ResolveAssignmentAsync(
         Guid id,
         ResolveDispatchDto dto,

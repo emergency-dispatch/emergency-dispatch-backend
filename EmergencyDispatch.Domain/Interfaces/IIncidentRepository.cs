@@ -41,4 +41,36 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     /// Commit toàn bộ thay đổi đang được theo dõi
     /// </summary>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Giữ (hoặc gia hạn) khóa mềm một cách nguyên tử: chỉ thành công khi chưa ai giữ, khóa đã hết hạn, hoặc chính Operator này đang giữ
+    /// </summary>
+    Task<bool> TryAcquireLockAsync(Guid incidentId, Guid operatorId, DateTime expiresAtUtc, DateTime nowUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nhả khóa mềm do chính Operator này đang giữ (hoặc mọi khóa nếu force = true)
+    /// </summary>
+    Task<bool> ReleaseLockAsync(Guid incidentId, Guid operatorId, bool force, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BR-CIT-01: người dùng / số điện thoại đã có sự cố đang hoạt động được tạo sau thời điểm since
+    /// </summary>
+    Task<bool> HasRecentActiveIncidentAsync(Guid? userId, string? normalizedPhone, DateTime sinceUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-CIT-05: sự cố do người dùng báo cáo (mới nhất trước), có thể lọc theo trạng thái
+    /// </summary>
+    Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetByReporterAsync(Guid userId, IncidentStatus? status, int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nhật ký kiểm toán theo bộ lọc (phân trang, mới nhất trước)
+    /// </summary>
+    Task<(IReadOnlyList<IncidentAuditTrail> Items, int TotalCount)> GetAuditTrailsAsync(
+        Guid? incidentId, Guid? actorId, AuditAction? action, DateTime? from, DateTime? to,
+        int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sự cố kèm kết quả AI và phân công trong khoảng thời gian (phục vụ số liệu RQ2/RQ3)
+    /// </summary>
+    Task<IReadOnlyList<Incident>> GetForTelemetryAsync(DateTime? from, DateTime? to, CancellationToken cancellationToken = default);
 }

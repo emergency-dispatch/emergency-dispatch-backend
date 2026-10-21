@@ -292,11 +292,15 @@ public class UsersController : ControllerBase
     {
         try
         {
-            var created = await _userService.CreateUserAsync(dto);
+            var created = await _userService.CreateUserAsync(dto, GetCurrentRole());
             return CreatedAtAction(
                 nameof(GetById),
                 new { id = created.Id },
                 ApiResponseDto<UserResponseDto>.Ok(created, "Tạo người dùng thành công."));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
@@ -320,8 +324,12 @@ public class UsersController : ControllerBase
     {
         try
         {
-            var updated = await _userService.UpdateUserAsync(id, dto);
+            var updated = await _userService.UpdateUserAsync(id, dto, GetCurrentRole());
             return Ok(ApiResponseDto<UserResponseDto>.Ok(updated, "Cập nhật người dùng thành công."));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
@@ -398,8 +406,12 @@ public class UsersController : ControllerBase
     {
         try
         {
-            var updated = await _userService.AssignStaffToStationAndTeamAsync(id, dto);
+            var updated = await _userService.AssignStaffToStationAndTeamAsync(id, dto, GetCurrentRole());
             return Ok(ApiResponseDto<UserResponseDto>.Ok(updated, "Phân công nhân viên vào trạm và tổ làm việc thành công."));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
@@ -435,5 +447,63 @@ public class UsersController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError,
                 ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
         }
+    }
+
+    /// <summary>
+    /// Admin khóa tài khoản thủ công kèm lý do (tối thiểu 5 ký tự); thu hồi mọi phiên đăng nhập
+    /// </summary>
+    [HttpPost("{id:guid}/lock")]
+    [Authorize(Roles = nameof(UserRole.Admin))]
+    [ProducesResponseType(typeof(ApiResponseDto<UserResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> LockUser(Guid id, [FromBody] EmergencyDispatch.Application.DTOs.Security.UserLockDto dto)
+    {
+        try
+        {
+            var actorId = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var g) ? g : Guid.Empty;
+            var updated = await _userService.LockUserAsync(id, dto.Reason ?? string.Empty, actorId, GetCurrentRole());
+            return Ok(ApiResponseDto<UserResponseDto>.Ok(updated, "Đã khóa tài khoản."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponseDto<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Admin mở khóa tài khoản (gỡ cả khóa thủ công và khóa tạm do đăng nhập sai)
+    /// </summary>
+    [HttpPost("{id:guid}/unlock")]
+    [Authorize(Roles = nameof(UserRole.Admin))]
+    [ProducesResponseType(typeof(ApiResponseDto<UserResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UnlockUser(Guid id)
+    {
+        try
+        {
+            var updated = await _userService.UnlockUserAsync(id, GetCurrentRole());
+            return Ok(ApiResponseDto<UserResponseDto>.Ok(updated, "Đã mở khóa tài khoản."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponseDto<object>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail(ex.Message));
+        }
+    }
+
+    private UserRole GetCurrentRole()
+    {
+        var roleStr = User.FindFirstValue(ClaimTypes.Role);
+        return Enum.TryParse<UserRole>(roleStr, out var role) ? role : UserRole.Citizen;
     }
 }

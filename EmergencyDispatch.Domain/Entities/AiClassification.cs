@@ -16,6 +16,16 @@ public class AiClassification : BaseEntity
     public SeverityLevel SeverityScore { get; set; } = SeverityLevel.Unclassified;
 
     /// <summary>
+    /// Nhánh sự kiện AI nhận diện: Cháy nổ / Tai nạn giao thông / Không xác định (FR-SYS-01)
+    /// </summary>
+    public IncidentEventType EventType { get; set; } = IncidentEventType.None;
+
+    /// <summary>
+    /// AI phát hiện ùn tắc giao thông cản trở lối tiếp cận hiện trường
+    /// </summary>
+    public bool IsTrafficJam { get; set; }
+
+    /// <summary>
     /// Danh sách nhãn nguy cơ phát hiện được (vd: "fire", "heavy_smoke", "structural_damage")
     /// </summary>
     public List<string> HazardTags { get; set; } = new();

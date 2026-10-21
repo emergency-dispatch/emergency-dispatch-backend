@@ -18,6 +18,8 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
             .Include(d => d.Incident)
             .Include(d => d.RescueUnit)
                 .ThenInclude(r => r!.Station)
+            .Include(d => d.CompletionReport)
+                .ThenInclude(c => c!.MediaItems)
             .FirstOrDefaultAsync(d => d.Id == id);
     }
 
@@ -26,6 +28,8 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
         return await _dbSet
             .Include(d => d.RescueUnit)
                 .ThenInclude(r => r!.Station)
+            .Include(d => d.CompletionReport)
+                .ThenInclude(c => c!.MediaItems)
             .Where(d => d.IncidentId == incidentId)
             .OrderByDescending(d => d.DispatchedAt)
             .ToListAsync();
@@ -51,5 +55,26 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
                          d.Status == DispatchAssignmentStatus.OnScene))
             .OrderByDescending(d => d.DispatchedAt)
             .FirstOrDefaultAsync();
+    }
+
+    public async Task<IReadOnlyList<DispatchAssignment>> GetAllActiveAsync()
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .Where(d => d.Status == DispatchAssignmentStatus.Dispatched ||
+                        d.Status == DispatchAssignmentStatus.Accepted ||
+                        d.Status == DispatchAssignmentStatus.EnRoute ||
+                        d.Status == DispatchAssignmentStatus.OnScene)
+            .ToListAsync();
+    }
+
+    public async Task AddStatusHistoryAsync(AssignmentStatusHistory history)
+    {
+        await _context.AssignmentStatusHistories.AddAsync(history);
+    }
+
+    public async Task AddCompletionReportAsync(CompletionReport report)
+    {
+        await _context.CompletionReports.AddAsync(report);
     }
 }

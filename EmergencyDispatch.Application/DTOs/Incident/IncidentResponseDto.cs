@@ -29,6 +29,13 @@ public class IncidentResponseDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Khóa mềm 2 phút (FR-OP-02, BR-15): Operator đang xử lý sự cố; null khi chưa ai khóa hoặc khóa đã hết hạn
+    /// </summary>
+    public Guid? LockedByOperatorId { get; set; }
+    public string? LockedByOperatorName { get; set; }
+    public DateTime? LockExpiresAt { get; set; }
+
     public List<IncidentMediaDto> MediaItems { get; set; } = new();
     public AiClassificationResultDto? AiClassification { get; set; }
 

@@ -27,14 +27,39 @@ public class RecommendedUnitResponseDto
     public double EstimatedEtaMinutes { get; set; }
 
     /// <summary>
-    /// Số nhiệm vụ đang đảm trách hoặc tải công việc của xe/trạm (phục vụ thuật toán Load-Aware)
+    /// Số nhiệm vụ đang đảm trách của chính xe này
     /// </summary>
     public int ActiveTasksCount { get; set; }
 
     /// <summary>
-    /// Điểm đánh giá ưu tiên của thuật toán (điểm càng cao càng được ưu tiên)
+    /// Tỷ lệ xe đang bận của trạm trực thuộc (0–1) — thành phần LoadRatio(S) của Load-Aware
+    /// </summary>
+    public double StationLoad { get; set; }
+
+    /// <summary>
+    /// Số sự cố trạm đang xử lý — thành phần ActiveMissions(S) của Load-Aware (trước chuẩn hóa)
+    /// </summary>
+    public int StationActiveMissions { get; set; }
+
+    /// <summary>
+    /// Chi phí Load-Aware (BR-11): 0.5·D/R + 0.3·LoadRatio + 0.2·ActiveMissions. Càng thấp càng ưu tiên.
+    /// </summary>
+    public double Cost { get; set; }
+
+    /// <summary>
+    /// Điểm hiển thị 0–100 = (1 − Cost) × 100 (càng cao càng được ưu tiên)
     /// </summary>
     public double Score { get; set; }
+
+    /// <summary>
+    /// Bán kính tìm kiếm (km) đã dùng để tìm ra xe này
+    /// </summary>
+    public double SearchRadiusKm { get; set; }
+
+    /// <summary>
+    /// true nếu đã phải mở rộng bán kính vượt nấc đầu tiên (BR-12)
+    /// </summary>
+    public bool RadiusExpanded { get; set; }
 
     /// <summary>
     /// Thuật toán được sử dụng để xếp hạng

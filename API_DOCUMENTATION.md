@@ -162,7 +162,6 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
 * **Request Body**:
   ```json
   {
-    "accessToken": "ey...",
     "refreshToken": "by..."
   }
   ```
@@ -1042,3 +1041,42 @@ async function submitSosReport(file: File, description: string, lat: number, lng
 | Dashboard | `GET /api/dashboard/stats` |
 | Localization | `GET /api/localization/info` |
 | SignalR | `/hubs/incidents` · `/hubs/tracking` |
+
+---
+
+## 7. ENDPOINT MỚI / THAY ĐỔI THEO SRS (đợt 21/10/2026)
+
+> Chi tiết body/response và việc FE/Mobile cần đổi: `FE_MOBILE_HANDOFF.md` mục 6 và 7. Mọi lỗi nghiệp vụ có thêm `errorCode`: `CONFLICT` (409), `FORBIDDEN` (403), `NOT_FOUND` (404), `TOO_MANY_REQUESTS` (429).
+
+| Phân hệ | Endpoint | Quyền | Ghi chú |
+|---|---|---|---|
+| Incidents | `GET /api/incidents`, `GET /api/incidents/queue` | Operator, Admin | Trước đây công khai |
+| Incidents | `GET /api/incidents/{id}` | Đăng nhập | Citizen chỉ xem sự cố của mình; số điện thoại bị che trừ người báo |
+| Incidents | `PUT /api/incidents/{id}/verify` | Operator, Admin | Ghi đè mức độ AI bắt buộc `operatorNotes` ≥ 5 ký tự |
+| Incidents | `PUT /api/incidents/{id}/cancel` | Citizen (của mình, trước khi điều xe), Operator, Admin | Bỏ công khai |
+| Incidents | `PUT /api/incidents/{id}/lock`, `DELETE /api/incidents/{id}/lock` | Operator, Admin | Khóa mềm 2 phút (BR-15) |
+| Incidents | `POST /api/incidents/{id}/reveal-phone` | Operator, Admin, RescueStaff đang làm nhiệm vụ | Ghi Audit Trail |
+| Incidents | `POST /api/incidents/{id}/block-reporter` | Operator, Admin | Chặn số báo khống (BR-05) |
+| Incidents | `GET /api/incidents/my-reports` | Citizen | FR-CIT-05 |
+| Incidents | `GET /api/incidents/{id}/audit-trail` | Operator, Admin | |
+| Audit | `GET /api/audit-trail` | Admin | Lọc theo incident/actor/action/thời gian |
+| Dispatch | `POST /api/dispatch/assign` | Operator, Admin | Nhận `rescueUnitIds[]`, trả mảng; giới hạn số xe theo mức độ; 409 nếu xe bị giao trước |
+| Dispatch | `POST /api/dispatch/assignments/{id}/reject` | RescueStaff, Operator, Admin | Lý do bắt buộc (BR-22) |
+| Dispatch | `PUT /api/dispatch/assignments/{id}/status` | RescueStaff (xe của trạm mình), Operator, Admin | Thứ tự bắt buộc Accepted → EnRoute → OnScene |
+| Dispatch | `POST /api/dispatch/assignments/{id}/resolve` | RescueStaff, Operator, Admin | Bắt buộc ảnh + `victimsAssistedCount`; sự cố chỉ đóng khi mọi xe xong; xe CoolDown 5 phút |
+| Dispatch | `GET /api/dispatch/tracking/incident/{id}`, `GET /api/dispatch/assignments/incident/{id}` | Người báo, Operator, Admin, RescueStaff của trạm được giao | Bỏ công khai; tracking có `units[]` |
+| Dispatch | `GET /api/dispatch/recommend` | Operator, Admin | Load-Aware theo BR-11, bán kính tự mở rộng (BR-12); `maxDistanceKm` tùy chọn |
+| Stations | `GET/POST /api/stations/{id}/teams`, `PUT/DELETE /api/stations/{id}/teams/{teamId}` | Xem: Admin, Operator, RescueStaff · Sửa: Admin, Operator | Tổ làm việc |
+| Stations | `GET /api/stations/{id}/staff` | Admin, Operator, RescueStaff | Trước đây công khai |
+| Users | `POST /api/users/{id}/lock`, `POST /api/users/{id}/unlock` | Admin | Operator chỉ quản lý được RescueStaff |
+| Blocked numbers | `GET /api/blocked-numbers`, `POST /api/blocked-numbers/{id}/unblock`, `POST /api/blocked-numbers/{id}/extend` | Xem: Admin, Operator · Sửa: Admin | |
+| Settings | `GET/PUT /api/settings/escalation`, `GET/PUT /api/settings/dispatch`, `GET /api/settings/defaults` | Xem: Admin, Operator · Sửa: Admin | |
+| Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count`, `PUT /api/notifications/{id}/read`, `PUT /api/notifications/read-all` | Đăng nhập | Realtime `ReceiveNotification` |
+| Benchmark | `GET /api/benchmark/telemetry-summary` | Admin, Operator | Số liệu RQ2/RQ3 |
+
+**SignalR:** `/hubs/incidents` và `/hubs/tracking` bắt buộc token; `SubscribeIncident` kiểm tra quyền; `UpdateLocation` chỉ cho xe thuộc trạm của nhân viên. Thêm sự kiện `ReceiveNotification`.
+
+**Enum mới:** `RescueUnitStatus.CoolDown`, `RescueUnitStatus.OutOfService`, `DispatchAssignmentStatus.Rejected`, `IncidentEventType` (`None`, `FireExplosion`, `TrafficAccident`), `CrewRole`, `BlockDuration`, `BlockedNumberStatus`, `AuditAction.PhoneRevealed`, `AuditAction.ReporterBlocked`.
+
+**Giới hạn:** SOS 5 lần/phút/IP và 1 sự cố đang hoạt động / 3 phút / tài khoản hoặc SĐT; mô tả SOS ≤ 200 ký tự; đăng nhập 10 lần/phút/IP; sai mật khẩu 5 lần khóa 15 phút.
+

@@ -64,4 +64,46 @@ public class RescueUnitRepository : GenericRepository<RescueUnit>, IRescueUnitRe
 
         return await query.AnyAsync();
     }
+
+    public async Task<bool> TryReserveForDispatchAsync(Guid unitId, CancellationToken cancellationToken = default)
+    {
+        var affected = await _dbSet
+            .Where(r => r.Id == unitId && r.Status == RescueUnitStatus.Available)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(r => r.Status, RescueUnitStatus.Dispatched)
+                .SetProperty(r => r.UpdatedAt, DateTime.UtcNow), cancellationToken);
+
+        return affected == 1;
+    }
+
+    public async Task ReleaseReservationAsync(Guid unitId, CancellationToken cancellationToken = default)
+    {
+        await _dbSet
+            .Where(r => r.Id == unitId && r.Status == RescueUnitStatus.Dispatched)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(r => r.Status, RescueUnitStatus.Available)
+                .SetProperty(r => r.UpdatedAt, DateTime.UtcNow), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Guid>> ReleaseExpiredCoolDownsAsync(DateTime nowUtc, CancellationToken cancellationToken = default)
+    {
+        var expiredIds = await _dbSet
+            .Where(r => r.Status == RescueUnitStatus.CoolDown && (r.CoolDownUntil == null || r.CoolDownUntil <= nowUtc))
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        if (expiredIds.Count == 0)
+        {
+            return expiredIds;
+        }
+
+        await _dbSet
+            .Where(r => expiredIds.Contains(r.Id) && r.Status == RescueUnitStatus.CoolDown)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(r => r.Status, RescueUnitStatus.Available)
+                .SetProperty(r => r.CoolDownUntil, (DateTime?)null)
+                .SetProperty(r => r.UpdatedAt, nowUtc), cancellationToken);
+
+        return expiredIds;
+    }
 }

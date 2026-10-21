@@ -78,6 +78,27 @@ public enum SeverityLevel
 }
 
 /// <summary>
+/// Nhánh sự kiện do AI nhận diện (FR-SYS-01)
+/// </summary>
+public enum IncidentEventType
+{
+    /// <summary>
+    /// Không xác định / không phải cháy nổ hay tai nạn
+    /// </summary>
+    None = 0,
+
+    /// <summary>
+    /// Cháy nổ
+    /// </summary>
+    FireExplosion = 1,
+
+    /// <summary>
+    /// Tai nạn giao thông
+    /// </summary>
+    TrafficAccident = 2
+}
+
+/// <summary>
 /// Lý do hủy sự cố
 /// </summary>
 public enum CancellationReason
@@ -108,5 +129,7 @@ public enum AuditAction
     Cancelled = 10,
     Completed = 11,
     Closed = 12,
-    ReDispatched = 13
+    ReDispatched = 13,
+    PhoneRevealed = 14,
+    ReporterBlocked = 15
 }

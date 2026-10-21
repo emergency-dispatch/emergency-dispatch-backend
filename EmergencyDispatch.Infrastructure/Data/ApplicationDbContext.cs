@@ -13,11 +13,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
-    // 2. Station, Vehicle, RescueUnit & Equipment
+    // 2. Station & RescueUnit
     public DbSet<Station> Stations => Set<Station>();
     public DbSet<RescueUnit> RescueUnits => Set<RescueUnit>();
-    public DbSet<Vehicle> Vehicles => Set<Vehicle>();
-    public DbSet<Equipment> Equipments => Set<Equipment>();
 
     // 3. Incident & AI
     public DbSet<Incident> Incidents => Set<Incident>();
@@ -27,7 +25,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<IceContact> IceContacts => Set<IceContact>();
 
     // 4. Dispatch & Completion
-    public DbSet<IncidentAssignment> IncidentAssignments => Set<IncidentAssignment>();
     public DbSet<CompletionReport> CompletionReports => Set<CompletionReport>();
     public DbSet<CompletionReportMedia> CompletionReportMedias => Set<CompletionReportMedia>();
 
@@ -36,15 +33,20 @@ public class ApplicationDbContext : DbContext
     public DbSet<AssignmentStatusHistory> AssignmentStatusHistories => Set<AssignmentStatusHistory>();
     public DbSet<IncidentAuditTrail> IncidentAuditTrails => Set<IncidentAuditTrail>();
 
-    // 6. Notifications & Tracking
+    // 6. Notifications
     public DbSet<Notification> Notifications => Set<Notification>();
-    public DbSet<LocationUpdate> LocationUpdates => Set<LocationUpdate>();
 
     // 7. Escalation & Feedback & Traffic
     public DbSet<EscalationRule> EscalationRules => Set<EscalationRule>();
     public DbSet<EscalationLog> EscalationLogs => Set<EscalationLog>();
     public DbSet<CitizenFeedback> CitizenFeedbacks => Set<CitizenFeedback>();
     public DbSet<TrafficHotspot> TrafficHotspots => Set<TrafficHotspot>();
+
+    // 8. Security
+    public DbSet<BlockedPhoneNumber> BlockedPhoneNumbers => Set<BlockedPhoneNumber>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<StationTeam> StationTeams => Set<StationTeam>();
+    public DbSet<StationTeamMember> StationTeamMembers => Set<StationTeamMember>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,6 +88,8 @@ public class ApplicationDbContext : DbContext
                   .WithMany(s => s.StaffMembers)
                   .HasForeignKey(u => u.StationId)
                   .OnDelete(DeleteBehavior.SetNull);
+
+            entity.Property(u => u.LockReason).HasMaxLength(500);
 
             entity.HasQueryFilter(u => !u.IsDeleted);
         });
@@ -156,43 +160,6 @@ public class ApplicationDbContext : DbContext
             entity.HasQueryFilter(r => !r.IsDeleted);
         });
 
-        // ==================== 5. VEHICLE ====================
-        modelBuilder.Entity<Vehicle>(entity =>
-        {
-            entity.HasKey(v => v.Id);
-            entity.HasIndex(v => v.LicensePlate).IsUnique().HasDatabaseName("IX_Vehicles_LicensePlate");
-            entity.HasIndex(v => v.StationId).HasDatabaseName("IX_Vehicles_StationId");
-            entity.HasIndex(v => v.Status).HasDatabaseName("IX_Vehicles_Status");
-            entity.HasIndex(v => new { v.Status, v.StationId }).HasDatabaseName("IX_Vehicles_Available_ByStation");
-
-            entity.Property(v => v.LicensePlate).HasMaxLength(20).IsRequired();
-            entity.Property(v => v.Name).HasMaxLength(200).IsRequired();
-
-            entity.HasOne(v => v.Station)
-                  .WithMany(s => s.Vehicles)
-                  .HasForeignKey(v => v.StationId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasQueryFilter(v => !v.IsDeleted);
-        });
-
-        // ==================== 6. EQUIPMENT ====================
-        modelBuilder.Entity<Equipment>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.VehicleId).HasDatabaseName("IX_Equipment_VehicleId");
-
-            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
-            entity.Property(e => e.Condition).HasMaxLength(50).IsRequired();
-
-            entity.HasOne(e => e.Vehicle)
-                  .WithMany(v => v.Equipments)
-                  .HasForeignKey(e => e.VehicleId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasQueryFilter(e => !e.IsDeleted);
-        });
-
         // ==================== 7. INCIDENT ====================
         modelBuilder.Entity<Incident>(entity =>
         {
@@ -229,6 +196,12 @@ public class ApplicationDbContext : DbContext
                   .HasForeignKey(i => i.ClosedByUserId)
                   .OnDelete(DeleteBehavior.SetNull);
 
+            // Khóa mềm: Operator đang xử lý sự cố (FR-OP-02, BR-15)
+            entity.HasOne(i => i.LockedByOperator)
+                  .WithMany()
+                  .HasForeignKey(i => i.LockedByOperatorId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
             // Tự tham chiếu DuplicateOfIncident
             entity.HasOne(i => i.DuplicateOfIncident)
                   .WithMany(d => d.DuplicateIncidents)
@@ -238,11 +211,20 @@ public class ApplicationDbContext : DbContext
             entity.HasQueryFilter(i => !i.IsDeleted);
         });
 
-        // ==================== 8. DISPATCH ASSIGNMENT (LEGACY/RESCUE UNIT) ====================
+        // ==================== 8. DISPATCH ASSIGNMENT ====================
         modelBuilder.Entity<DispatchAssignment>(entity =>
         {
             entity.HasKey(d => d.Id);
+            entity.HasIndex(d => new { d.IncidentId, d.Status }).HasDatabaseName("IX_DispatchAssignments_Incident_Status");
+            entity.HasIndex(d => new { d.RescueUnitId, d.Status }).HasDatabaseName("IX_DispatchAssignments_Unit_Status");
             entity.Property(d => d.Notes).HasMaxLength(1000);
+            entity.Property(d => d.RejectionNotes).HasMaxLength(1000);
+            entity.Property(d => d.DispatchAlgorithm).HasMaxLength(50);
+
+            entity.HasOne(d => d.AssignedByUser)
+                  .WithMany()
+                  .HasForeignKey(d => d.AssignedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
 
             // Quan hệ với Incident
             entity.HasOne(d => d.Incident)
@@ -294,57 +276,27 @@ public class ApplicationDbContext : DbContext
             entity.HasQueryFilter(a => !a.IsDeleted);
         });
 
-        // ==================== 11. INCIDENT ASSIGNMENT (SCHEMA V2) ====================
-        modelBuilder.Entity<IncidentAssignment>(entity =>
-        {
-            entity.HasKey(a => a.Id);
-            entity.HasIndex(a => a.IncidentId).HasDatabaseName("IX_Assignments_IncidentId");
-            entity.HasIndex(a => new { a.StaffId, a.Status }).HasDatabaseName("IX_Assignments_Staff_Status");
-            entity.HasIndex(a => new { a.IncidentId, a.StaffId }).IsUnique().HasDatabaseName("UQ_Assignments_Incident_Staff");
-            entity.HasIndex(a => a.Status).HasDatabaseName("IX_Assignments_Status");
-
-            entity.Property(a => a.DispatchAlgorithm).HasMaxLength(50);
-
-            entity.HasOne(a => a.Incident)
-                  .WithMany(i => i.IncidentAssignments)
-                  .HasForeignKey(a => a.IncidentId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(a => a.Staff)
-                  .WithMany(u => u.AssignedJobs)
-                  .HasForeignKey(a => a.StaffId)
-                  .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(a => a.Vehicle)
-                  .WithMany(v => v.IncidentAssignments)
-                  .HasForeignKey(a => a.VehicleId)
-                  .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(a => a.AssignedByUser)
-                  .WithMany()
-                  .HasForeignKey(a => a.AssignedByUserId)
-                  .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasQueryFilter(a => !a.IsDeleted);
-        });
-
         // ==================== 12. COMPLETION REPORT ====================
         modelBuilder.Entity<CompletionReport>(entity =>
         {
             entity.HasKey(c => c.Id);
             entity.HasIndex(c => c.AssignmentId).IsUnique().HasDatabaseName("IX_CompletionReports_AssignmentId");
 
-            entity.Property(c => c.Notes).IsRequired();
-            entity.Property(c => c.QrCode).HasMaxLength(500);
+            entity.Property(c => c.ActionsSummary).HasMaxLength(2000).IsRequired();
+            entity.Property(c => c.HandoverEntity).HasMaxLength(300);
+            entity.Property(c => c.HandoverContactName).HasMaxLength(200);
+            entity.Property(c => c.HandoverContactPhone).HasMaxLength(30);
+            entity.Property(c => c.HandoverNotes).HasMaxLength(1000);
+            entity.ToTable(t => t.HasCheckConstraint("CK_CompletionReports_Victims", "\"VictimsAssistedCount\" >= 0"));
 
             entity.HasOne(c => c.Assignment)
                   .WithOne(a => a.CompletionReport)
                   .HasForeignKey<CompletionReport>(c => c.AssignmentId)
                   .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(c => c.QrScannedByUser)
+            entity.HasOne(c => c.SubmittedByUser)
                   .WithMany()
-                  .HasForeignKey(c => c.QrScannedByUserId)
+                  .HasForeignKey(c => c.SubmittedByUserId)
                   .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasQueryFilter(c => !c.IsDeleted);
@@ -394,6 +346,7 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(h => h.Id);
             entity.HasIndex(h => h.AssignmentId).HasDatabaseName("IX_AssignmentStatusHistory_AssignmentId");
+            entity.Property(h => h.Notes).HasMaxLength(1000);
 
             entity.HasOne(h => h.Assignment)
                   .WithMany(a => a.StatusHistories)
@@ -495,21 +448,6 @@ public class ApplicationDbContext : DbContext
             entity.HasQueryFilter(l => !l.IsDeleted);
         });
 
-        // ==================== 20. LOCATION UPDATE ====================
-        modelBuilder.Entity<LocationUpdate>(entity =>
-        {
-            entity.HasKey(u => u.Id);
-            entity.HasIndex(u => new { u.UserId, u.Timestamp }).HasDatabaseName("IX_LocationUpdates_User_Time");
-            entity.HasIndex(u => u.Timestamp).HasDatabaseName("IX_LocationUpdates_Timestamp");
-
-            entity.HasOne(u => u.User)
-                  .WithMany(u => u.LocationUpdates)
-                  .HasForeignKey(u => u.UserId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasQueryFilter(u => !u.IsDeleted);
-        });
-
         // ==================== 21. CITIZEN FEEDBACK ====================
         modelBuilder.Entity<CitizenFeedback>(entity =>
         {
@@ -552,5 +490,99 @@ public class ApplicationDbContext : DbContext
 
             entity.HasQueryFilter(t => !t.IsDeleted);
         });
+
+        // ==================== 23. BLOCKED PHONE NUMBER ====================
+        modelBuilder.Entity<BlockedPhoneNumber>(entity =>
+        {
+            entity.HasKey(b => b.Id);
+            entity.HasIndex(b => b.PhoneNumber).HasDatabaseName("IX_BlockedPhoneNumbers_Phone");
+
+            entity.Property(b => b.PhoneNumber).HasMaxLength(20).IsRequired();
+            entity.Property(b => b.Reason).HasMaxLength(500).IsRequired();
+            entity.Property(b => b.RemoveReason).HasMaxLength(500);
+
+            entity.HasOne(b => b.Incident)
+                  .WithMany()
+                  .HasForeignKey(b => b.IncidentId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(b => b.BlockedByUser)
+                  .WithMany()
+                  .HasForeignKey(b => b.BlockedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(b => b.RemovedByUser)
+                  .WithMany()
+                  .HasForeignKey(b => b.RemovedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasQueryFilter(b => !b.IsDeleted);
+        });
+
+        // ==================== 25. STATION TEAM ====================
+        modelBuilder.Entity<StationTeam>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+            entity.HasIndex(t => new { t.StationId, t.Name }).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("UQ_StationTeams_Station_Name");
+            entity.HasIndex(t => t.RescueUnitId).IsUnique().HasFilter("\"RescueUnitId\" IS NOT NULL AND \"IsDeleted\" = false").HasDatabaseName("UQ_StationTeams_RescueUnit");
+            entity.Property(t => t.Name).HasMaxLength(100).IsRequired();
+
+            entity.HasOne(t => t.Station)
+                  .WithMany()
+                  .HasForeignKey(t => t.StationId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(t => t.RescueUnit)
+                  .WithMany()
+                  .HasForeignKey(t => t.RescueUnitId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasQueryFilter(t => !t.IsDeleted);
+        });
+
+        modelBuilder.Entity<StationTeamMember>(entity =>
+        {
+            entity.HasKey(m => m.Id);
+            entity.HasIndex(m => m.StaffId).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("UQ_StationTeamMembers_Staff");
+
+            entity.HasOne(m => m.Team)
+                  .WithMany(t => t.Members)
+                  .HasForeignKey(m => m.TeamId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(m => m.Staff)
+                  .WithOne(u => u.TeamMembership)
+                  .HasForeignKey<StationTeamMember>(m => m.StaffId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(m => !m.IsDeleted);
+        });
+
+        // ==================== 24. SYSTEM SETTING ====================
+        modelBuilder.Entity<SystemSetting>(entity =>
+        {
+            entity.HasKey(s => s.Id);
+            entity.HasIndex(s => s.Key).IsUnique().HasDatabaseName("UQ_SystemSettings_Key");
+            entity.Property(s => s.Key).HasMaxLength(100).IsRequired();
+            entity.Property(s => s.ValueJson).IsRequired();
+
+            entity.HasOne(s => s.UpdatedByUser)
+                  .WithMany()
+                  .HasForeignKey(s => s.UpdatedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasQueryFilter(s => !s.IsDeleted);
+        });
+
+        // BaseEntity tự gán Id = Guid.NewGuid() ở client. Nếu để EF coi khóa là "tự sinh",
+        // bản ghi con thêm qua navigation của entity đang được theo dõi (vd. incident.StatusHistories.Add)
+        // sẽ bị hiểu nhầm là bản ghi cũ → UPDATE 0 dòng → DbUpdateConcurrencyException.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes()
+                     .Where(t => typeof(BaseEntity).IsAssignableFrom(t.ClrType)))
+        {
+            modelBuilder.Entity(entityType.ClrType)
+                .Property(nameof(BaseEntity.Id))
+                .ValueGeneratedNever();
+        }
     }
 }

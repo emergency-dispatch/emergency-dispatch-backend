@@ -14,7 +14,7 @@ public interface IIncidentService
     /// <summary>
     /// Lấy chi tiết sự cố theo ID
     /// </summary>
-    Task<ApiResponseDto<IncidentResponseDto>> GetIncidentByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<IncidentResponseDto>> GetIncidentByIdAsync(Guid id, Guid? viewerUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lấy danh sách sự cố có phân trang và bộ lọc
@@ -35,6 +35,41 @@ public interface IIncidentService
     /// Hủy sự cố (báo sai, báo khống, trùng lặp hoặc người dân/khách vãng lai tự hủy SOS)
     /// </summary>
     Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Giữ / gia hạn khóa mềm 2 phút khi Operator mở sự cố (FR-OP-02, BR-15). Người khác đang giữ → CONFLICT (MSG32)
+    /// </summary>
+    Task<ApiResponseDto<IncidentLockDto>> LockIncidentAsync(Guid id, Guid operatorId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nhả khóa mềm (Admin được nhả khóa của người khác)
+    /// </summary>
+    Task<ApiResponseDto<bool>> UnlockIncidentAsync(Guid id, Guid operatorId, bool force, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BR-32: trả số điện thoại đầy đủ của người báo và ghi vết người xem (Operator/Admin, hoặc đội cứu hộ đang làm nhiệm vụ)
+    /// </summary>
+    Task<ApiResponseDto<EmergencyDispatch.Application.DTOs.Security.RevealPhoneDto>> RevealReporterPhoneAsync(Guid id, Guid actorUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-OP-03 / BR-05: đưa số điện thoại báo khống của sự cố vào danh sách chặn
+    /// </summary>
+    Task<ApiResponseDto<EmergencyDispatch.Application.DTOs.Security.BlockedNumberDto>> BlockReporterAsync(Guid id, EmergencyDispatch.Application.DTOs.Security.BlockReporterDto dto, Guid operatorId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-CIT-03 / BR-CIT-05: người dùng có được xem vị trí xe / theo dõi sự cố này không
+    /// </summary>
+    Task<bool> CanAccessIncidentAsync(Guid id, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-CIT-05: lịch sử báo cáo của người dân kèm mốc thời gian xử lý
+    /// </summary>
+    Task<ApiResponseDto<PaginatedResultDto<MyReportDto>>> GetMyReportsAsync(Guid userId, MyReportFilter filter, int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nhật ký kiểm toán bất biến (BR-03, BR-AD-06)
+    /// </summary>
+    Task<ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>> GetAuditTrailAsync(AuditTrailFilterDto filter, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Xử lý một công việc phân tích AI từ hàng đợi nền: gọi AI, lưu kết quả, ghi Telemetry và đẩy realtime tới Operator

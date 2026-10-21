@@ -2,6 +2,8 @@ using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Incident;
+using EmergencyDispatch.Application.DTOs.Notification;
+using EmergencyDispatch.Application.DTOs.Security;
 using EmergencyDispatch.Application.DTOs.User;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Entities;
@@ -16,29 +18,37 @@ public class IncidentService : IIncidentService
 {
     private const string AiWorkerRole = "AI_Worker";
     private const string GuestRole = "Guest";
+    private const int MinOverrideReasonLength = 5;
+    private static readonly TimeSpan SoftLockDuration = TimeSpan.FromMinutes(2);
 
     private readonly IIncidentRepository _incidentRepository;
     private readonly IUserRepository _userRepository;
+    private readonly IBlockedPhoneRepository _blockedPhoneRepository;
     private readonly IAiClassificationService _aiService;
     private readonly IAiAnalysisQueue _aiQueue;
     private readonly IRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationService _notificationService;
     private readonly IValidator<CreateIncidentDto> _validator;
     private readonly ILogger<IncidentService> _logger;
 
     public IncidentService(
         IIncidentRepository incidentRepository,
         IUserRepository userRepository,
+        IBlockedPhoneRepository blockedPhoneRepository,
         IAiClassificationService aiService,
         IAiAnalysisQueue aiQueue,
         IRealtimeNotifier realtimeNotifier,
+        INotificationService notificationService,
         IValidator<CreateIncidentDto> validator,
         ILogger<IncidentService> logger)
     {
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
+        _blockedPhoneRepository = blockedPhoneRepository;
         _aiService = aiService;
         _aiQueue = aiQueue;
         _realtimeNotifier = realtimeNotifier;
+        _notificationService = notificationService;
         _validator = validator;
         _logger = logger;
     }
@@ -97,6 +107,26 @@ public class IncidentService : IIncidentService
             }
         }
 
+        // FR-OP-03 / BR-05: chặn SOS từ số điện thoại đang trong danh sách đen
+        var normalizedPhone = PhoneMasking.Normalize(dto.ReporterPhone);
+        var now = DateTime.UtcNow;
+        if (normalizedPhone != null)
+        {
+            var activeBlock = await _blockedPhoneRepository.GetActiveBlockAsync(normalizedPhone, now, cancellationToken);
+            if (activeBlock != null)
+            {
+                return ApiResponseDto<IncidentResponseDto>.ForbiddenResult(
+                    "Số điện thoại này đang bị tạm khóa chức năng gửi SOS do báo tin không đúng sự thật. Nếu khẩn cấp, vui lòng gọi trực tiếp 114 / 115.");
+            }
+        }
+
+        // BR-CIT-01: mỗi người dùng / số điện thoại tối đa 1 sự cố đang hoạt động trong 3 phút
+        if (await _incidentRepository.HasRecentActiveIncidentAsync(userId, normalizedPhone, now.AddMinutes(-3), cancellationToken))
+        {
+            return ApiResponseDto<IncidentResponseDto>.TooManyRequestsResult(
+                "Bạn vừa gửi một yêu cầu cứu hộ đang được xử lý. Vui lòng chờ 3 phút hoặc gọi trực tiếp 114 / 115 nếu cần hỗ trợ thêm.");
+        }
+
         var incident = new Incident
         {
             Title = title,
@@ -105,7 +135,7 @@ public class IncidentService : IIncidentService
             Longitude = dto.Longitude,
             LocationAddress = dto.LocationAddress.Trim(),
             ReporterName = dto.ReporterName?.Trim(),
-            ReporterPhone = dto.ReporterPhone?.Trim(),
+            ReporterPhone = normalizedPhone ?? dto.ReporterPhone?.Trim(),
             ReportedByUserId = userId,
             ReportedByUser = reportingUser,
             Status = IncidentStatus.Pending,
@@ -186,8 +216,9 @@ public class IncidentService : IIncidentService
         }
 
         // 7. Map kết quả trả về + đẩy realtime tới Operator
-        var responseDto = MapToResponseDto(incident, null, smsDispatchLog);
-        await _realtimeNotifier.IncidentCreatedAsync(responseDto, cancellationToken);
+        // Operator nhận bản đã che số (BR-32); người báo nhận bản đầy đủ của chính mình
+        await _realtimeNotifier.IncidentCreatedAsync(MapToResponseDto(incident, null, smsDispatchLog), cancellationToken);
+        var responseDto = MapToResponseDto(incident, null, smsDispatchLog, revealPhone: true);
 
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(
             responseDto,
@@ -221,6 +252,8 @@ public class IncidentService : IIncidentService
         {
             IncidentId = incident.Id,
             SeverityScore = aiResult.SeverityLevel,
+            EventType = aiResult.EventType,
+            IsTrafficJam = aiResult.IsTrafficJam,
             HazardTags = aiResult.HazardTags,
             Summary = aiResult.Summary,
             ConfidenceScore = aiResult.ConfidenceScore,
@@ -287,15 +320,18 @@ public class IncidentService : IIncidentService
 
     public async Task<ApiResponseDto<IncidentResponseDto>> GetIncidentByIdAsync(
         Guid id,
+        Guid? viewerUserId = null,
         CancellationToken cancellationToken = default)
     {
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
         if (incident == null)
         {
-            return ApiResponseDto<IncidentResponseDto>.FailureResult("Không tìm thấy sự cố với mã yêu cầu.");
+            return ApiResponseDto<IncidentResponseDto>.NotFoundResult("Không tìm thấy sự cố với mã yêu cầu.");
         }
 
-        return ApiResponseDto<IncidentResponseDto>.SuccessResult(MapToResponseDto(incident));
+        // Người báo luôn thấy số của chính mình; người khác thấy số đã che (BR-32)
+        var isReporter = viewerUserId.HasValue && incident.ReportedByUserId == viewerUserId;
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(MapToResponseDto(incident, revealPhone: isReporter));
     }
 
     public async Task<ApiResponseDto<PaginatedResultDto<IncidentResponseDto>>> GetIncidentsAsync(
@@ -337,16 +373,32 @@ public class IncidentService : IIncidentService
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Không tìm thấy sự cố cần xác minh.");
         }
 
-        // Cho phép Operator xác minh ngay cả khi AI chưa xong (Human-in-the-loop luôn được ưu tiên)
-        if (incident.Status != IncidentStatus.Pending &&
-            incident.Status != IncidentStatus.AiProcessing &&
-            incident.Status != IncidentStatus.AiProcessed)
+        // Cho phép Operator xác minh ngay cả khi AI chưa xong (Human-in-the-loop luôn được ưu tiên),
+        // kể cả sự cố đã bị leo thang khi chưa ai duyệt
+        var awaitingVerification = incident.Status is IncidentStatus.Pending or IncidentStatus.AiProcessing or IncidentStatus.AiProcessed
+            || (incident.Status == IncidentStatus.Escalated && incident.VerifiedAt == null);
+        if (!awaitingVerification)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult($"Sự cố đang ở trạng thái '{incident.Status}', không thể xác minh lại.");
         }
 
+        // BR-15: không được thao tác khi Operator khác đang giữ khóa
+        if (incident.IsLockedByOther(operatorId, DateTime.UtcNow))
+        {
+            return ApiResponseDto<IncidentResponseDto>.ConflictResult(
+                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}. Vui lòng chờ khóa hết hạn.");
+        }
+
         var oldStatus = incident.Status;
         var aiSeverity = incident.AiClassification?.SeverityScore;
+
+        // BR-03 (MSG25): ghi đè mức độ AI đề xuất bắt buộc kèm lý do để lưu vết bất biến
+        var isOverride = aiSeverity.HasValue && aiSeverity.Value != dto.ConfirmedSeverity;
+        if (isOverride && (dto.OperatorNotes?.Trim().Length ?? 0) < MinOverrideReasonLength)
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult(
+                $"Bạn đang thay đổi mức độ AI đề xuất ({aiSeverity} → {dto.ConfirmedSeverity}). Vui lòng nhập lý do ghi đè (tối thiểu {MinOverrideReasonLength} ký tự) vào operatorNotes.");
+        }
 
         // Cập nhật thông tin xác minh bởi Operator (Human-in-the-loop)
         incident.Severity = dto.ConfirmedSeverity;
@@ -364,7 +416,7 @@ public class IncidentService : IIncidentService
             incident.Title = dto.AdjustedTitle.Trim();
         }
 
-        var severityOverridden = aiSeverity.HasValue && aiSeverity.Value != dto.ConfirmedSeverity;
+        var severityOverridden = isOverride;
 
         await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
         {
@@ -403,6 +455,18 @@ public class IncidentService : IIncidentService
         var responseDto = MapToResponseDto(incident);
         await _realtimeNotifier.IncidentUpdatedAsync(responseDto, cancellationToken);
 
+        // FR-CIT-04: "Emergency report verified. Units are being mobilized."
+        if (incident.ReportedByUserId.HasValue)
+        {
+            await _notificationService.NotifyUsersAsync(new[] { incident.ReportedByUserId.Value }, new NotificationRequest
+            {
+                Type = NotificationType.StatusUpdate,
+                Title = "Sự cố đã được xác minh",
+                Message = "Trung tâm đã xác minh báo cáo của bạn và đang điều động lực lượng cứu hộ.",
+                IncidentId = incident.Id
+            }, cancellationToken);
+        }
+
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(
             responseDto,
             "Xác minh sự cố thành công. Sự cố sẵn sàng để điều phối đội cứu hộ.");
@@ -430,13 +494,36 @@ public class IncidentService : IIncidentService
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Sự cố này đã được hủy trước đó.");
         }
 
-        // Kiểm tra phân quyền thực tế: Nếu sự cố gắn với người dùng cụ thể, người hủy có tài khoản phải là chính chủ hoặc Operator/Admin
-        if (cancelledByUserId.HasValue && incident.ReportedByUserId.HasValue && incident.ReportedByUserId != cancelledByUserId.Value)
+        var cancellingUser = cancelledByUserId.HasValue
+            ? await _userRepository.GetByIdAsync(cancelledByUserId.Value)
+            : null;
+        if (cancellingUser == null)
         {
-            var cancellingUser = await _userRepository.GetByIdAsync(cancelledByUserId.Value);
-            if (cancellingUser != null && cancellingUser.Role != UserRole.Admin && cancellingUser.Role != UserRole.Operator)
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn cần đăng nhập để hủy sự cố.");
+        }
+
+        var isCommandCenter = cancellingUser.Role is UserRole.Operator or UserRole.Admin;
+        if (isCommandCenter && incident.IsLockedByOther(cancellingUser.Id, DateTime.UtcNow))
+        {
+            return ApiResponseDto<IncidentResponseDto>.ConflictResult(
+                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}. Vui lòng chờ khóa hết hạn.");
+        }
+
+        if (!isCommandCenter)
+        {
+            // Người dân chỉ được hủy sự cố do chính mình báo cáo
+            if (incident.ReportedByUserId != cancellingUser.Id)
             {
                 return ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn không có quyền hủy sự cố được báo cáo bởi người khác.");
+            }
+
+            // BR-08 / BR-CIT-03 (MSG20): khóa tự hủy khi đội cứu hộ đã được điều động
+            var unitsMobilized = incident.Status is IncidentStatus.Dispatched or IncidentStatus.InProgress
+                || incident.DispatchAssignments.Any(a => a.IsActive);
+            if (unitsMobilized)
+            {
+                return ApiResponseDto<IncidentResponseDto>.FailureResult(
+                    "Đội cứu hộ đang trên đường tới vị trí của bạn. Bạn không thể tự hủy sự cố, vui lòng liên hệ Trung tâm điều phối qua số 115.");
             }
         }
 
@@ -491,11 +578,277 @@ public class IncidentService : IIncidentService
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(responseDto, successMessage);
     }
 
+    public async Task<ApiResponseDto<IncidentLockDto>> LockIncidentAsync(
+        Guid id,
+        Guid operatorId,
+        CancellationToken cancellationToken = default)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
+        if (incident == null)
+        {
+            return ApiResponseDto<IncidentLockDto>.NotFoundResult("Không tìm thấy sự cố.");
+        }
+
+        if (incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
+        {
+            return ApiResponseDto<IncidentLockDto>.FailureResult($"Sự cố đã ở trạng thái '{incident.Status}', không cần khóa.");
+        }
+
+        var now = DateTime.UtcNow;
+        var expiresAt = now.Add(SoftLockDuration);
+        var acquired = await _incidentRepository.TryAcquireLockAsync(id, operatorId, expiresAt, now, cancellationToken);
+        if (!acquired)
+        {
+            return ApiResponseDto<IncidentLockDto>.ConflictResult(
+                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}.");
+        }
+
+        var operatorUser = await _userRepository.GetByIdAsync(operatorId);
+        return ApiResponseDto<IncidentLockDto>.SuccessResult(new IncidentLockDto
+        {
+            IncidentId = id,
+            LockedByOperatorId = operatorId,
+            LockedByOperatorName = operatorUser?.FullName ?? string.Empty,
+            LockExpiresAt = expiresAt
+        }, "Đã giữ quyền xử lý sự cố trong 2 phút.");
+    }
+
+    public async Task<ApiResponseDto<bool>> UnlockIncidentAsync(
+        Guid id,
+        Guid operatorId,
+        bool force,
+        CancellationToken cancellationToken = default)
+    {
+        var released = await _incidentRepository.ReleaseLockAsync(id, operatorId, force, cancellationToken);
+        return ApiResponseDto<bool>.SuccessResult(released,
+            released ? "Đã nhả quyền xử lý sự cố." : "Sự cố không bị khóa bởi bạn.");
+    }
+
+    public async Task<ApiResponseDto<RevealPhoneDto>> RevealReporterPhoneAsync(
+        Guid id,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
+        if (incident == null)
+        {
+            return ApiResponseDto<RevealPhoneDto>.NotFoundResult("Không tìm thấy sự cố.");
+        }
+
+        var actor = await _userRepository.GetByIdAsync(actorUserId);
+        if (actor == null || !await CanSeeFullPhoneAsync(incident, actor))
+        {
+            return ApiResponseDto<RevealPhoneDto>.ForbiddenResult("Bạn không có quyền xem số điện thoại của người báo sự cố này.");
+        }
+
+        var phone = incident.ReporterPhone ?? incident.ReportedByUser?.PhoneNumber;
+
+        // BR-32: ghi vết bất biến mỗi lần xem số đầy đủ
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = actor.Id,
+            ActorRole = actor.Role.ToString(),
+            Action = AuditAction.PhoneRevealed,
+            Description = $"{actor.FullName} xem số điện thoại đầy đủ của người báo",
+            NewStateJson = JsonSerializer.Serialize(new { maskedPhone = PhoneMasking.Mask(phone) })
+        }, cancellationToken);
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+
+        return ApiResponseDto<RevealPhoneDto>.SuccessResult(new RevealPhoneDto
+        {
+            IncidentId = incident.Id,
+            PhoneNumber = phone
+        }, "Đã ghi nhận lượt xem số điện thoại.");
+    }
+
+    public async Task<ApiResponseDto<BlockedNumberDto>> BlockReporterAsync(
+        Guid id,
+        BlockReporterDto dto,
+        Guid operatorId,
+        CancellationToken cancellationToken = default)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
+        if (incident == null)
+        {
+            return ApiResponseDto<BlockedNumberDto>.NotFoundResult("Không tìm thấy sự cố.");
+        }
+
+        var phone = PhoneMasking.Normalize(incident.ReporterPhone ?? incident.ReportedByUser?.PhoneNumber);
+        if (phone == null)
+        {
+            return ApiResponseDto<BlockedNumberDto>.FailureResult("Sự cố không có số điện thoại người báo để chặn.");
+        }
+
+        var now = DateTime.UtcNow;
+        var existing = await _blockedPhoneRepository.GetActiveBlockAsync(phone, now, cancellationToken);
+        if (existing != null)
+        {
+            return ApiResponseDto<BlockedNumberDto>.ConflictResult("Số điện thoại này đang trong danh sách chặn. Admin có thể gia hạn tại trang quản lý số bị chặn.");
+        }
+
+        var block = new BlockedPhoneNumber
+        {
+            PhoneNumber = phone,
+            Duration = dto.Duration,
+            BlockedAt = now,
+            ExpiresAt = BlockedPhoneNumber.CalculateExpiry(dto.Duration, now),
+            Reason = dto.Reason.Trim(),
+            IncidentId = incident.Id,
+            BlockedByUserId = operatorId
+        };
+        await _blockedPhoneRepository.AddAsync(block);
+
+        var actor = await _userRepository.GetByIdAsync(operatorId);
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = operatorId,
+            ActorRole = actor?.Role.ToString() ?? UserRole.Operator.ToString(),
+            Action = AuditAction.ReporterBlocked,
+            Description = $"Chặn số điện thoại người báo ({dto.Duration}): {dto.Reason.Trim()}",
+            NewStateJson = JsonSerializer.Serialize(new { blockId = block.Id, maskedPhone = PhoneMasking.Mask(phone), duration = dto.Duration.ToString(), block.ExpiresAt })
+        }, cancellationToken);
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+
+        return ApiResponseDto<BlockedNumberDto>.SuccessResult(new BlockedNumberDto
+        {
+            Id = block.Id,
+            MaskedPhone = PhoneMasking.Mask(phone) ?? string.Empty,
+            Duration = block.Duration,
+            Status = block.GetStatus(now),
+            BlockedAt = block.BlockedAt,
+            ExpiresAt = block.ExpiresAt,
+            Reason = block.Reason,
+            IncidentId = block.IncidentId,
+            BlockedByName = actor?.FullName
+        }, "Đã chặn số điện thoại báo khống.");
+    }
+
+    public async Task<bool> CanAccessIncidentAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId);
+        if (user == null) return false;
+        if (user.Role is UserRole.Operator or UserRole.Admin) return true;
+
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
+        if (incident == null) return false;
+
+        return user.Role switch
+        {
+            UserRole.Citizen => incident.ReportedByUserId == user.Id,
+            UserRole.RescueStaff => user.StationId.HasValue
+                                    && incident.DispatchAssignments.Any(a => a.RescueUnit?.StationId == user.StationId),
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// BR-31 / BR-32: Operator, Admin và đội cứu hộ đang làm nhiệm vụ của sự cố được xem số đầy đủ (có ghi vết)
+    /// </summary>
+    private Task<bool> CanSeeFullPhoneAsync(Incident incident, User actor)
+    {
+        var allowed = actor.Role switch
+        {
+            UserRole.Operator or UserRole.Admin => true,
+            UserRole.RescueStaff => actor.StationId.HasValue
+                                    && incident.DispatchAssignments.Any(a => a.IsActive && a.RescueUnit?.StationId == actor.StationId),
+            UserRole.Citizen => incident.ReportedByUserId == actor.Id,
+            _ => false
+        };
+        return Task.FromResult(allowed);
+    }
+
+    public async Task<ApiResponseDto<PaginatedResultDto<MyReportDto>>> GetMyReportsAsync(
+        Guid userId,
+        MyReportFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        IncidentStatus? status = filter switch
+        {
+            MyReportFilter.Completed => IncidentStatus.Completed,
+            MyReportFilter.Cancelled => IncidentStatus.Cancelled,
+            _ => null
+        };
+
+        var (items, total) = await _incidentRepository.GetByReporterAsync(userId, status, pageIndex, pageSize, cancellationToken);
+        var dtos = items.Select(i =>
+        {
+            var assignments = i.DispatchAssignments.Where(a => a.Status != DispatchAssignmentStatus.Cancelled && a.Status != DispatchAssignmentStatus.Rejected).ToList();
+            return new MyReportDto
+            {
+                Id = i.Id,
+                Title = i.Title,
+                Description = i.Description,
+                LocationAddress = i.LocationAddress,
+                Status = i.Status,
+                Severity = i.Severity,
+                ResolutionSummary = i.ResolutionSummary,
+                CancellationReason = i.CancellationReason,
+                MediaUrls = i.MediaItems.Select(m => m.MediaUrl).ToList(),
+                ReportedAt = i.CreatedAt,
+                VerifiedAt = i.VerifiedAt,
+                DispatchedAt = assignments.Select(a => (DateTime?)a.DispatchedAt).Min(),
+                OnSceneAt = assignments.Select(a => a.ArrivedAt).Where(t => t.HasValue).Min(),
+                CompletedAt = i.ClosedAt,
+                DispatchedUnits = assignments.Select(a => new MyReportUnitDto
+                {
+                    PlateNumber = a.RescueUnit?.PlateNumber ?? string.Empty,
+                    UnitType = a.RescueUnit?.UnitType ?? RescueUnitType.Ambulance,
+                    StationName = a.RescueUnit?.Station?.Name,
+                    Status = a.Status
+                }).ToList()
+            };
+        }).ToList();
+
+        return ApiResponseDto<PaginatedResultDto<MyReportDto>>.SuccessResult(
+            new PaginatedResultDto<MyReportDto>(dtos, total, pageIndex, pageSize));
+    }
+
+    public async Task<ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>> GetAuditTrailAsync(
+        AuditTrailFilterDto filter,
+        CancellationToken cancellationToken = default)
+    {
+        if (filter.From.HasValue && filter.To.HasValue && filter.From > filter.To)
+        {
+            return ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>.FailureResult("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.");
+        }
+
+        var pageSize = Math.Clamp(filter.PageSize, 1, 100);
+        var (items, total) = await _incidentRepository.GetAuditTrailsAsync(
+            filter.IncidentId, filter.ActorId, filter.Action, filter.From, filter.To,
+            filter.PageIndex, pageSize, cancellationToken);
+
+        var dtos = items.Select(a => new AuditTrailEntryDto
+        {
+            Id = a.Id,
+            IncidentId = a.IncidentId,
+            IncidentTitle = a.Incident?.Title,
+            ActorId = a.ActorId,
+            ActorName = a.Actor?.FullName ?? (a.ActorRole == "AI_Worker" ? "AI Worker" : a.ActorRole),
+            ActorRole = a.ActorRole,
+            Action = a.Action,
+            Description = a.Description,
+            OldStateJson = a.OldStateJson,
+            NewStateJson = a.NewStateJson,
+            Timestamp = a.Timestamp
+        }).ToList();
+
+        return ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>.SuccessResult(
+            new PaginatedResultDto<AuditTrailEntryDto>(dtos, total, filter.PageIndex, pageSize));
+    }
+
     private static IncidentResponseDto MapToResponseDto(
         Incident incident,
         AiClassificationResultDto? directAiResult = null,
-        string? emergencySmsLog = null)
+        string? emergencySmsLog = null,
+        bool revealPhone = false)
     {
+        string? Phone(string? raw) => revealPhone ? raw : PhoneMasking.Mask(raw);
+
         AiClassificationResultDto? aiDto = directAiResult;
 
         if (aiDto == null && incident.AiClassification != null)
@@ -503,6 +856,8 @@ public class IncidentService : IIncidentService
             aiDto = new AiClassificationResultDto
             {
                 SeverityScore = (int)incident.AiClassification.SeverityScore,
+                IncidentType = AiClassificationResultDto.ToIncidentTypeLabel(incident.AiClassification.EventType),
+                IsTrafficJam = incident.AiClassification.IsTrafficJam,
                 HazardTags = incident.AiClassification.HazardTags,
                 Summary = incident.AiClassification.Summary,
                 ConfidenceScore = incident.AiClassification.ConfidenceScore,
@@ -522,7 +877,7 @@ public class IncidentService : IIncidentService
             {
                 UserId = incident.ReportedByUser.Id,
                 FullName = incident.ReportedByUser.FullName,
-                PhoneNumber = incident.ReportedByUser.PhoneNumber ?? string.Empty,
+                PhoneNumber = Phone(incident.ReportedByUser.PhoneNumber) ?? string.Empty,
                 BloodType = incident.ReportedByUser.BloodType?.ToString(),
                 MedicalNotes = incident.ReportedByUser.MedicalNotes,
                 ChronicConditions = incident.ReportedByUser.ChronicConditions ?? new(),
@@ -537,7 +892,7 @@ public class IncidentService : IIncidentService
                     Id = c.Id,
                     UserId = c.UserId,
                     Name = c.Name,
-                    PhoneNumber = c.PhoneNumber,
+                    PhoneNumber = Phone(c.PhoneNumber) ?? string.Empty,
                     Relationship = c.Relationship,
                     IsPrimary = c.IsPrimary,
                     CreatedAt = c.CreatedAt,
@@ -545,6 +900,10 @@ public class IncidentService : IIncidentService
                 }).ToList() ?? new()
             };
         }
+
+        var hasActiveLock = incident.LockedByOperatorId.HasValue
+                            && incident.LockExpiresAt.HasValue
+                            && incident.LockExpiresAt.Value > DateTime.UtcNow;
 
         return new IncidentResponseDto
         {
@@ -558,13 +917,16 @@ public class IncidentService : IIncidentService
             Severity = incident.Severity,
             ReportedByUserId = incident.ReportedByUserId,
             ReporterName = incident.ReporterName ?? incident.ReportedByUser?.FullName,
-            ReporterPhone = incident.ReporterPhone ?? incident.ReportedByUser?.PhoneNumber,
+            ReporterPhone = Phone(incident.ReporterPhone ?? incident.ReportedByUser?.PhoneNumber),
             VerifiedByUserId = incident.VerifiedByUserId,
             VerifiedByUserName = incident.VerifiedByUser?.FullName,
             VerifiedAt = incident.VerifiedAt,
             OperatorNotes = incident.OperatorNotes,
             CreatedAt = incident.CreatedAt,
             UpdatedAt = incident.UpdatedAt,
+            LockedByOperatorId = hasActiveLock ? incident.LockedByOperatorId : null,
+            LockedByOperatorName = hasActiveLock ? incident.LockedByOperator?.FullName : null,
+            LockExpiresAt = hasActiveLock ? incident.LockExpiresAt : null,
             MediaItems = incident.MediaItems.Select(m => new IncidentMediaDto
             {
                 Id = m.Id,

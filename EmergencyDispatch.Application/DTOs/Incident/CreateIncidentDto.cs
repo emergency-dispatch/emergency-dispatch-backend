@@ -14,9 +14,9 @@ public class CreateIncidentDto
     public string? Title { get; set; }
 
     /// <summary>
-    /// Mô tả chi tiết sự việc
+    /// Mô tả ngắn sự việc (FR-CIT-02: tối đa 200 ký tự)
     /// </summary>
-    [MaxLength(2000, ErrorMessage = "Mô tả không được vượt quá 2000 ký tự")]
+    [MaxLength(200, ErrorMessage = "Mô tả không được vượt quá 200 ký tự")]
     public string Description { get; set; } = string.Empty;
 
     /// <summary>

@@ -10,13 +10,16 @@ public class RescueUnitService : IRescueUnitService
 {
     private readonly IRescueUnitRepository _rescueUnitRepository;
     private readonly IStationRepository _stationRepository;
+    private readonly IDispatchAssignmentRepository _assignmentRepository;
 
     public RescueUnitService(
         IRescueUnitRepository rescueUnitRepository,
-        IStationRepository stationRepository)
+        IStationRepository stationRepository,
+        IDispatchAssignmentRepository assignmentRepository)
     {
         _rescueUnitRepository = rescueUnitRepository;
         _stationRepository = stationRepository;
+        _assignmentRepository = assignmentRepository;
     }
 
     public async Task<IReadOnlyList<RescueUnitResponseDto>> GetAllAsync()
@@ -109,6 +112,14 @@ public class RescueUnitService : IRescueUnitService
             throw new InvalidOperationException($"Biển số / Mã hiệu xe '{dto.PlateNumber}' đã được sử dụng bởi phương tiện khác.");
         }
 
+        // BR-AD-03: xe đang làm nhiệm vụ không được đổi trạm, đổi trạng thái tay hay đưa đi bảo trì
+        var onMission = IsOnMission(unit.Status) || await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null;
+        if (onMission && (dto.StationId != unit.StationId || dto.Status != unit.Status))
+        {
+            throw new InvalidOperationException("Không thể đổi trạm hoặc trạng thái của xe đang thực hiện nhiệm vụ cứu nạn.");
+        }
+        EnsureManualStatusAllowed(dto.Status, unit.Status);
+
         unit.PlateNumber = dto.PlateNumber.Trim().ToUpperInvariant();
         unit.UnitType = dto.UnitType;
         unit.Status = dto.Status;
@@ -142,7 +153,21 @@ public class RescueUnitService : IRescueUnitService
             throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
         }
 
+        if (dto.Status != unit.Status)
+        {
+            var hasActiveAssignment = await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null;
+            if (IsOnMission(unit.Status) || hasActiveAssignment)
+            {
+                throw new InvalidOperationException("Xe đang thực hiện nhiệm vụ: trạng thái được cập nhật tự động theo tiến độ nhiệm vụ.");
+            }
+            EnsureManualStatusAllowed(dto.Status, unit.Status);
+        }
+
         unit.UpdateStatus(dto.Status);
+        if (dto.Status != RescueUnitStatus.CoolDown)
+        {
+            unit.CoolDownUntil = null;
+        }
         await _rescueUnitRepository.UpdateAsync(unit);
 
         return MapToDto(unit);
@@ -156,12 +181,30 @@ public class RescueUnitService : IRescueUnitService
             throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
         }
 
-        if (unit.Status == RescueUnitStatus.Dispatched || unit.Status == RescueUnitStatus.OnScene)
+        if (IsOnMission(unit.Status) || await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null)
         {
             throw new InvalidOperationException("Không thể xóa xe đang trong nhiệm vụ cứu hộ khẩn cấp.");
         }
 
         await _rescueUnitRepository.DeleteAsync(unit);
+    }
+
+    /// <summary>
+    /// Xe đang trong vòng đời nhiệm vụ (đã nhận lệnh, tại hiện trường, đang quay về)
+    /// </summary>
+    public static bool IsOnMission(RescueUnitStatus status)
+        => status is RescueUnitStatus.Dispatched or RescueUnitStatus.OnScene or RescueUnitStatus.Returning;
+
+    /// <summary>
+    /// Trạng thái nhiệm vụ do hệ thống tự chuyển; quản trị viên chỉ được đặt Available / Maintenance / OutOfService
+    /// </summary>
+    private static void EnsureManualStatusAllowed(RescueUnitStatus newStatus, RescueUnitStatus currentStatus)
+    {
+        if (newStatus == currentStatus) return;
+        if (newStatus is RescueUnitStatus.Dispatched or RescueUnitStatus.OnScene or RescueUnitStatus.CoolDown)
+        {
+            throw new InvalidOperationException($"Trạng thái '{newStatus}' do hệ thống tự cập nhật theo nhiệm vụ, không đặt thủ công được.");
+        }
     }
 
     private static RescueUnitResponseDto MapToDto(RescueUnit unit)

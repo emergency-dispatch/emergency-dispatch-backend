@@ -14,18 +14,23 @@ public class UserService : IUserService
     private readonly IIceContactRepository _iceContactRepository;
     private readonly IStationRepository _stationRepository;
     private readonly IRescueUnitRepository _rescueUnitRepository;
+    private readonly IStationTeamService _teamService;
 
     public UserService(
         IUserRepository userRepository,
         IIceContactRepository iceContactRepository,
         IStationRepository stationRepository,
-        IRescueUnitRepository rescueUnitRepository)
+        IRescueUnitRepository rescueUnitRepository,
+        IStationTeamService teamService)
     {
         _userRepository = userRepository;
         _iceContactRepository = iceContactRepository;
         _stationRepository = stationRepository;
         _rescueUnitRepository = rescueUnitRepository;
+        _teamService = teamService;
     }
+
+    private static string? TeamNameOf(User u) => u.TeamMembership?.Team?.Name;
 
     public async Task<UserResponseDto> GetByIdAsync(Guid id)
     {
@@ -100,8 +105,10 @@ public class UserService : IUserService
         return new PaginatedResultDto<UserResponseDto>(dtos, totalCount, pageIndex, pageSize);
     }
 
-    public async Task<UserResponseDto> CreateUserAsync(CreateUserDto dto)
+    public async Task<UserResponseDto> CreateUserAsync(CreateUserDto dto, UserRole actorRole)
     {
+        EnsureCanManageRole(actorRole, dto.Role);
+
         if (await _userRepository.EmailExistsAsync(dto.Email.Trim()))
         {
             throw new InvalidOperationException("Email này đã tồn tại trong hệ thống.");
@@ -126,10 +133,16 @@ public class UserService : IUserService
         return MapToUserResponseDto(user);
     }
 
-    public async Task<UserResponseDto> UpdateUserAsync(Guid id, UpdateUserDto dto)
+    public async Task<UserResponseDto> UpdateUserAsync(Guid id, UpdateUserDto dto, UserRole actorRole)
     {
         var user = await _userRepository.GetByIdWithDetailsAsync(id)
             ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {id}");
+
+        EnsureCanManageRole(actorRole, user.Role);
+        if (dto.Role.HasValue)
+        {
+            EnsureCanManageRole(actorRole, dto.Role.Value);
+        }
 
         user.FullName = dto.FullName.Trim();
         user.PhoneNumber = dto.PhoneNumber?.Trim();
@@ -150,6 +163,57 @@ public class UserService : IUserService
         {
             user.DependentsNote = dto.DependentsNote.Trim();
         }
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _userRepository.UpdateAsync(user);
+        return MapToUserResponseDto(user);
+    }
+
+    public async Task<UserResponseDto> LockUserAsync(Guid id, string reason, Guid actorUserId, UserRole actorRole)
+    {
+        var user = await _userRepository.GetByIdWithDetailsAsync(id)
+            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {id}");
+
+        EnsureCanManageRole(actorRole, user.Role);
+        if (user.Id == actorUserId)
+        {
+            throw new InvalidOperationException("Bạn không thể tự khóa tài khoản của chính mình.");
+        }
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5)
+        {
+            throw new InvalidOperationException("Lý do khóa tài khoản phải có ít nhất 5 ký tự.");
+        }
+
+        user.Status = UserStatus.Suspended;
+        user.LockReason = reason.Trim();
+        user.LockedAt = DateTime.UtcNow;
+        user.LockedByUserId = actorUserId;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // Thu hồi mọi phiên đăng nhập đang hoạt động
+        foreach (var token in user.RefreshTokens.Where(t => !t.IsRevoked))
+        {
+            token.IsRevoked = true;
+            token.RevokedAt = DateTime.UtcNow;
+        }
+
+        await _userRepository.UpdateAsync(user);
+        return MapToUserResponseDto(user);
+    }
+
+    public async Task<UserResponseDto> UnlockUserAsync(Guid id, UserRole actorRole)
+    {
+        var user = await _userRepository.GetByIdWithDetailsAsync(id)
+            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {id}");
+
+        EnsureCanManageRole(actorRole, user.Role);
+
+        user.Status = UserStatus.Active;
+        user.LockReason = null;
+        user.LockedAt = null;
+        user.LockedByUserId = null;
+        user.FailedLoginCount = 0;
+        user.LockoutEndUtc = null;
         user.UpdatedAt = DateTime.UtcNow;
 
         await _userRepository.UpdateAsync(user);
@@ -325,10 +389,12 @@ public class UserService : IUserService
         return true;
     }
 
-    public async Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto)
+    public async Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto, UserRole actorRole)
     {
         var user = await _userRepository.GetByIdWithDetailsAsync(userId)
             ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {userId}");
+
+        EnsureCanManageRole(actorRole, user.Role);
 
         if (dto.StationId.HasValue)
         {
@@ -341,13 +407,18 @@ public class UserService : IUserService
             user.StationId = null;
         }
 
-        if (dto.TeamName != null)
-        {
-            user.DependentsNote = dto.TeamName.Trim();
-        }
-
         user.UpdatedAt = DateTime.UtcNow;
         await _userRepository.UpdateAsync(user);
+
+        // Tổ làm việc lưu ở bảng StationTeams (trước đây lưu tạm vào DependentsNote)
+        if (dto.TeamName != null || !dto.StationId.HasValue)
+        {
+            await _teamService.AssignByNameAsync(user.Id, user.StationId, dto.TeamName);
+        }
+        else if (user.TeamMembership?.Team != null && user.TeamMembership.Team.StationId != user.StationId)
+        {
+            await _teamService.AssignByNameAsync(user.Id, user.StationId, null);
+        }
 
         var updatedUser = await _userRepository.GetByIdWithDetailsAsync(userId);
         return MapToUserResponseDto(updatedUser ?? user);
@@ -358,10 +429,10 @@ public class UserService : IUserService
         var station = await _stationRepository.GetByIdAsync(stationId)
             ?? throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với Id = {stationId}");
 
-        var staffList = await _userRepository.GetAllAsync(predicate: u => u.StationId == stationId && !u.IsDeleted);
+        var staffList = await _userRepository.GetByStationWithTeamAsync(stationId);
 
         return staffList
-            .OrderBy(u => u.DependentsNote)
+            .OrderBy(u => TeamNameOf(u))
             .ThenBy(u => u.FullName)
             .Select(u => new TeamMemberSummaryDto
             {
@@ -372,7 +443,7 @@ public class UserService : IUserService
                 AvatarUrl = u.AvatarUrl,
                 Role = u.Role.ToString(),
                 Status = u.Status.ToString(),
-                TeamName = u.DependentsNote
+                TeamName = TeamNameOf(u)
             })
             .ToList();
     }
@@ -386,7 +457,7 @@ public class UserService : IUserService
         {
             return new StaffTeamResponseDto
             {
-                MyTeamName = user.DependentsNote,
+                MyTeamName = TeamNameOf(user),
                 TeamMembers = new List<TeamMemberSummaryDto>
                 {
                     new()
@@ -398,7 +469,7 @@ public class UserService : IUserService
                         AvatarUrl = user.AvatarUrl,
                         Role = user.Role.ToString(),
                         Status = user.Status.ToString(),
-                        TeamName = user.DependentsNote
+                        TeamName = TeamNameOf(user)
                     }
                 }
             };
@@ -407,12 +478,12 @@ public class UserService : IUserService
         var station = await _stationRepository.GetByIdWithUnitsAndStaffAsync(user.StationId.Value);
         if (station == null)
         {
-            return new StaffTeamResponseDto { MyTeamName = user.DependentsNote };
+            return new StaffTeamResponseDto { MyTeamName = TeamNameOf(user) };
         }
 
         var staffMembers = station.StaffMembers?
             .Where(s => !s.IsDeleted)
-            .OrderBy(s => s.DependentsNote)
+            .OrderBy(s => TeamNameOf(s))
             .ThenBy(s => s.FullName)
             .Select(s => new TeamMemberSummaryDto
             {
@@ -423,7 +494,7 @@ public class UserService : IUserService
                 AvatarUrl = s.AvatarUrl,
                 Role = s.Role.ToString(),
                 Status = s.Status.ToString(),
-                TeamName = s.DependentsNote
+                TeamName = TeamNameOf(s)
             }).ToList() ?? new List<TeamMemberSummaryDto>();
 
         var vehicles = station.RescueUnits?
@@ -443,14 +514,36 @@ public class UserService : IUserService
             StationName = station.Name,
             StationAddress = station.Address,
             StationPhoneNumber = station.PhoneNumber,
-            MyTeamName = user.DependentsNote,
+            MyTeamName = TeamNameOf(user),
+            MyTeamId = user.TeamMembership?.TeamId,
+            MyCrewRole = user.TeamMembership?.CrewRole.ToString(),
+            MyTeamRescueUnitId = user.TeamMembership?.Team?.RescueUnitId,
+            MyTeamRescueUnitPlate = user.TeamMembership?.Team?.RescueUnit?.PlateNumber,
+            MyTeamMembers = user.TeamMembership?.Team == null
+                ? new List<TeamMemberSummaryDto>()
+                : staffMembers.Where(m => m.TeamName == TeamNameOf(user)).ToList(),
             TeamMembers = staffMembers,
             StationVehicles = vehicles
         };
     }
 
+    /// <summary>
+    /// Admin quản lý mọi vai trò; Operator chỉ được tạo/sửa/gán trạm cho RescueStaff
+    /// </summary>
+    private static void EnsureCanManageRole(UserRole actorRole, UserRole targetRole)
+    {
+        if (actorRole == UserRole.Admin) return;
+
+        if (actorRole == UserRole.Operator && targetRole == UserRole.RescueStaff) return;
+
+        throw new UnauthorizedAccessException("Điều phối viên chỉ được quản lý tài khoản nhân viên cứu hộ (RescueStaff).");
+    }
+
     private static UserResponseDto MapToUserResponseDto(User user) => new()
     {
+        LockReason = user.LockReason,
+        LockedAt = user.LockedAt,
+        LockoutEndUtc = user.LockoutEndUtc > DateTime.UtcNow ? user.LockoutEndUtc : null,
         Id = user.Id,
         FullName = user.FullName,
         Email = user.Email,

@@ -16,6 +16,9 @@ public class StationRepository : GenericRepository<Station>, IStationRepository
         return await _dbSet
             .Include(s => s.RescueUnits)
             .Include(s => s.StaffMembers)
+                .ThenInclude(u => u.TeamMembership)
+                    .ThenInclude(m => m!.Team)
+                        .ThenInclude(t => t!.RescueUnit)
             .FirstOrDefaultAsync(s => s.Id == id);
     }
 

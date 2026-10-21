@@ -51,4 +51,35 @@ public class CitizenTrackingResponseDto
     public DateTime? ArrivedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// FR-CIT-03: toàn bộ xe đang xử lý sự cố (Level 3 có thể nhiều xe). Các trường đơn ở trên là xe đầu tiên.
+    /// </summary>
+    public List<TrackedUnitDto> Units { get; set; } = new();
+}
+
+/// <summary>
+/// Vị trí, lộ trình và tiến độ của một xe cứu hộ đang tới hiện trường
+/// </summary>
+public class TrackedUnitDto
+{
+    public Guid AssignmentId { get; set; }
+    public Guid RescueUnitId { get; set; }
+    public string? PlateNumber { get; set; }
+    public string? UnitTypeName { get; set; }
+    public string? StationName { get; set; }
+    public string? StationPhoneNumber { get; set; }
+    public double VehicleLat { get; set; }
+    public double VehicleLng { get; set; }
+    public DateTime? LastLocationUpdateAt { get; set; }
+    public List<RoutePointDto> RouteTrajectory { get; set; } = new();
+    public double DistanceKm { get; set; }
+    public int EstimatedArrivalMinutes { get; set; }
+    public string DispatchStatus { get; set; } = string.Empty;
+    public DateTime? DispatchedAt { get; set; }
+    public DateTime? AcceptedAt { get; set; }
+    public DateTime? EnRouteAt { get; set; }
+    public DateTime? ArrivedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? Notes { get; set; }
 }

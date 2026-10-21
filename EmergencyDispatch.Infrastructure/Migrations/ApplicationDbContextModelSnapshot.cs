@@ -38,6 +38,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("text");
 
+                    b.Property<int>("EventType")
+                        .HasColumnType("integer");
+
                     b.PrimitiveCollection<List<string>>("HazardTags")
                         .IsRequired()
                         .HasColumnType("text[]");
@@ -49,6 +52,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsSuccess")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTrafficJam")
                         .HasColumnType("boolean");
 
                     b.Property<string>("ModelName")
@@ -107,9 +113,13 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("Notes")
-                        .HasColumnType("text");
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<int>("OldStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RejectionReason")
                         .HasColumnType("integer");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -123,6 +133,73 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.HasIndex("ChangedByUserId");
 
                     b.ToTable("AssignmentStatusHistories");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.BlockedPhoneNumber", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("BlockedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("BlockedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Duration")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("IncidentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastExtendedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RemoveReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RemovedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BlockedByUserId");
+
+                    b.HasIndex("IncidentId");
+
+                    b.HasIndex("PhoneNumber")
+                        .HasDatabaseName("IX_BlockedPhoneNumbers_Phone");
+
+                    b.HasIndex("RemovedByUserId");
+
+                    b.ToTable("BlockedPhoneNumbers");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CitizenFeedback", b =>
@@ -170,45 +247,50 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ActionsSummary")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<Guid>("AssignmentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("EquipmentUsed")
-                        .HasColumnType("text");
+                    b.PrimitiveCollection<List<string>>("EquipmentUsed")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<string>("HandoverContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("HandoverContactPhone")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("HandoverEntity")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("HandoverNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("Notes")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("QrCode")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<bool>("QrHandoverConfirmed")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("QrScannedAt")
+                    b.Property<DateTime>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("QrScannedByUserId")
+                    b.Property<Guid?>("SubmittedByUserId")
                         .HasColumnType("uuid");
-
-                    b.Property<double?>("QrScannedLatitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<double?>("QrScannedLongitude")
-                        .HasColumnType("double precision");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("VictimCount")
+                    b.Property<int>("VictimsAssistedCount")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
@@ -217,9 +299,12 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_CompletionReports_AssignmentId");
 
-                    b.HasIndex("QrScannedByUserId");
+                    b.HasIndex("SubmittedByUserId");
 
-                    b.ToTable("CompletionReports");
+                    b.ToTable("CompletionReports", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompletionReports_Victims", "\"VictimsAssistedCount\" >= 0");
+                        });
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReportMedia", b =>
@@ -275,14 +360,30 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<DateTime?>("ArrivedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("AssignedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DispatchAlgorithm")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<DateTime>("DispatchedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("DistanceKm")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime?>("EnRouteAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("EstimatedArrivalMinutes")
+                        .HasColumnType("double precision");
 
                     b.Property<Guid>("IncidentId")
                         .HasColumnType("uuid");
@@ -293,6 +394,16 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectionNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("RejectionReason")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("RescueUnitId")
                         .HasColumnType("uuid");
@@ -305,56 +416,15 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IncidentId");
+                    b.HasIndex("AssignedByUserId");
 
-                    b.HasIndex("RescueUnitId");
+                    b.HasIndex("IncidentId", "Status")
+                        .HasDatabaseName("IX_DispatchAssignments_Incident_Status");
+
+                    b.HasIndex("RescueUnitId", "Status")
+                        .HasDatabaseName("IX_DispatchAssignments_Unit_Status");
 
                     b.ToTable("DispatchAssignments");
-                });
-
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Equipment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Condition")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("LastInspectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Quantity")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("VehicleId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("VehicleId")
-                        .HasDatabaseName("IX_Equipment_VehicleId");
-
-                    b.ToTable("Equipments");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.EscalationLog", b =>
@@ -546,6 +616,12 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<DateTime?>("LockExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LockedByOperatorId")
+                        .HasColumnType("uuid");
+
                     b.Property<double>("Longitude")
                         .HasColumnType("double precision");
 
@@ -604,6 +680,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("DuplicateOfIncidentId");
 
+                    b.HasIndex("LockedByOperatorId");
+
                     b.HasIndex("ReportedByUserId")
                         .HasDatabaseName("IX_Incidents_ReportedBy");
 
@@ -628,86 +706,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_Incidents_Severity", "\"Severity\" BETWEEN 0 AND 3");
                         });
-                });
-
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentAssignment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("AcceptedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("AssignedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DispatchAlgorithm")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<double?>("DistanceKm")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateTime?>("EnRouteAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("EstimatedArrivalMinutes")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("IncidentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("OnSceneAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RejectionNotes")
-                        .HasColumnType("text");
-
-                    b.Property<int?>("RejectionReason")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("StaffId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("VehicleId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedByUserId");
-
-                    b.HasIndex("IncidentId")
-                        .HasDatabaseName("IX_Assignments_IncidentId");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("IX_Assignments_Status");
-
-                    b.HasIndex("VehicleId");
-
-                    b.HasIndex("IncidentId", "StaffId")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_Assignments_Incident_Staff");
-
-                    b.HasIndex("StaffId", "Status")
-                        .HasDatabaseName("IX_Assignments_Staff_Status");
-
-                    b.ToTable("IncidentAssignments");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentAuditTrail", b =>
@@ -873,53 +871,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.ToTable("IncidentStatusHistories");
                 });
 
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.LocationUpdate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<double?>("Accuracy")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<double?>("Heading")
-                        .HasColumnType("double precision");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<double>("Latitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("Longitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<double?>("Speed")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Timestamp")
-                        .HasDatabaseName("IX_LocationUpdates_Timestamp");
-
-                    b.HasIndex("UserId", "Timestamp")
-                        .HasDatabaseName("IX_LocationUpdates_User_Time");
-
-                    b.ToTable("LocationUpdates");
-                });
-
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1038,6 +989,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("CoolDownUntil")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1141,6 +1095,121 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasDatabaseName("IX_Stations_GeoLocation");
 
                     b.ToTable("Stations");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeam", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("RescueUnitId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RescueUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_StationTeams_RescueUnit")
+                        .HasFilter("\"RescueUnitId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("StationId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_StationTeams_Station_Name")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("StationTeams");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeamMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CrewRole")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("StaffId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StaffId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_StationTeamMembers_Staff")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("TeamId");
+
+                    b.ToTable("StationTeamMembers");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.SystemSetting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ValueJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_SystemSettings_Key");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.ToTable("SystemSettings");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.TrafficHotspot", b =>
@@ -1298,6 +1367,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<int>("FailedLoginCount")
+                        .HasColumnType("integer");
+
                     b.Property<string>("FcmToken")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -1321,6 +1393,19 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Property<bool>("IsEmailVerified")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("LockReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("LockedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LockedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("LockoutEndUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("MedicalNotes")
                         .HasMaxLength(2000)
@@ -1385,70 +1470,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Vehicle", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Capacity")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<double?>("LastKnownLatitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<double?>("LastKnownLongitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("LicensePlate")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("StationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("VehicleType")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LicensePlate")
-                        .IsUnique()
-                        .HasDatabaseName("IX_Vehicles_LicensePlate");
-
-                    b.HasIndex("StationId")
-                        .HasDatabaseName("IX_Vehicles_StationId");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("IX_Vehicles_Status");
-
-                    b.HasIndex("Status", "StationId")
-                        .HasDatabaseName("IX_Vehicles_Available_ByStation");
-
-                    b.ToTable("Vehicles");
-                });
-
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AiClassification", b =>
                 {
                     b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
@@ -1462,7 +1483,7 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AssignmentStatusHistory", b =>
                 {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.IncidentAssignment", "Assignment")
+                    b.HasOne("EmergencyDispatch.Domain.Entities.DispatchAssignment", "Assignment")
                         .WithMany("StatusHistories")
                         .HasForeignKey("AssignmentId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1476,6 +1497,30 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Assignment");
 
                     b.Navigation("ChangedByUser");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.BlockedPhoneNumber", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "BlockedByUser")
+                        .WithMany()
+                        .HasForeignKey("BlockedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
+                        .WithMany()
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "RemovedByUser")
+                        .WithMany()
+                        .HasForeignKey("RemovedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("BlockedByUser");
+
+                    b.Navigation("Incident");
+
+                    b.Navigation("RemovedByUser");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CitizenFeedback", b =>
@@ -1499,20 +1544,20 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReport", b =>
                 {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.IncidentAssignment", "Assignment")
+                    b.HasOne("EmergencyDispatch.Domain.Entities.DispatchAssignment", "Assignment")
                         .WithOne("CompletionReport")
                         .HasForeignKey("EmergencyDispatch.Domain.Entities.CompletionReport", "AssignmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "QrScannedByUser")
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "SubmittedByUser")
                         .WithMany()
-                        .HasForeignKey("QrScannedByUserId")
+                        .HasForeignKey("SubmittedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Assignment");
 
-                    b.Navigation("QrScannedByUser");
+                    b.Navigation("SubmittedByUser");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReportMedia", b =>
@@ -1528,6 +1573,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.DispatchAssignment", b =>
                 {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "AssignedByUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
                         .WithMany("DispatchAssignments")
                         .HasForeignKey("IncidentId")
@@ -1540,20 +1590,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("AssignedByUser");
+
                     b.Navigation("Incident");
 
                     b.Navigation("RescueUnit");
-                });
-
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Equipment", b =>
-                {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.Vehicle", "Vehicle")
-                        .WithMany("Equipments")
-                        .HasForeignKey("VehicleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Vehicle");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.EscalationLog", b =>
@@ -1598,6 +1639,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasForeignKey("DuplicateOfIncidentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "LockedByOperator")
+                        .WithMany()
+                        .HasForeignKey("LockedByOperatorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EmergencyDispatch.Domain.Entities.User", "ReportedByUser")
                         .WithMany()
                         .HasForeignKey("ReportedByUserId")
@@ -1612,44 +1658,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Navigation("DuplicateOfIncident");
 
+                    b.Navigation("LockedByOperator");
+
                     b.Navigation("ReportedByUser");
 
                     b.Navigation("VerifiedByUser");
-                });
-
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentAssignment", b =>
-                {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "AssignedByUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
-                        .WithMany("IncidentAssignments")
-                        .HasForeignKey("IncidentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "Staff")
-                        .WithMany("AssignedJobs")
-                        .HasForeignKey("StaffId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EmergencyDispatch.Domain.Entities.Vehicle", "Vehicle")
-                        .WithMany("IncidentAssignments")
-                        .HasForeignKey("VehicleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("AssignedByUser");
-
-                    b.Navigation("Incident");
-
-                    b.Navigation("Staff");
-
-                    b.Navigation("Vehicle");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentAuditTrail", b =>
@@ -1699,17 +1712,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Incident");
                 });
 
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.LocationUpdate", b =>
-                {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "User")
-                        .WithMany("LocationUpdates")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Notification", b =>
                 {
                     b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
@@ -1750,6 +1752,53 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Station");
                 });
 
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeam", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.RescueUnit", "RescueUnit")
+                        .WithMany()
+                        .HasForeignKey("RescueUnitId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Station", "Station")
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RescueUnit");
+
+                    b.Navigation("Station");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeamMember", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "Staff")
+                        .WithOne("TeamMembership")
+                        .HasForeignKey("EmergencyDispatch.Domain.Entities.StationTeamMember", "StaffId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.StationTeam", "Team")
+                        .WithMany("Members")
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Staff");
+
+                    b.Navigation("Team");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.SystemSetting", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("UpdatedByUser");
+                });
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.TrafficHotspot", b =>
                 {
                     b.HasOne("EmergencyDispatch.Domain.Entities.User", "ReportedByUser")
@@ -1770,20 +1819,16 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Station");
                 });
 
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Vehicle", b =>
-                {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.Station", "Station")
-                        .WithMany("Vehicles")
-                        .HasForeignKey("StationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Station");
-                });
-
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReport", b =>
                 {
                     b.Navigation("MediaItems");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.DispatchAssignment", b =>
+                {
+                    b.Navigation("CompletionReport");
+
+                    b.Navigation("StatusHistories");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.EscalationRule", b =>
@@ -1803,16 +1848,7 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Navigation("DuplicateIncidents");
 
-                    b.Navigation("IncidentAssignments");
-
                     b.Navigation("MediaItems");
-
-                    b.Navigation("StatusHistories");
-                });
-
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentAssignment", b =>
-                {
-                    b.Navigation("CompletionReport");
 
                     b.Navigation("StatusHistories");
                 });
@@ -1827,32 +1863,26 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("RescueUnits");
 
                     b.Navigation("StaffMembers");
+                });
 
-                    b.Navigation("Vehicles");
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeam", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>
                 {
-                    b.Navigation("AssignedJobs");
-
                     b.Navigation("CitizenFeedbacks");
 
                     b.Navigation("IceContacts");
-
-                    b.Navigation("LocationUpdates");
 
                     b.Navigation("Notifications");
 
                     b.Navigation("RefreshTokens");
 
+                    b.Navigation("TeamMembership");
+
                     b.Navigation("TrafficHotspots");
-                });
-
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Vehicle", b =>
-                {
-                    b.Navigation("Equipments");
-
-                    b.Navigation("IncidentAssignments");
                 });
 #pragma warning restore 612, 618
         }

@@ -17,6 +17,10 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         return await _dbSet
             .Include(u => u.Station)
             .Include(u => u.IceContacts)
+            .Include(u => u.TeamMembership)
+                .ThenInclude(m => m!.Team)
+                    .ThenInclude(t => t!.RescueUnit)
+            .Include(u => u.RefreshTokens.Where(t => !t.IsRevoked))
             .FirstOrDefaultAsync(u => u.Id == id);
     }
 
@@ -85,5 +89,21 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .ToListAsync();
 
         return (users, totalCount);
+    }
+
+    public async Task<IReadOnlyList<User>> GetByStationWithTeamAsync(Guid stationId)
+    {
+        return await _dbSet
+            .Include(u => u.TeamMembership)
+                .ThenInclude(m => m!.Team)
+            .Where(u => u.StationId == stationId)
+            .ToListAsync();
+    }
+
+    public async Task<IReadOnlyList<User>> GetActiveByRolesAsync(IReadOnlyCollection<UserRole> roles)
+    {
+        return await _dbSet
+            .Where(u => roles.Contains(u.Role) && u.Status == UserStatus.Active)
+            .ToListAsync();
     }
 }

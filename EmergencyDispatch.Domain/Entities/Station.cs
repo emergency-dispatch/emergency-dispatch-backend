@@ -18,5 +18,4 @@ public class Station : BaseEntity
     // Navigation properties
     public ICollection<User> StaffMembers { get; set; } = new List<User>();
     public ICollection<RescueUnit> RescueUnits { get; set; } = new List<RescueUnit>();
-    public ICollection<Vehicle> Vehicles { get; set; } = new List<Vehicle>();
 }

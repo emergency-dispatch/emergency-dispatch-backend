@@ -13,6 +13,9 @@ namespace EmergencyDispatch.Application.Services;
 
 public class AuthService : IAuthService
 {
+    private const int MaxFailedLoginAttempts = 5;
+    private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+
     private readonly IUserRepository _userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly ITokenService _tokenService;
@@ -189,14 +192,43 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Email hoặc mật khẩu không chính xác.");
         }
 
+        // MSG07: tài khoản đang bị khóa tạm do đăng nhập sai liên tiếp
+        var now = DateTime.UtcNow;
+        if (user.LockoutEndUtc.HasValue && user.LockoutEndUtc.Value > now)
+        {
+            var minutesLeft = Math.Max(1, (int)Math.Ceiling((user.LockoutEndUtc.Value - now).TotalMinutes));
+            throw new UnauthorizedAccessException(
+                $"Tài khoản tạm thời bị khóa do đăng nhập sai {MaxFailedLoginAttempts} lần liên tiếp. Vui lòng thử lại sau {minutesLeft} phút hoặc đặt lại mật khẩu.");
+        }
+
         if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
-            throw new UnauthorizedAccessException("Email hoặc mật khẩu không chính xác.");
+            user.FailedLoginCount++;
+            if (user.FailedLoginCount >= MaxFailedLoginAttempts)
+            {
+                user.LockoutEndUtc = now.Add(LockoutDuration);
+                user.FailedLoginCount = 0;
+            }
+            user.UpdatedAt = now;
+            await _userRepository.UpdateAsync(user);
+
+            throw new UnauthorizedAccessException(user.LockoutEndUtc > now
+                ? $"Tài khoản tạm thời bị khóa {LockoutDuration.TotalMinutes:F0} phút do đăng nhập sai {MaxFailedLoginAttempts} lần liên tiếp."
+                : "Email hoặc mật khẩu không chính xác.");
         }
 
         if (user.Status == UserStatus.Suspended)
         {
-            throw new UnauthorizedAccessException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+            throw new UnauthorizedAccessException(string.IsNullOrWhiteSpace(user.LockReason)
+                ? "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên."
+                : $"Tài khoản của bạn đã bị khóa. Lý do: {user.LockReason}");
+        }
+
+        if (user.FailedLoginCount > 0 || user.LockoutEndUtc.HasValue)
+        {
+            user.FailedLoginCount = 0;
+            user.LockoutEndUtc = null;
+            await _userRepository.UpdateAsync(user);
         }
 
         if (user.Status == UserStatus.Inactive)

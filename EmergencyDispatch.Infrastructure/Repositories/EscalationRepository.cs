@@ -53,9 +53,9 @@ public class EscalationRepository : IEscalationRepository
         _context.EscalationRules.Update(rule);
     }
 
-    public async Task<IReadOnlyList<Incident>> GetEscalatableIncidentsAsync(SeverityLevel minSeverity, DateTime cutoffTime, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Incident>> GetEscalatableIncidentsAsync(IReadOnlyCollection<SeverityLevel> severities, DateTime cutoffTime, CancellationToken cancellationToken = default)
     {
-        // Sự cố có mức nghiêm trọng >= minSeverity, tạo trước cutoffTime,
+        // Sự cố thuộc các mức độ cần quét, tạo trước cutoffTime,
         // chưa có đơn vị cứu hộ nhận (Accepted/EnRoute/OnScene) và chưa hoàn thành/hủy/đã leo thang
         var nonEscalatedStatuses = new[]
         {
@@ -69,7 +69,7 @@ public class EscalationRepository : IEscalationRepository
         return await _context.Incidents
             .Include(i => i.DispatchAssignments)
             .Where(i => !i.IsDeleted
-                        && i.Severity >= minSeverity
+                        && severities.Contains(i.Severity)
                         && i.CreatedAt <= cutoffTime
                         && nonEscalatedStatuses.Contains(i.Status)
                         // Nếu là Dispatched thì kiểm tra xem chưa có assignment nào được chấp nhận
