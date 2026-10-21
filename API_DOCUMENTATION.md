@@ -1,8 +1,8 @@
 # 📘 TÀI LIỆU TÍCH HỢP BACKEND API — DÀNH CHO ĐỘI NGŨ FRONTEND & MOBILE
 
-> **Dự án**: Hệ thống Điều phối và Quản lý Đội cứu hộ Khẩn cấp theo Thời gian thực (Real-time Emergency Response & Dispatch Management System)  
-> **Phiên bản API**: v1.0 (Clean Architecture - .NET 9.0)  
-> **Cơ sở dữ liệu**: Neon PostgreSQL Cloud  
+> **Dự án**: Hệ thống Điều phối và Quản lý Đội cứu hộ Khẩn cấp theo Thời gian thực (Real-time Emergency Response & Dispatch Management System)
+> **Phiên bản API**: v1.0 (Clean Architecture - .NET 9.0)
+> **Cơ sở dữ liệu**: Neon PostgreSQL Cloud
 > **Mô hình AI**: Qwen3-VL 32B Instruct (`qwen/qwen3-vl-32b-instruct`)
 
 ---
@@ -341,13 +341,17 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
   ```
 * **Response (200 OK)**: Sự cố chuyển sang trạng thái `Verified`.
 
-#### 2.6. Hủy sự cố báo sai / báo khống (`PUT /api/incidents/{id}/cancel`)
-* **Header**: `Authorization: Bearer <token_cua_operator>`
+#### 2.6. H?y s? c? b?o sai / b?o kh?ng (`PUT /api/incidents/{id}/cancel`)
+* **Quy?n h?n**: Operator/Admin ho?c ng??i d?n ?? ??ng nh?p s? h?u s? c? d?ng JWT. Guest g?i m? h?y t??ng ?ng s? c?, kh?ng c?n ??ng nh?p.
 * **Request Body**:
   ```json
-  "Báo khống, đã gọi lại xác minh không có hiện trường"
+  {
+    "reason": "B?o nh?m s? c?",
+    "cancellationToken": "<guestCancellationToken tr? v? khi t?o Guest SOS>"
+  }
   ```
-* **Response (200 OK)**: Sự cố chuyển sang trạng thái `Cancelled`.
+* **L?u ?**: Ng??i d?ng ?? ??ng nh?p c? quy?n h?y kh?ng c?n g?i `cancellationToken`. M? Guest c? hi?u l?c 24 gi? v? ch? tr? m?t l?n khi t?o SOS.
+* **Response (200 OK)**: S? c? chuy?n sang tr?ng th?i `Cancelled`. Thi?u/sai m? ho?c kh?ng c? quy?n h?y tr? `400 Bad Request`.
 
 ---
 
@@ -619,8 +623,10 @@ Backend cung cấp 2 SignalR Hubs chuyên dụng đáp ứng tiêu chuẩn độ
 * **Client phát dữ liệu lên Server (Invoke)**:
   * Phương thức: `SendLocationUpdate(double latitude, double longitude, double? speed, double? heading)`
 * **Client lắng nghe từ Server (On)**:
-  * Sự kiện: `ReceiveLocationUpdate` $ightarrow$ Nhận payload `{ rescueUnitId, latitude, longitude, speed, heading, updatedAt }`.
-  * Sự kiện: `ReceiveRescueUnitStatus` $ightarrow$ Nhận payload `{ rescueUnitId, status, updatedAt }`.
+  * Sự kiện: `ReceiveLocationUpdate` $
+ightarrow$ Nhận payload `{ rescueUnitId, latitude, longitude, speed, heading, updatedAt }`.
+  * Sự kiện: `ReceiveRescueUnitStatus` $
+ightarrow$ Nhận payload `{ rescueUnitId, status, updatedAt }`.
 
 #### 9.2. Incident Hub — Hàng đợi sự cố khẩn cấp (`/hubs/incidents`)
 * **URL**: `http://localhost:5000/hubs/incidents?access_token=<JWT_TOKEN>`
@@ -796,3 +802,13 @@ async function submitSosReport(file: File, description: string, lat: number, lng
   }
 }
 ```
+
+## Contract update: SOS cancellation and emergency profile
+
+- `POST /api/incidents`: a newly created Guest SOS returns `data.guestCancellationToken`, valid for 24 hours. Store it locally; it is not returned by list/detail/queue endpoints.
+- `PUT /api/incidents/{id}/cancel`: send `{ "reason": "Reported by mistake", "cancellationToken": "<Guest token>" }`. Registered owners and Operator/Admin use their JWT; Guest callers must supply the matching token. Existing Guest incidents without a token require an Operator/Admin to cancel.
+- The token uses ASP.NET Core Data Protection. Preserve the key ring across restarts and share it between API instances when deploying multiple instances.
+- `GET/PUT /api/users/me` supports `chronicConditions`, `allergies`, `currentMedications`, `mobilityLimitations`, `preferredLanguage`, `dependentsNote`, `householdMembersCount`, `autoSendSmsOnSos`, and `smsTemplate`.
+- Omitted Special Info/SMS template fields are preserved; explicit `null` clears them. Empty medical arrays clear the corresponding lists.
+- ICE CRUD: `GET/POST /api/users/ice-contacts`, `PUT/DELETE /api/users/ice-contacts/{contactId}`. `GET /api/users/me` returns the complete `iceContacts` list.
+- SMS settings and message preparation are supported. No SMS provider is configured; message preparation logs do not mean a message was delivered. Templates accept `{GPS_COORDS}` or `{lat}`/`{lng}`.

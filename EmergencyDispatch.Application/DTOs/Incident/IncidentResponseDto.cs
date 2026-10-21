@@ -8,6 +8,9 @@ namespace EmergencyDispatch.Application.DTOs.Incident;
 /// </summary>
 public class IncidentResponseDto
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? GuestCancellationToken { get; set; }
+
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;

@@ -34,7 +34,7 @@ public interface IIncidentService
     /// <summary>
     /// Hủy sự cố (báo sai, báo khống, trùng lặp hoặc người dân/khách vãng lai tự hủy SOS)
     /// </summary>
-    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default, string? guestCancellationToken = null);
 
     /// <summary>
     /// Xử lý một công việc phân tích AI từ hàng đợi nền: gọi AI, lưu kết quả, ghi Telemetry và đẩy realtime tới Operator

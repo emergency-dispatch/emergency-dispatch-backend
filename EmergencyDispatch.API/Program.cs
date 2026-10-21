@@ -213,6 +213,8 @@ builder.Services.AddAuthentication(options =>
 
 // 10. Authorization
 builder.Services.AddAuthorization();
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<IGuestCancellationTokenService, EmergencyDispatch.API.Services.GuestCancellationTokenService>();
 
 var app = builder.Build();
 

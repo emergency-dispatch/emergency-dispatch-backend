@@ -140,7 +140,7 @@ public class IncidentsController : ControllerBase
         }
 
         var reason = !string.IsNullOrWhiteSpace(dto?.Reason) ? dto.Reason : "Người dùng tự hủy sự cố";
-        var response = await _incidentService.CancelIncidentAsync(id, reason, currentUserId, cancellationToken);
+        var response = await _incidentService.CancelIncidentAsync(id, reason, currentUserId, cancellationToken, dto?.CancellationToken);
         if (!response.Success)
         {
             return BadRequest(response);

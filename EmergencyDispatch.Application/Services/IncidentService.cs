@@ -24,6 +24,7 @@ public class IncidentService : IIncidentService
     private readonly IRealtimeNotifier _realtimeNotifier;
     private readonly IValidator<CreateIncidentDto> _validator;
     private readonly ILogger<IncidentService> _logger;
+    private readonly IGuestCancellationTokenService _guestTokens;
 
     public IncidentService(
         IIncidentRepository incidentRepository,
@@ -32,7 +33,8 @@ public class IncidentService : IIncidentService
         IAiAnalysisQueue aiQueue,
         IRealtimeNotifier realtimeNotifier,
         IValidator<CreateIncidentDto> validator,
-        ILogger<IncidentService> logger)
+        ILogger<IncidentService> logger,
+        IGuestCancellationTokenService guestTokens)
     {
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
@@ -41,6 +43,7 @@ public class IncidentService : IIncidentService
         _realtimeNotifier = realtimeNotifier;
         _validator = validator;
         _logger = logger;
+        _guestTokens = guestTokens;
     }
 
     public async Task<ApiResponseDto<IncidentResponseDto>> CreateIncidentAsync(
@@ -88,10 +91,11 @@ public class IncidentService : IIncidentService
                         : reportingUser.SmsTemplate;
 
                     var smsContent = template
+                        .Replace("{GPS_COORDS}", $"{dto.Latitude:F4},{dto.Longitude:F4}")
                         .Replace("{lat}", dto.Latitude.ToString("F4"))
                         .Replace("{lng}", dto.Longitude.ToString("F4"));
 
-                    smsDispatchLog = $"[SMS SOS DISPATCH]: Đã gửi tin nhắn cấp cứu tới người thân [{primaryIce.Name} ({primaryIce.Relationship}) - SĐT: {primaryIce.PhoneNumber}]: \"{smsContent}\"";
+                    smsDispatchLog = $"[SMS SOS PREPARED - NOT SENT]: Đã chuẩn bị nội dung cấp cứu cho người thân [{primaryIce.Name} ({primaryIce.Relationship}) - SĐT: {primaryIce.PhoneNumber}]: \"{smsContent}\"";
                     _logger.LogInformation("{Log}", smsDispatchLog);
                 }
             }
@@ -189,6 +193,8 @@ public class IncidentService : IIncidentService
         var responseDto = MapToResponseDto(incident, null, smsDispatchLog);
         await _realtimeNotifier.IncidentCreatedAsync(responseDto, cancellationToken);
 
+        // Return the secret only to the creator, after publishing the realtime event.
+        if (!userId.HasValue) responseDto.GuestCancellationToken = _guestTokens.Create(incident.Id);
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(
             responseDto,
             willAnalyze
@@ -412,7 +418,8 @@ public class IncidentService : IIncidentService
         Guid id,
         string reason,
         Guid? cancelledByUserId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? guestCancellationToken = null)
     {
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
         if (incident == null)
@@ -430,14 +437,14 @@ public class IncidentService : IIncidentService
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Sự cố này đã được hủy trước đó.");
         }
 
-        // Kiểm tra phân quyền thực tế: Nếu sự cố gắn với người dùng cụ thể, người hủy có tài khoản phải là chính chủ hoặc Operator/Admin
-        if (cancelledByUserId.HasValue && incident.ReportedByUserId.HasValue && incident.ReportedByUserId != cancelledByUserId.Value)
+        var actor = cancelledByUserId.HasValue
+            ? await _userRepository.GetByIdAsync(cancelledByUserId.Value) : null;
+        var isDispatcher = actor?.Role == UserRole.Admin || actor?.Role == UserRole.Operator;
+        var isOwner = actor != null && incident.ReportedByUserId == actor.Id;
+        var isGuestOwner = !incident.ReportedByUserId.HasValue && _guestTokens.Validate(id, guestCancellationToken);
+        if (!isDispatcher && !isOwner && !isGuestOwner)
         {
-            var cancellingUser = await _userRepository.GetByIdAsync(cancelledByUserId.Value);
-            if (cancellingUser != null && cancellingUser.Role != UserRole.Admin && cancellingUser.Role != UserRole.Operator)
-            {
-                return ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn không có quyền hủy sự cố được báo cáo bởi người khác.");
-            }
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn không có quyền hủy sự cố này hoặc mã hủy đã hết hạn.");
         }
 
         var actorDescription = cancelledByUserId.HasValue ? $"User {cancelledByUserId.Value}" : "Người dân/Khách vãng lai";
