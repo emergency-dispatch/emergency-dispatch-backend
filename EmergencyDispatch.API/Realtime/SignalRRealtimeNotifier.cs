@@ -20,11 +20,13 @@ namespace EmergencyDispatch.API.Realtime;
 public class SignalRRealtimeNotifier : IRealtimeNotifier
 {
     private readonly IHubContext<IncidentHub> _incidentHub;
+    private readonly IHubContext<TrackingHub> _trackingHub;
     private readonly ILogger<SignalRRealtimeNotifier> _logger;
 
-    public SignalRRealtimeNotifier(IHubContext<IncidentHub> incidentHub, ILogger<SignalRRealtimeNotifier> logger)
+    public SignalRRealtimeNotifier(IHubContext<IncidentHub> incidentHub, IHubContext<TrackingHub> trackingHub, ILogger<SignalRRealtimeNotifier> logger)
     {
         _incidentHub = incidentHub;
+        _trackingHub = trackingHub;
         _logger = logger;
     }
 
@@ -171,6 +173,33 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
     public Task IncidentLockChangedAsync(IncidentLockEventDto lockEvent, Guid? responsibleStationId, CancellationToken cancellationToken = default)
         => SafeAsync(() => CommandCenter(responsibleStationId)
             .SendAsync(RealtimeContract.ReceiveIncidentLock, lockEvent, cancellationToken), "khóa mềm", lockEvent.IncidentId);
+
+    public Task RescueUnitLocationAsync(RescueUnitLocationEventDto location, CancellationToken cancellationToken = default)
+        => SafeAsync(() =>
+        {
+            // Live map nằm trên /hubs/tracking: Operator / Admin, nhân viên trạm có xe, người theo dõi sự cố xe đang xử lý
+            var groups = new List<string> { RealtimeContract.OperatorsGroup, RealtimeContract.StationGroup(location.StationId.ToString()) };
+            if (location.IncidentId.HasValue)
+            {
+                groups.Add(RealtimeContract.IncidentGroup(location.IncidentId.Value));
+            }
+            return _trackingHub.Clients.Groups(groups).SendAsync(RealtimeContract.ReceiveRescueUnitLocation, location, cancellationToken);
+        }, "vị trí xe", location.RescueUnitId);
+
+    public Task TeamChangedAsync(TeamChangedEventDto change, CancellationToken cancellationToken = default)
+        => SafeAsync(() => _incidentHub.Clients.Groups(
+                RealtimeContract.StationGroup(change.StationId.ToString()),
+                RealtimeContract.OperatorStationGroup(change.StationId),
+                RealtimeContract.AdminsGroup)
+            .SendAsync(RealtimeContract.ReceiveTeamChanged, change, cancellationToken), "thay đổi tổ", change.TeamId);
+
+    public Task SettingsChangedAsync(SettingsChangedEventDto change, CancellationToken cancellationToken = default)
+        => SafeAsync(() => _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+            .SendAsync(RealtimeContract.ReceiveSettingsChanged, change, cancellationToken), "cấu hình", change.Key);
+
+    public Task NotificationReadAsync(Guid userId, NotificationReadEventDto read, CancellationToken cancellationToken = default)
+        => SafeAsync(() => _incidentHub.Clients.User(userId.ToString())
+            .SendAsync(RealtimeContract.ReceiveNotificationRead, read, cancellationToken), "đã đọc thông báo", userId);
 
     public Task RescueUnitStatusChangedAsync(RescueUnitStatusEventDto unit, CancellationToken cancellationToken = default)
         => SafeAsync(() => _incidentHub.Clients.Groups(RealtimeContract.OperatorsGroup, RealtimeContract.StationGroup(unit.StationId.ToString()))

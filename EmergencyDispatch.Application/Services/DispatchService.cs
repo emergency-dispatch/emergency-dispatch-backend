@@ -1148,6 +1148,9 @@ public class DispatchService : IDispatchService
     private Task PublishUnitStatusAsync(RescueUnit unit, RescueUnitStatus? previous, CancellationToken cancellationToken)
         => _realtimeNotifier.RescueUnitStatusChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.RescueUnitStatusEventDto
         {
+            UnitType = unit.UnitType,
+            Latitude = unit.CurrentLat,
+            Longitude = unit.CurrentLng,
             RescueUnitId = unit.Id,
             PlateNumber = unit.PlateNumber,
             StationId = unit.StationId,

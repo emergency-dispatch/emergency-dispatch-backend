@@ -26,9 +26,11 @@ public class SystemSettingsService : ISystemSettingsService
     private readonly ISystemSettingRepository _repository;
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly ISystemAuditService _auditService;
+    private readonly IRealtimeNotifier _realtimeNotifier;
 
-    public SystemSettingsService(ISystemSettingRepository repository, ILogger<SystemSettingsService> logger, ISystemAuditService auditService)
+    public SystemSettingsService(ISystemSettingRepository repository, ILogger<SystemSettingsService> logger, ISystemAuditService auditService, IRealtimeNotifier realtimeNotifier)
     {
+        _realtimeNotifier = realtimeNotifier;
         _repository = repository;
         _logger = logger;
         _auditService = auditService;
@@ -65,8 +67,9 @@ public class SystemSettingsService : ISystemSettingsService
         await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, DispatchKey,
             "Cập nhật tham số điều phối (trọng số Load-Aware, bán kính tìm xe, thời gian CoolDown)", before, values, cancellationToken);
 
-        return ApiResponseDto<SettingsRecordDto<DispatchSettingsDto>>.SuccessResult(
-            await GetDispatchRecordAsync(cancellationToken), "Đã lưu tham số điều phối.");
+        var dispatchRecord = await GetDispatchRecordAsync(cancellationToken);
+        await PublishSettingsAsync(DispatchKey, dispatchRecord.UpdatedAt, dispatchRecord.UpdatedByName, cancellationToken);
+        return ApiResponseDto<SettingsRecordDto<DispatchSettingsDto>>.SuccessResult(dispatchRecord, "Đã lưu tham số điều phối.");
     }
 
     public async Task<ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>> UpdateEscalationAsync(
@@ -88,8 +91,9 @@ public class SystemSettingsService : ISystemSettingsService
         await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, EscalationKey,
             "Cập nhật cấu hình leo thang (ngưỡng ngày/đêm, khung giờ đêm, mở rộng bán kính)", before, values, cancellationToken);
 
-        return ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>.SuccessResult(
-            await GetEscalationRecordAsync(cancellationToken), "Đã lưu cấu hình leo thang.");
+        var escalationRecord = await GetEscalationRecordAsync(cancellationToken);
+        await PublishSettingsAsync(EscalationKey, escalationRecord.UpdatedAt, escalationRecord.UpdatedByName, cancellationToken);
+        return ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>.SuccessResult(escalationRecord, "Đã lưu cấu hình leo thang.");
     }
 
     public async Task<ServiceAreaSettingsDto> GetServiceAreaAsync(CancellationToken cancellationToken = default)
@@ -115,9 +119,18 @@ public class SystemSettingsService : ISystemSettingsService
         await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, ServiceAreaKey,
             $"Cập nhật khu vực phục vụ \"{values.Name}\" (bán kính {values.RadiusKm} km, {(values.Enabled ? "bật" : "tắt")} kiểm tra)", before, values, cancellationToken);
 
-        return ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>.SuccessResult(
-            await GetServiceAreaRecordAsync(cancellationToken), "Đã lưu khu vực phục vụ.");
+        var areaRecord = await GetServiceAreaRecordAsync(cancellationToken);
+        await PublishSettingsAsync(ServiceAreaKey, areaRecord.UpdatedAt, areaRecord.UpdatedByName, cancellationToken);
+        return ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>.SuccessResult(areaRecord, "Đã lưu khu vực phục vụ.");
     }
+
+    private Task PublishSettingsAsync(string key, DateTime? updatedAt, string? updatedByName, CancellationToken cancellationToken)
+        => _realtimeNotifier.SettingsChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.SettingsChangedEventDto
+        {
+            Key = key,
+            UpdatedAt = updatedAt,
+            UpdatedByName = updatedByName
+        }, cancellationToken);
 
     /// <summary>
     /// Quy tắc kiểm tra dùng chung với màn hình Admin (FE adminSettingsService.ts)

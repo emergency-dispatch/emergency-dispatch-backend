@@ -92,10 +92,13 @@ public class TrackingHub : Hub
 
         try
         {
+            // Service lưu vị trí và phát ReceiveRescueUnitLocation (sự cố lấy từ lượt phân công đang chạy)
             await _rescueUnitService.UpdateLocationAsync(message.RescueUnitId, new UpdateRescueUnitLocationDto
             {
                 Latitude = message.Latitude,
-                Longitude = message.Longitude
+                Longitude = message.Longitude,
+                HeadingDegrees = message.HeadingDegrees,
+                SpeedKmh = message.SpeedKmh
             });
         }
         catch (Exception ex)
@@ -104,25 +107,6 @@ public class TrackingHub : Hub
             throw new HubException(LocalizationHelper.Localize("Không cập nhật được vị trí đội cứu hộ."));
         }
 
-        var payload = new
-        {
-            message.RescueUnitId,
-            message.IncidentId,
-            message.Latitude,
-            message.Longitude,
-            message.HeadingDegrees,
-            message.SpeedKmh,
-            TimestampUtc = DateTime.UtcNow
-        };
-
-        await Clients.Group(RealtimeContract.OperatorsGroup)
-            .SendAsync(RealtimeContract.ReceiveRescueUnitLocation, payload);
-
-        if (message.IncidentId.HasValue)
-        {
-            await Clients.Group(RealtimeContract.IncidentGroup(message.IncidentId.Value))
-                .SendAsync(RealtimeContract.ReceiveRescueUnitLocation, payload);
-        }
     }
 }
 

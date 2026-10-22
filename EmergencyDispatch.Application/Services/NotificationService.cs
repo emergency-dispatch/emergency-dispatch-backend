@@ -85,11 +85,38 @@ public class NotificationService : INotificationService
     public Task<int> GetUnreadCountAsync(Guid userId, CancellationToken cancellationToken = default)
         => _notificationRepository.CountUnreadAsync(userId, cancellationToken);
 
-    public Task<bool> MarkReadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken = default)
-        => _notificationRepository.MarkReadAsync(userId, notificationId, DateTime.UtcNow, cancellationToken);
+    public async Task<bool> MarkReadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken = default)
+    {
+        var marked = await _notificationRepository.MarkReadAsync(userId, notificationId, DateTime.UtcNow, cancellationToken);
+        if (marked)
+        {
+            await PublishReadAsync(userId, new List<Guid> { notificationId }, false, cancellationToken);
+        }
+        return marked;
+    }
 
-    public Task<int> MarkAllReadAsync(Guid userId, CancellationToken cancellationToken = default)
-        => _notificationRepository.MarkAllReadAsync(userId, DateTime.UtcNow, cancellationToken);
+    public async Task<int> MarkAllReadAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var count = await _notificationRepository.MarkAllReadAsync(userId, DateTime.UtcNow, cancellationToken);
+        if (count > 0)
+        {
+            await PublishReadAsync(userId, new List<Guid>(), true, cancellationToken);
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Đồng bộ số thông báo chưa đọc sang các thiết bị khác của cùng người dùng
+    /// </summary>
+    private async Task PublishReadAsync(Guid userId, List<Guid> ids, bool all, CancellationToken cancellationToken)
+    {
+        await _realtimeNotifier.NotificationReadAsync(userId, new EmergencyDispatch.Application.DTOs.Incident.NotificationReadEventDto
+        {
+            NotificationIds = ids,
+            All = all,
+            UnreadCount = await GetUnreadCountAsync(userId, cancellationToken)
+        }, cancellationToken);
+    }
 
     private async Task SendAsync(IReadOnlyCollection<User> users, NotificationRequest request, CancellationToken cancellationToken)
     {

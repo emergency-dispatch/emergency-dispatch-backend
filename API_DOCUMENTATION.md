@@ -1413,3 +1413,21 @@ Mỗi dòng gồm các nhóm trường sau:
 - Độ trễ suy ra: `tAiMs`, `tOperatorMs`, `tDispatchMs`, `tResponseMs`, `tResolutionMs`.
 
 Dùng cho RQ2 / RQ3. CSV có giờ dạng ISO-8601 UTC.
+
+
+---
+
+## 11. BỔ SUNG REALTIME (đợt 23/10/2026)
+
+| Sự kiện | Hub | Phát khi | Người nhận | Payload |
+|---|---|---|---|---|
+| `ReceiveRescueUnitLocation` | `/hubs/tracking` | Gửi GPS qua hub `UpdateLocation` **hoặc** `PUT /api/rescue-units/{id}/location` (trước đây REST không phát) | Mọi Operator / Admin, nhân viên trạm có xe, người theo dõi sự cố xe đang xử lý | `{ rescueUnitId, plateNumber, stationId, incidentId, latitude, longitude, headingDegrees, speedKmh, timestampUtc }` |
+| `ReceiveRescueUnitStatus` | `/hubs/incidents` | Thêm: khi **tạo xe** và **xóa xe** | Mọi Operator / Admin, nhân viên trạm | Thêm `unitType`, `latitude`, `longitude`, `isDeleted` |
+| `ReceiveIncidentUpdate` | `/hubs/incidents` | Thêm: khi worker **leo thang** sự cố (`status = Escalated`) | Operator trạm phụ trách + Admin | `IncidentResponseDto` (rút gọn) |
+| **`ReceiveTeamChanged`** | `/hubs/incidents` | Tạo / sửa / xóa tổ; gán / gỡ nhân viên khỏi trạm hoặc tổ | Nhân viên trạm, Operator trạm, Admin | `{ stationId, teamId, teamName, action: Created\|Updated\|Deleted\|MembersChanged, staffId, changedAt }` |
+| **`ReceiveSettingsChanged`** | `/hubs/incidents` | `PUT /api/settings/escalation`, `/dispatch`, `/service-area` | Mọi Operator / Admin | `{ key: escalation\|dispatch\|serviceArea, updatedAt, updatedByName }` |
+| **`ReceiveNotificationRead`** | `/hubs/incidents` | `PUT /api/notifications/{id}/read`, `/read-all` | Chính người dùng (mọi thiết bị) | `{ notificationIds[], all, unreadCount }` |
+
+Về `incidentId` của vị trí xe: **server tự gắn** từ lượt phân công đang chạy của xe; giá trị `incidentId` client gửi lên hub bị bỏ qua. Vì vậy Citizen / Staff đã `SubscribeIncident` trên `/hubs/tracking` luôn nhận được vị trí xe của sự cố, và client không thể đẩy vị trí vào sự cố khác.
+
+`PUT /api/rescue-units/{id}/location` nhận thêm `headingDegrees` (0–360) và `speedKmh` (0–300), đều tùy chọn.

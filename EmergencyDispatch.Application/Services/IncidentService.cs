@@ -760,6 +760,9 @@ public class IncidentService : IIncidentService
         {
             await _realtimeNotifier.RescueUnitStatusChangedAsync(new RescueUnitStatusEventDto
             {
+                UnitType = unit.UnitType,
+                Latitude = unit.CurrentLat,
+                Longitude = unit.CurrentLng,
                 RescueUnitId = unit.Id,
                 PlateNumber = unit.PlateNumber,
                 StationId = unit.StationId,

@@ -23,6 +23,7 @@ public class StationTeamService : IStationTeamService
     private readonly IRescueUnitRepository _rescueUnitRepository;
     private readonly ISystemAuditService _auditService;
     private readonly ICurrentUserContext _currentUser;
+    private readonly IRealtimeNotifier _realtimeNotifier;
 
     public StationTeamService(
         IStationTeamRepository teamRepository,
@@ -30,8 +31,10 @@ public class StationTeamService : IStationTeamService
         IUserRepository userRepository,
         IRescueUnitRepository rescueUnitRepository,
         ISystemAuditService auditService,
-        ICurrentUserContext currentUser)
+        ICurrentUserContext currentUser,
+        IRealtimeNotifier realtimeNotifier)
     {
+        _realtimeNotifier = realtimeNotifier;
         _currentUser = currentUser;
         _teamRepository = teamRepository;
         _stationRepository = stationRepository;
@@ -39,6 +42,15 @@ public class StationTeamService : IStationTeamService
         _rescueUnitRepository = rescueUnitRepository;
         _auditService = auditService;
     }
+
+    private Task PublishTeamAsync(Guid stationId, StationTeam team, string action, CancellationToken cancellationToken)
+        => _realtimeNotifier.TeamChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.TeamChangedEventDto
+        {
+            StationId = stationId,
+            TeamId = team.Id,
+            TeamName = team.Name,
+            Action = action
+        }, cancellationToken);
 
     private static object Snapshot(StationTeam t) => new
     {
@@ -96,6 +108,7 @@ public class StationTeamService : IStationTeamService
         await _teamRepository.SaveChangesAsync(cancellationToken);
 
         var saved = await _teamRepository.GetByIdAsync(team.Id, cancellationToken);
+        await PublishTeamAsync(stationId, team, "Created", cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.Created, AuditEntityTypes.StationTeam, team.Id, team.Name,
             $"Tạo tổ \"{team.Name}\" ({team.Members.Count} người)", newValue: Snapshot(team), cancellationToken: cancellationToken);
         return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), LocalizationHelper.Localize("Đã tạo tổ \"{0}\".", team.Name));
@@ -145,6 +158,7 @@ public class StationTeamService : IStationTeamService
         await _teamRepository.SaveChangesAsync(cancellationToken);
 
         var saved = await _teamRepository.GetByIdAsync(team.Id, cancellationToken);
+        await PublishTeamAsync(stationId, team, "Updated", cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.Updated, AuditEntityTypes.StationTeam, team.Id, team.Name,
             $"Cập nhật tổ \"{team.Name}\"", before, Snapshot(saved ?? team), cancellationToken);
         return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), LocalizationHelper.Localize("Đã cập nhật tổ \"{0}\".", team.Name));
@@ -167,6 +181,7 @@ public class StationTeamService : IStationTeamService
         var before = Snapshot(team);
         _teamRepository.Remove(team);
         await _teamRepository.SaveChangesAsync(cancellationToken);
+        await PublishTeamAsync(stationId, team, "Deleted", cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.Deleted, AuditEntityTypes.StationTeam, team.Id, team.Name,
             $"Xóa tổ \"{team.Name}\"", before, cancellationToken: cancellationToken);
         return ApiResponseDto<bool>.SuccessResult(true, LocalizationHelper.Localize("Đã xóa tổ \"{0}\".", team.Name));

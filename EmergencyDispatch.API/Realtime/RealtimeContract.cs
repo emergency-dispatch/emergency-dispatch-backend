@@ -61,4 +61,13 @@ public static class RealtimeContract
 
     /// <summary>Khóa mềm sự cố bị lấy / gia hạn / nhả (lockedByOperatorId = null → đã nhả)</summary>
     public const string ReceiveIncidentLock = "ReceiveIncidentLock";
+
+    /// <summary>Tổ làm việc của trạm thay đổi (tạo / sửa / xóa / nhân viên vào-ra)</summary>
+    public const string ReceiveTeamChanged = "ReceiveTeamChanged";
+
+    /// <summary>Cấu hình leo thang / điều phối / khu vực phục vụ thay đổi</summary>
+    public const string ReceiveSettingsChanged = "ReceiveSettingsChanged";
+
+    /// <summary>Thông báo đã đọc trên thiết bị khác (đồng bộ số chưa đọc)</summary>
+    public const string ReceiveNotificationRead = "ReceiveNotificationRead";
 }

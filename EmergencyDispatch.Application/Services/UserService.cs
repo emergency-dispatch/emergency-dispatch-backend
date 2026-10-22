@@ -20,6 +20,7 @@ public class UserService : IUserService
     private readonly ISystemAuditService _auditService;
     private readonly IUserSessionInvalidator _sessionInvalidator;
     private readonly ICurrentUserContext _currentUser;
+    private readonly IRealtimeNotifier _realtimeNotifier;
 
     public UserService(
         IUserRepository userRepository,
@@ -29,8 +30,10 @@ public class UserService : IUserService
         IStationTeamService teamService,
         ISystemAuditService auditService,
         IUserSessionInvalidator sessionInvalidator,
-        ICurrentUserContext currentUser)
+        ICurrentUserContext currentUser,
+        IRealtimeNotifier realtimeNotifier)
     {
+        _realtimeNotifier = realtimeNotifier;
         _currentUser = currentUser;
         _userRepository = userRepository;
         _iceContactRepository = iceContactRepository;
@@ -543,6 +546,19 @@ public class UserService : IUserService
             $"Phân công {user.FullName} vào trạm/tổ",
             new { stationId = oldStationId, teamName = oldTeamName },
             new { stationId = result.StationId, teamName = TeamNameOf(result) });
+
+        // Nhân sự / tổ của trạm cũ và trạm mới thay đổi → màn hình "Tổ của tôi" và quản lý tổ cập nhật ngay
+        foreach (var stationId in new[] { oldStationId, result.StationId }.Where(s => s.HasValue).Distinct())
+        {
+            await _realtimeNotifier.TeamChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.TeamChangedEventDto
+            {
+                StationId = stationId!.Value,
+                TeamId = result.TeamMembership?.TeamId,
+                TeamName = TeamNameOf(result),
+                Action = "MembersChanged",
+                StaffId = result.Id
+            });
+        }
 
         // StationId nằm trong JWT (dùng để giới hạn quyền theo trạm) → buộc lấy token mới
         if (oldStationId != result.StationId)

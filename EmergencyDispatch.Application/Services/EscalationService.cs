@@ -2,6 +2,7 @@ using EmergencyDispatch.Application.Localization;
 using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.Escalation;
+using EmergencyDispatch.Application.DTOs.Incident;
 using EmergencyDispatch.Application.DTOs.Notification;
 using EmergencyDispatch.Application.DTOs.Settings;
 using EmergencyDispatch.Application.Interfaces;
@@ -316,6 +317,25 @@ public class EscalationService : IEscalationService
                     incident.Id, incident.Title, incident.Severity, elapsedMinutes);
 
                 // Bắn sự kiện SignalR tới toàn bộ Operator và Admin
+                // Hàng đợi / danh sách của Operator đổi trạng thái ngay (không chỉ có cảnh báo)
+                await _realtimeNotifier.IncidentUpdatedAsync(new IncidentResponseDto
+                {
+                    Id = incident.Id,
+                    Title = incident.Title,
+                    Description = incident.Description,
+                    Latitude = incident.Latitude,
+                    Longitude = incident.Longitude,
+                    LocationAddress = incident.LocationAddress,
+                    Status = incident.Status,
+                    Severity = incident.Severity,
+                    EventType = incident.EventType,
+                    VerifiedAt = incident.VerifiedAt,
+                    ResponsibleStationId = incident.ResponsibleStationId,
+                    IsOutOfServiceArea = incident.IsOutOfServiceArea,
+                    CreatedAt = incident.CreatedAt,
+                    UpdatedAt = incident.UpdatedAt
+                }, cancellationToken);
+
                 await _realtimeNotifier.EscalationAlertAsync(new EscalationAlertDto
                 {
                     IncidentId = incident.Id,

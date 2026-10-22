@@ -102,6 +102,7 @@ public class RescueUnitService : IRescueUnitService
 
         // Nạp lại dữ liệu kèm Station name
         unit.Station = station;
+        await PublishStatusAsync(unit, null, "Thêm xe mới");
         await _auditService.LogAsync(SystemAuditAction.Created, AuditEntityTypes.RescueUnit, unit.Id, unit.PlateNumber,
             $"Thêm xe {unit.PlateNumber} ({unit.UnitType}) vào trạm \"{station.Name}\"", newValue: Snapshot(unit));
         return MapToDto(unit);
@@ -175,6 +176,21 @@ public class RescueUnitService : IRescueUnitService
         unit.UpdateLocation(dto.Latitude, dto.Longitude);
         await _rescueUnitRepository.UpdateAsync(unit);
 
+        // Sự cố lấy từ lượt phân công đang chạy của xe (không tin incidentId do client gửi)
+        var activeAssignment = await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id);
+        await _realtimeNotifier.RescueUnitLocationAsync(new EmergencyDispatch.Application.DTOs.Incident.RescueUnitLocationEventDto
+        {
+            RescueUnitId = unit.Id,
+            PlateNumber = unit.PlateNumber,
+            StationId = unit.StationId,
+            IncidentId = activeAssignment?.IncidentId,
+            Latitude = unit.CurrentLat,
+            Longitude = unit.CurrentLng,
+            HeadingDegrees = dto.HeadingDegrees,
+            SpeedKmh = dto.SpeedKmh,
+            TimestampUtc = unit.LastLocationUpdateAt ?? DateTime.UtcNow
+        });
+
         return MapToDto(unit);
     }
 
@@ -230,6 +246,7 @@ public class RescueUnitService : IRescueUnitService
         }
 
         await _rescueUnitRepository.DeleteAsync(unit);
+        await PublishStatusAsync(unit, null, "Xóa xe", isDeleted: true);
         await _auditService.LogAsync(SystemAuditAction.Deleted, AuditEntityTypes.RescueUnit, unit.Id, unit.PlateNumber,
             $"Xóa xe {unit.PlateNumber}", Snapshot(unit));
     }
@@ -246,9 +263,13 @@ public class RescueUnitService : IRescueUnitService
         }
     }
 
-    private Task PublishStatusAsync(RescueUnit unit, RescueUnitStatus? previous, string reason)
+    private Task PublishStatusAsync(RescueUnit unit, RescueUnitStatus? previous, string reason, bool isDeleted = false)
         => _realtimeNotifier.RescueUnitStatusChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.RescueUnitStatusEventDto
         {
+            IsDeleted = isDeleted,
+            UnitType = unit.UnitType,
+            Latitude = unit.CurrentLat,
+            Longitude = unit.CurrentLng,
             RescueUnitId = unit.Id,
             PlateNumber = unit.PlateNumber,
             StationId = unit.StationId,

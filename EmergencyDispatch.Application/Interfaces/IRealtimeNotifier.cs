@@ -70,4 +70,24 @@ public interface IRealtimeNotifier
     /// Khóa mềm sự cố bị lấy / gia hạn / nhả → Operator trạm phụ trách + Admin (FR-OP-02, BR-15)
     /// </summary>
     Task IncidentLockChangedAsync(IncidentLockEventDto lockEvent, Guid? responsibleStationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Vị trí GPS mới của xe → mọi Operator / Admin, nhân viên trạm có xe và người đang theo dõi sự cố xe đang xử lý
+    /// </summary>
+    Task RescueUnitLocationAsync(RescueUnitLocationEventDto location, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tổ làm việc thay đổi → nhân viên trạm, Operator trạm và Admin
+    /// </summary>
+    Task TeamChangedAsync(TeamChangedEventDto change, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cấu hình leo thang / điều phối / khu vực phục vụ thay đổi → mọi Operator và Admin
+    /// </summary>
+    Task SettingsChangedAsync(SettingsChangedEventDto change, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Thông báo đã đọc → các thiết bị khác của cùng người dùng
+    /// </summary>
+    Task NotificationReadAsync(Guid userId, NotificationReadEventDto read, CancellationToken cancellationToken = default);
 }

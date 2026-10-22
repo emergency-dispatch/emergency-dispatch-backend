@@ -859,3 +859,21 @@ Hai loại thông báo **giữ nguyên tiếng Việt**:
 - **Mô tả audit trail / nhật ký quản trị:** dữ liệu lưu vết nội bộ.
 
 Khi đổi ngôn ngữ trong app, FE cần **kết nối lại SignalR** với `culture` mới.
+
+
+---
+
+## 13. Cập nhật 23/10/2026: bổ sung sự kiện realtime
+
+> Contract: `API_DOCUMENTATION.md` mục 11.
+
+| Sự kiện | Màn hình nên dùng | FE / Mobile cần làm |
+|---|---|---|
+| `ReceiveRescueUnitLocation` (`/hubs/tracking`) | Live map Operator, live map Staff, tracking Citizen | Payload **giữ nguyên tên trường cũ**, chỉ thêm `plateNumber`, `stationId`. Gửi GPS bằng **REST hay hub đều được phát realtime**. Không cần gửi `incidentId` nữa: server tự gắn |
+| `ReceiveRescueUnitStatus` | Live map, danh sách xe Admin / Operator | Có thêm `unitType`, `latitude`, `longitude`. `isDeleted = true` → xóa marker và dòng xe; xe chưa có trong danh sách → thêm mới |
+| `ReceiveIncidentUpdate` khi leo thang | Hàng đợi / dispatch board | Sự cố leo thang đổi badge `Escalated` ngay, không cần chờ poll |
+| `ReceiveTeamChanged` | Web: trang Tổ của Operator. Staff Web / Mobile: "Tổ của tôi" | Nhận được thì gọi lại `GET /api/stations/{id}/teams` hoặc `GET /api/users/my-team` |
+| `ReceiveSettingsChanged` | Live map (vòng khu vực phục vụ), trang Cài đặt | `key = serviceArea` → gọi lại `GET /api/settings/service-area` và vẽ lại vòng tròn. `escalation` / `dispatch` → tải lại nếu đang mở trang Cài đặt |
+| `ReceiveNotificationRead` | Chuông thông báo (mọi thiết bị) | Cập nhật badge bằng `unreadCount`; `all = true` → đánh dấu đã đọc toàn bộ danh sách đang hiển thị |
+
+Với các sự kiện trên, có thể **giảm hoặc bỏ polling** (`DispatchContext.tsx` `POLL_MS = 20000`, `useDispatchRoutes.ts` `REFRESH_MS = 30000`). Nên giữ một lần poll dự phòng khoảng 60–120s, phòng khi mất kết nối SignalR.
