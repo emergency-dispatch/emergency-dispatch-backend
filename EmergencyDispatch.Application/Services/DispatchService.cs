@@ -16,6 +16,12 @@ public class DispatchService : IDispatchService
     private const int MaxUnitsLevel3 = 5;
     private const int MaxUnitsDefault = 1;
 
+    // Số xe gần nhất (chim bay) được tra thời gian đường bộ thật qua OSRM /table
+    private const int MaxRoadLookups = 25;
+
+    // Thời gian chuẩn bị xuất xe cộng vào ETA
+    private const double DispatchPrepMinutes = 2.0;
+
     private readonly IDispatchAssignmentRepository _assignmentRepository;
     private readonly IRescueUnitRepository _rescueUnitRepository;
     private readonly IIncidentRepository _incidentRepository;
@@ -24,6 +30,9 @@ public class DispatchService : IDispatchService
     private readonly ISystemSettingsService _settingsService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<DispatchService> _logger;
+    private readonly IRoutingService _routingService;
+    private readonly ICurrentUserContext _currentUser;
+    private readonly IEscalationRepository _escalationRepository;
 
     public DispatchService(
         IDispatchAssignmentRepository assignmentRepository,
@@ -33,8 +42,14 @@ public class DispatchService : IDispatchService
         IRealtimeNotifier realtimeNotifier,
         ISystemSettingsService settingsService,
         INotificationService notificationService,
-        ILogger<DispatchService> logger)
+        ILogger<DispatchService> logger,
+        IRoutingService routingService,
+        ICurrentUserContext currentUser,
+        IEscalationRepository escalationRepository)
     {
+        _escalationRepository = escalationRepository;
+        _routingService = routingService;
+        _currentUser = currentUser;
         _assignmentRepository = assignmentRepository;
         _rescueUnitRepository = rescueUnitRepository;
         _incidentRepository = incidentRepository;
@@ -58,6 +73,12 @@ public class DispatchService : IDispatchService
             return ApiResponseDto<List<RecommendedUnitResponseDto>>.FailureResult("Không tìm thấy sự cố cần điều phối.");
         }
 
+        var scopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<List<RecommendedUnitResponseDto>>.ForbiddenResult(scopeError);
+        }
+
         var dispatchSettings = await _settingsService.GetDispatchSettingsAsync(cancellationToken);
         var escalationSettings = await _settingsService.GetEscalationSettingsAsync(cancellationToken);
 
@@ -65,7 +86,9 @@ public class DispatchService : IDispatchService
         var matchingTypes = unitType.HasValue
             ? new HashSet<RescueUnitType> { unitType.Value }
             : DispatchScoring.MatchingUnitTypes(
-                incident.AiClassification?.EventType ?? IncidentEventType.None,
+                incident.EventType != IncidentEventType.None
+                    ? incident.EventType
+                    : incident.AiClassification?.EventType ?? IncidentEventType.None,
                 incident.AiClassification?.HazardTags ?? new List<string>(),
                 $"{incident.Title} {incident.Description}",
                 incident.Severity);
@@ -107,6 +130,19 @@ public class DispatchService : IDispatchService
             .Select(u => (Unit: u, DistanceKm: CalculateDistanceKm(incident.Latitude, incident.Longitude, u.CurrentLat, u.CurrentLng)))
             .ToList();
 
+        // Quãng đường / thời gian theo đường bộ thật cho các xe gần nhất (một lần gọi OSRM /table)
+        var roadLegs = new Dictionary<Guid, RoadLeg>();
+        var lookup = eligible.Where(c => c.DistanceKm <= radii[^1]).OrderBy(c => c.DistanceKm).Take(MaxRoadLookups).ToList();
+        var legs = await _routingService.GetLegsToAsync(
+            lookup.Select(c => (c.Unit.CurrentLat, c.Unit.CurrentLng)).ToList(), incident.Latitude, incident.Longitude, cancellationToken);
+        if (legs != null)
+        {
+            for (var i = 0; i < lookup.Count && i < legs.Count; i++)
+            {
+                if (legs[i] != null) roadLegs[lookup[i].Unit.Id] = legs[i]!;
+            }
+        }
+
         var firstRadius = radii[0];
         foreach (var radiusKm in radii)
         {
@@ -116,11 +152,14 @@ public class DispatchService : IDispatchService
             var candidates = inRadius.Select(c =>
             {
                 var stats = stationStats.TryGetValue(c.Unit.StationId, out var st) ? st : (Load: 0.0, Missions: 0);
-                var cost = DispatchScoring.LoadAwareCost(c.DistanceKm, radiusKm, stats.Load, stats.Missions, dispatchSettings.Weights);
-                var eta = EstimateEtaMinutes(c.DistanceKm);
+                var hasRoad = roadLegs.TryGetValue(c.Unit.Id, out var leg);
+                var travelKm = hasRoad ? leg!.DistanceKm : c.DistanceKm;
+                var cost = DispatchScoring.LoadAwareCost(travelKm, radiusKm, stats.Load, stats.Missions, dispatchSettings.Weights);
+                var eta = hasRoad ? Math.Round(leg!.DurationMinutes + DispatchPrepMinutes, 1) : EstimateEtaMinutes(c.DistanceKm);
+                var distanceText = hasRoad ? $"{travelKm:F2} km đường bộ" : $"~{travelKm:F2} km (chim bay)";
                 var reason = algorithm == DispatchAlgorithm.NearestAvailable
-                    ? $"Nearest-Available: cách {c.DistanceKm:F2} km (~{eta:F0} phút)."
-                    : $"Load-Aware: cách {c.DistanceKm:F2} km, tải trạm {stats.Load:P0}, trạm đang xử lý {stats.Missions} sự cố. Cost = {cost:F3}.";
+                    ? $"Nearest-Available: {distanceText} (~{eta:F0} phút)."
+                    : $"Load-Aware: {distanceText}, tải trạm {stats.Load:P0}, trạm đang xử lý {stats.Missions} sự cố. Cost = {cost:F3}.";
 
                 return new RecommendedUnitResponseDto
                 {
@@ -142,12 +181,16 @@ public class DispatchService : IDispatchService
                     SearchRadiusKm = radiusKm,
                     RadiusExpanded = radiusKm > firstRadius,
                     AlgorithmUsed = algorithm,
-                    RecommendationReason = reason
+                    RecommendationReason = reason,
+                    RoadDistanceKm = hasRoad ? leg!.DistanceKm : null,
+                    RoadDurationMinutes = hasRoad ? leg!.DurationMinutes : null,
+                    IsApproximate = !hasRoad,
+                    IsSupportUnit = incident.ResponsibleStationId.HasValue && c.Unit.StationId != incident.ResponsibleStationId
                 };
             });
 
             var ranked = algorithm == DispatchAlgorithm.NearestAvailable
-                ? candidates.OrderBy(c => c.DistanceKm).ThenBy(c => c.Cost).ToList()
+                ? candidates.OrderBy(c => c.RoadDistanceKm ?? c.DistanceKm).ThenBy(c => c.Cost).ToList()
                 : candidates.OrderBy(c => c.Cost).ThenBy(c => c.DistanceKm).ToList();
 
             return ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
@@ -173,6 +216,38 @@ public class DispatchService : IDispatchService
             cancellationToken);
     }
 
+    public async Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> GetActiveAssignmentsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_currentUser.IsStationScoped() && !_currentUser.StationId.HasValue)
+        {
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ForbiddenResult(OperatorScope.NoStationMessage);
+        }
+
+        var items = await _assignmentRepository.GetActiveWithDetailsAsync(_currentUser.FilterStationId(), cancellationToken);
+        var dtos = items.Select(a => MapToAssignmentDto(a, a.Incident, a.RescueUnit)).ToList();
+        return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(dtos, $"Có {dtos.Count} lượt điều phối đang thực hiện.");
+    }
+
+    /// <summary>
+    /// FR-SYS-02: sự cố đã leo thang mà có đơn vị tiếp nhận → hạ thang (ghi audit, đóng lượt leo thang). Chưa SaveChanges.
+    /// </summary>
+    private async Task DeEscalateAsync(Incident incident, Guid actorId, string reason, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var resolved = await _escalationRepository.ResolveOpenLogsAsync(incident.Id, now, cancellationToken);
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = actorId,
+            ActorRole = _currentUser.Role?.ToString(),
+            Action = AuditAction.DeEscalated,
+            Description = $"Hạ thang: {reason}. Đóng {resolved} lượt cảnh báo leo thang.",
+            OldStateJson = JsonSerializer.Serialize(new { status = IncidentStatus.Escalated.ToString() }),
+            NewStateJson = JsonSerializer.Serialize(new { status = incident.Status.ToString() }),
+            Timestamp = now
+        }, cancellationToken);
+    }
+
     public async Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignUnitAsync(
         AssignDispatchDto dto,
         Guid operatorId,
@@ -188,6 +263,12 @@ public class DispatchService : IDispatchService
         if (incident == null)
         {
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.NotFoundResult("Không tìm thấy sự cố cần điều phối.");
+        }
+
+        var scopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ForbiddenResult(scopeError);
         }
 
         if (incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
@@ -268,10 +349,15 @@ public class DispatchService : IDispatchService
         // Telemetry RQ3: thời gian từ khi tạo sự cố đến lần phát lệnh điều phối đầu tiên
         incident.DispatchTimeMs ??= (long)(now - incident.CreatedAt).TotalMilliseconds;
 
+        var assignLegs = await _routingService.GetLegsToAsync(
+            units.Select(u => (u.CurrentLat, u.CurrentLng)).ToList(), incident.Latitude, incident.Longitude, cancellationToken);
+
         var assignments = new List<DispatchAssignment>();
-        foreach (var unit in units)
+        for (var index = 0; index < units.Count; index++)
         {
-            var distanceKm = CalculateDistanceKm(incident.Latitude, incident.Longitude, unit.CurrentLat, unit.CurrentLng);
+            var unit = units[index];
+            var roadLeg = assignLegs != null && index < assignLegs.Count ? assignLegs[index] : null;
+            var distanceKm = roadLeg?.DistanceKm ?? CalculateDistanceKm(incident.Latitude, incident.Longitude, unit.CurrentLat, unit.CurrentLng);
             var assignment = new DispatchAssignment
             {
                 IncidentId = incident.Id,
@@ -282,7 +368,9 @@ public class DispatchService : IDispatchService
                 AssignedByUserId = operatorId,
                 DispatchAlgorithm = dto.Algorithm?.ToString(),
                 DistanceKm = Math.Round(distanceKm, 3),
-                EstimatedArrivalMinutes = EstimateEtaMinutes(distanceKm)
+                EstimatedArrivalMinutes = roadLeg != null
+                    ? Math.Round(roadLeg.DurationMinutes + DispatchPrepMinutes, 1)
+                    : EstimateEtaMinutes(distanceKm)
             };
 
             assignment.StatusHistories.Add(new AssignmentStatusHistory
@@ -300,6 +388,10 @@ public class DispatchService : IDispatchService
         }
 
         var plates = string.Join(", ", units.Select(u => u.PlateNumber));
+        if (oldIncidentStatus == IncidentStatus.Escalated)
+        {
+            await DeEscalateAsync(incident, operatorId, $"đã điều xe {plates}", cancellationToken);
+        }
         await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
         {
             IncidentId = incident.Id,
@@ -340,6 +432,10 @@ public class DispatchService : IDispatchService
         {
             await _realtimeNotifier.JobAssignedAsync(assignmentDto, cancellationToken);
         }
+        foreach (var unit in units)
+        {
+            await PublishUnitStatusAsync(unit, RescueUnitStatus.Available, cancellationToken);
+        }
         await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
 
         // FR-RS-01 / BR-21: còi hú tới đội cứu hộ của từng trạm; FR-CIT-04 (MSG37): báo người dân
@@ -354,6 +450,31 @@ public class DispatchService : IDispatchService
                 Data = new { assignmentIds = assignments.Where(a => stationGroup.Any(u => u.Id == a.RescueUnitId)).Select(a => a.Id) },
                 HighPriority = true
             }, cancellationToken);
+        }
+
+        // Điều xe trạm khác (Load-Aware xuyên trạm): báo Operator trạm có xe
+        foreach (var supportGroup in units.Where(u => incident.ResponsibleStationId.HasValue && u.StationId != incident.ResponsibleStationId).GroupBy(u => u.StationId))
+        {
+            var supportPlates = string.Join(", ", supportGroup.Select(u => u.PlateNumber));
+            foreach (var assignmentDto in dtos.Where(d => supportGroup.Any(u => u.Id == d.RescueUnitId)))
+            {
+                await _realtimeNotifier.SupportDispatchedAsync(supportGroup.Key, assignmentDto, cancellationToken);
+            }
+            var supportOperators = (await _userRepository.GetActiveByRolesAsync(new[] { UserRole.Operator }))
+                .Where(u => u.StationId == supportGroup.Key)
+                .Select(u => u.Id)
+                .ToList();
+            if (supportOperators.Count > 0)
+            {
+                await _notificationService.NotifyUsersAsync(supportOperators, new NotificationRequest
+                {
+                    Type = NotificationType.JobAssigned,
+                    Title = "XE TRẠM BẠN ĐƯỢC ĐIỀU HỖ TRỢ",
+                    Message = $"Xe {supportPlates} được điều tới sự cố {incident.Title} ({incident.ResponsibleStation?.Name ?? "trạm khác"} phụ trách) — {incident.LocationAddress}.",
+                    IncidentId = incident.Id,
+                    HighPriority = true
+                }, cancellationToken);
+            }
         }
 
         if (incident.ReportedByUserId.HasValue)
@@ -429,7 +550,7 @@ public class DispatchService : IDispatchService
         {
             unit.Status = dto.Reason == RejectionReason.VehicleBreakdown ? RescueUnitStatus.Maintenance : RescueUnitStatus.Available;
             unit.UpdatedAt = now;
-            await _rescueUnitRepository.UpdateAsync(unit);
+            await SaveUnitAsync(unit, cancellationToken);
         }
 
         var remainingActive = 0;
@@ -631,6 +752,11 @@ public class DispatchService : IDispatchService
                 // FR-RS-01: đội đã nhận lệnh → sự cố chuyển sang đang xử lý
                 if (incident != null && incident.Status is IncidentStatus.Dispatched or IncidentStatus.Escalated)
                 {
+                    if (incident.Status == IncidentStatus.Escalated)
+                    {
+                        incident.Status = IncidentStatus.InProgress;
+                        await DeEscalateAsync(incident, rescuerUserId, $"xe {unit?.PlateNumber} đã nhận lệnh", cancellationToken);
+                    }
                     incident.Status = IncidentStatus.InProgress;
                     incident.UpdatedAt = DateTime.UtcNow;
                     await _incidentRepository.UpdateAsync(incident);
@@ -642,7 +768,7 @@ public class DispatchService : IDispatchService
                 {
                     unit.Status = RescueUnitStatus.Available;
                     unit.UpdatedAt = DateTime.UtcNow;
-                    await _rescueUnitRepository.UpdateAsync(unit);
+                    await SaveUnitAsync(unit, cancellationToken);
                 }
                 break;
 
@@ -652,7 +778,7 @@ public class DispatchService : IDispatchService
                 {
                     unit.Status = RescueUnitStatus.Dispatched;
                     unit.UpdatedAt = DateTime.UtcNow;
-                    await _rescueUnitRepository.UpdateAsync(unit);
+                    await SaveUnitAsync(unit, cancellationToken);
                 }
                 break;
 
@@ -662,7 +788,7 @@ public class DispatchService : IDispatchService
                 {
                     unit.Status = RescueUnitStatus.OnScene;
                     unit.UpdatedAt = DateTime.UtcNow;
-                    await _rescueUnitRepository.UpdateAsync(unit);
+                    await SaveUnitAsync(unit, cancellationToken);
                 }
                 if (incident != null && incident.Status != IncidentStatus.InProgress)
                 {
@@ -829,7 +955,7 @@ public class DispatchService : IDispatchService
             unit.Status = RescueUnitStatus.CoolDown;
             unit.CoolDownUntil = now.AddMinutes(dispatchSettings.RecoveryMinutes);
             unit.UpdatedAt = now;
-            await _rescueUnitRepository.UpdateAsync(unit);
+            await SaveUnitAsync(unit, cancellationToken);
         }
 
 
@@ -954,8 +1080,10 @@ public class DispatchService : IDispatchService
 
             var vehicleLat = (unit != null && unit.CurrentLat != 0) ? unit.CurrentLat : (unit?.Station?.Latitude ?? incident.Latitude);
             var vehicleLng = (unit != null && unit.CurrentLng != 0) ? unit.CurrentLng : (unit?.Station?.Longitude ?? incident.Longitude);
-            var distanceKm = CalculateDistanceKm(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude);
             var arrived = assignment.Status is DispatchAssignmentStatus.OnScene or DispatchAssignmentStatus.Completed;
+            var route = arrived
+                ? null
+                : await _routingService.GetRouteAsync(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude, cancellationToken);
 
             result.Units.Add(new TrackedUnitDto
             {
@@ -968,11 +1096,10 @@ public class DispatchService : IDispatchService
                 VehicleLat = vehicleLat,
                 VehicleLng = vehicleLng,
                 LastLocationUpdateAt = unit?.LastLocationUpdateAt ?? assignment.DispatchedAt,
-                RouteTrajectory = arrived
-                    ? new List<RoutePointDto>()
-                    : await GenerateRouteTrajectoryAsync(vehicleLat, vehicleLng, incident.Latitude, incident.Longitude, cancellationToken),
-                DistanceKm = arrived ? 0 : distanceKm,
-                EstimatedArrivalMinutes = arrived ? 0 : (int)Math.Max(1, Math.Round(EstimateEtaMinutes(distanceKm))),
+                RouteTrajectory = route?.Points ?? new List<RoutePointDto>(),
+                IsApproximateRoute = route?.IsApproximate ?? false,
+                DistanceKm = route?.DistanceKm ?? 0,
+                EstimatedArrivalMinutes = route == null ? 0 : (int)Math.Max(1, Math.Round(route.DurationMinutes + DispatchPrepMinutes)),
                 DispatchStatus = assignment.Status.ToString(),
                 DispatchedAt = assignment.DispatchedAt,
                 AcceptedAt = assignment.AcceptedAt,
@@ -994,6 +1121,7 @@ public class DispatchService : IDispatchService
         result.VehicleLng = primary.VehicleLng;
         result.LastLocationUpdateAt = primary.LastLocationUpdateAt;
         result.RouteTrajectory = primary.RouteTrajectory;
+        result.IsApproximateRoute = primary.IsApproximateRoute;
         result.DistanceKm = primary.DistanceKm;
         result.EstimatedArrivalMinutes = primary.EstimatedArrivalMinutes;
         result.DispatchStatus = primary.DispatchStatus;
@@ -1007,68 +1135,26 @@ public class DispatchService : IDispatchService
             $"Lấy thông tin lộ trình di chuyển của {result.Units.Count} xe cứu hộ thành công.");
     }
 
-    private static readonly HttpClient _routingHttpClient = new() { Timeout = TimeSpan.FromSeconds(3) };
-
-    private async Task<List<RoutePointDto>> GenerateRouteTrajectoryAsync(
-        double startLat,
-        double startLng,
-        double endLat,
-        double endLng,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Lưu xe và phát ReceiveRescueUnitStatus để live map / danh sách xe cập nhật ngay
+    /// </summary>
+    private async Task SaveUnitAsync(RescueUnit unit, CancellationToken cancellationToken)
     {
-        var points = new List<RoutePointDto>();
-
-        try
-        {
-            var osrmUrl = FormattableString.Invariant(
-                $"http://router.project-osrm.org/route/v1/driving/{startLng:F6},{startLat:F6};{endLng:F6},{endLat:F6}?overview=full&geometries=geojson");
-            using var response = await _routingHttpClient.GetAsync(osrmUrl, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync(cancellationToken);
-                using var doc = JsonDocument.Parse(content);
-                if (doc.RootElement.TryGetProperty("routes", out var routes) && routes.GetArrayLength() > 0)
-                {
-                    var geometry = routes[0].GetProperty("geometry");
-                    if (geometry.TryGetProperty("coordinates", out var coordinates))
-                    {
-                        foreach (var coord in coordinates.EnumerateArray())
-                        {
-                            var lng = coord[0].GetDouble();
-                            var lat = coord[1].GetDouble();
-                            points.Add(new RoutePointDto(lat, lng));
-                        }
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Không thể kết nối OSRM để tính lộ trình. Sử dụng thuật toán nội suy quỹ đạo tuyến đường.");
-        }
-
-        if (points.Count == 0)
-        {
-            const int totalSteps = 20;
-            for (int i = 0; i <= totalSteps; i++)
-            {
-                double t = (double)i / totalSteps;
-                double lat = startLat + t * (endLat - startLat);
-                double lng = startLng + t * (endLng - startLng);
-
-                if (i > 0 && i < totalSteps)
-                {
-                    double curveOffset = Math.Sin(t * Math.PI) * 0.0008;
-                    lat += curveOffset;
-                    lng += (curveOffset * 0.5);
-                }
-
-                points.Add(new RoutePointDto(Math.Round(lat, 6), Math.Round(lng, 6)));
-            }
-        }
-
-        return points;
+        await _rescueUnitRepository.UpdateAsync(unit);
+        await PublishUnitStatusAsync(unit, null, cancellationToken);
     }
+
+    private Task PublishUnitStatusAsync(RescueUnit unit, RescueUnitStatus? previous, CancellationToken cancellationToken)
+        => _realtimeNotifier.RescueUnitStatusChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.RescueUnitStatusEventDto
+        {
+            RescueUnitId = unit.Id,
+            PlateNumber = unit.PlateNumber,
+            StationId = unit.StationId,
+            Status = unit.Status,
+            PreviousStatus = previous,
+            CoolDownUntil = unit.CoolDownUntil,
+            ChangedAt = DateTime.UtcNow
+        }, cancellationToken);
 
     #region Private Helper Methods
 
@@ -1123,6 +1209,7 @@ public class DispatchService : IDispatchService
         {
             Id = assignment.Id,
             IncidentId = assignment.IncidentId,
+            ResponsibleStationId = incident?.ResponsibleStationId,
             IncidentTitle = incident?.Title ?? string.Empty,
             IncidentAddress = incident?.LocationAddress ?? string.Empty,
             IncidentLat = incident?.Latitude ?? 0,
@@ -1180,7 +1267,11 @@ public class DispatchService : IDispatchService
             VerifiedAt = incident.VerifiedAt,
             OperatorNotes = incident.OperatorNotes,
             CreatedAt = incident.CreatedAt,
-            UpdatedAt = incident.UpdatedAt
+            UpdatedAt = incident.UpdatedAt,
+            ResponsibleStationId = incident.ResponsibleStationId,
+            ResponsibleStationName = incident.ResponsibleStation?.Name,
+            IsOutOfServiceArea = incident.IsOutOfServiceArea,
+            DistanceOutsideAreaKm = incident.DistanceOutsideAreaKm
         };
     }
 

@@ -1,6 +1,7 @@
 using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Incident;
+using EmergencyDispatch.Domain.Enums;
 
 namespace EmergencyDispatch.Application.Interfaces;
 
@@ -34,7 +35,12 @@ public interface IIncidentService
     /// <summary>
     /// Hủy sự cố (báo sai, báo khống, trùng lặp hoặc người dân/khách vãng lai tự hủy SOS)
     /// </summary>
-    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default, string? guestCancellationToken = null);
+    Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default, string? guestCancellationToken = null, CancellationReason? reasonCode = null);
+
+    /// <summary>
+    /// Tự hủy sự cố chưa được xác minh sau maxAge (CancellationReason.AutoExpired). Trả số sự cố đã hủy.
+    /// </summary>
+    Task<int> AutoExpireStaleIncidentsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Giữ / gia hạn khóa mềm 2 phút khi Operator mở sự cố (FR-OP-02, BR-15). Người khác đang giữ → CONFLICT (MSG32)
@@ -75,4 +81,9 @@ public interface IIncidentService
     /// Xử lý một công việc phân tích AI từ hàng đợi nền: gọi AI, lưu kết quả, ghi Telemetry và đẩy realtime tới Operator
     /// </summary>
     Task ProcessAiAnalysisAsync(AiAnalysisJob job, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Chuyển sự cố sang trạm khác phụ trách (sự cố sát ranh giới / trạm hiện tại quá tải)
+    /// </summary>
+    Task<ApiResponseDto<IncidentResponseDto>> TransferIncidentAsync(Guid id, TransferIncidentDto dto, Guid actorUserId, CancellationToken cancellationToken = default);
 }

@@ -16,4 +16,8 @@ public interface ISystemSettingsService
 
     Task<ApiResponseDto<SettingsRecordDto<DispatchSettingsDto>>> UpdateDispatchAsync(DispatchSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default);
     Task<ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>> UpdateEscalationAsync(EscalationSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default);
+
+    Task<ServiceAreaSettingsDto> GetServiceAreaAsync(CancellationToken cancellationToken = default);
+    Task<SettingsRecordDto<ServiceAreaSettingsDto>> GetServiceAreaRecordAsync(CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>> UpdateServiceAreaAsync(ServiceAreaSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default);
 }

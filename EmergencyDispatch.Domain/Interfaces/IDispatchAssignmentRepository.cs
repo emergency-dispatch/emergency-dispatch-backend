@@ -12,6 +12,11 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
     Task<IReadOnlyList<DispatchAssignment>> GetAllActiveAsync();
 
     /// <summary>
+    /// Lượt phân công đang chạy kèm sự cố + xe + trạm. stationId != null → lượt của sự cố trạm đó phụ trách hoặc xe trạm đó
+    /// </summary>
+    Task<IReadOnlyList<DispatchAssignment>> GetActiveWithDetailsAsync(Guid? stationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Ghi lịch sử trạng thái lượt phân công (chưa SaveChanges)
     /// </summary>
     Task AddStatusHistoryAsync(AssignmentStatusHistory history);

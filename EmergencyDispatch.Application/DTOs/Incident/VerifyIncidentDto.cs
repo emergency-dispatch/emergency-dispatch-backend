@@ -27,4 +27,10 @@ public class VerifyIncidentDto
     /// </summary>
     [MaxLength(1000)]
     public string? OperatorNotes { get; set; }
+
+    /// <summary>
+    /// Loại sự cố xác nhận: FireExplosion hoặc TrafficAccident. Bắt buộc khi AI chưa xác định được (eventType = None);
+    /// bỏ trống thì giữ loại AI đề xuất.
+    /// </summary>
+    public IncidentEventType? ConfirmedEventType { get; set; }
 }

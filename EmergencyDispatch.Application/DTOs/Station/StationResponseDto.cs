@@ -12,6 +12,9 @@ public class StationResponseDto
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; }
     public double CoverageRadiusKm { get; set; }
+    public Guid? HeadOperatorId { get; set; }
+    public string? HeadOperatorName { get; set; }
+    public string? HeadOperatorPhone { get; set; }
     public int ActiveUnitsCount { get; set; }
     public int TotalUnitsCount { get; set; }
     public int StaffCount { get; set; }

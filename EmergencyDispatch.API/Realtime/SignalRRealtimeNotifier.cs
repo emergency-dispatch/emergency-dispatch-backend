@@ -1,6 +1,9 @@
 using EmergencyDispatch.API.Hubs;
 using EmergencyDispatch.Application.DTOs.Dispatch;
+using EmergencyDispatch.Application.DTOs.Escalation;
 using EmergencyDispatch.Application.DTOs.Incident;
+using EmergencyDispatch.Application.DTOs.Notification;
+using EmergencyDispatch.Application.DTOs.Traffic;
 using EmergencyDispatch.Application.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 
@@ -10,6 +13,10 @@ namespace EmergencyDispatch.API.Realtime;
 /// Triển khai IRealtimeNotifier bằng SignalR. Lỗi realtime chỉ được log,
 /// không làm hỏng luồng nghiệp vụ (SOS vẫn được lưu và phản hồi).
 /// </summary>
+/// <remarks>
+/// Nhóm: "operators" = mọi Operator + Admin; "operators:station:{id}" = Operator của trạm;
+/// "admins" = Admin; "station:{id}" = nhân viên cứu hộ của trạm; "incident:{id}" = người đang theo dõi sự cố.
+/// </remarks>
 public class SignalRRealtimeNotifier : IRealtimeNotifier
 {
     private readonly IHubContext<IncidentHub> _incidentHub;
@@ -21,27 +28,44 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
         _logger = logger;
     }
 
-    public async Task IncidentCreatedAsync(IncidentResponseDto incident, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Trung tâm chỉ huy của một sự cố: Operator trạm phụ trách + Admin; sự cố chưa có trạm → mọi Operator
+    /// </summary>
+    private IClientProxy CommandCenter(Guid? responsibleStationId, params Guid[] extraStationIds)
+    {
+        if (!responsibleStationId.HasValue)
+        {
+            return _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup);
+        }
+
+        var groups = new List<string> { RealtimeContract.OperatorStationGroup(responsibleStationId.Value), RealtimeContract.AdminsGroup };
+        groups.AddRange(extraStationIds.Where(id => id != Guid.Empty && id != responsibleStationId).Distinct().Select(RealtimeContract.OperatorStationGroup));
+        return _incidentHub.Clients.Groups(groups);
+    }
+
+    private async Task SafeAsync(Func<Task> send, string what, object? id)
     {
         try
         {
-            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
-                .SendAsync(RealtimeContract.ReceiveNewIncident, incident, cancellationToken);
+            await send();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Không đẩy được sự cố mới {IncidentId} qua SignalR.", incident.Id);
+            _logger.LogWarning(ex, "Không đẩy được {What} {Id} qua SignalR.", what, id);
         }
     }
 
-    public async Task IncidentUpdatedAsync(IncidentResponseDto incident, CancellationToken cancellationToken = default)
-    {
-        try
+    public Task IncidentCreatedAsync(IncidentResponseDto incident, CancellationToken cancellationToken = default)
+        => SafeAsync(() => CommandCenter(incident.ResponsibleStationId)
+            .SendAsync(RealtimeContract.ReceiveNewIncident, incident, cancellationToken), "sự cố mới", incident.Id);
+
+    public Task IncidentUpdatedAsync(IncidentResponseDto incident, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
         {
-            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+            await CommandCenter(incident.ResponsibleStationId)
                 .SendAsync(RealtimeContract.ReceiveIncidentUpdate, incident, cancellationToken);
 
-            // Người báo chỉ nhận bản rút gọn (không lộ hồ sơ y tế / danh bạ ICE qua group công khai)
+            // Người báo / đội cứu hộ đang theo dõi chỉ nhận bản rút gọn (không lộ hồ sơ y tế / danh bạ ICE)
             var statusPayload = new
             {
                 incident.Id,
@@ -50,50 +74,41 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
                 AiSummary = incident.AiClassification?.Summary,
                 incident.UpdatedAt
             };
-
             await _incidentHub.Clients.Group(RealtimeContract.IncidentGroup(incident.Id))
                 .SendAsync(RealtimeContract.ReceiveIncidentStatus, statusPayload, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Không đẩy được cập nhật sự cố {IncidentId} qua SignalR.", incident.Id);
-        }
-    }
+        }, "cập nhật sự cố", incident.Id);
 
-    public async Task JobAssignedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default)
-    {
-        try
+    public Task JobAssignedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
         {
-            // Bắn tới toàn bộ lực lượng cứu hộ
-            await _incidentHub.Clients.Group(RealtimeContract.RescuersGroup)
-                .SendAsync(RealtimeContract.ReceiveJobAssigned, assignment, cancellationToken);
+            var unitStationId = assignment.RescueUnit?.StationId ?? Guid.Empty;
 
-            // Bắn tới trạm trực thuộc nếu có thông tin trạm
-            if (assignment.RescueUnit != null && assignment.RescueUnit.StationId != Guid.Empty)
+            // Chỉ nhân viên trạm có xe nhận lệnh (trước đây gửi cho mọi nhân viên mọi trạm)
+            if (unitStationId != Guid.Empty)
             {
-                await _incidentHub.Clients.Group(RealtimeContract.StationGroup(assignment.RescueUnit.StationId.ToString()))
+                await _incidentHub.Clients.Group(RealtimeContract.StationGroup(unitStationId.ToString()))
                     .SendAsync(RealtimeContract.ReceiveJobAssigned, assignment, cancellationToken);
             }
 
-            // Bắn tới Operator để cập nhật trạng thái phân công
-            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+            await CommandCenter(assignment.ResponsibleStationId, unitStationId)
                 .SendAsync(RealtimeContract.ReceiveJobAssigned, assignment, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Không đẩy được thông báo phân công nhiệm vụ {AssignmentId} qua SignalR.", assignment.Id);
-        }
-    }
+        }, "lệnh phân công", assignment.Id);
 
-    public async Task AssignmentStatusChangedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default)
-    {
-        try
+    public Task AssignmentStatusChangedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
         {
-            // Đẩy tới Operator
-            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+            var unitStationId = assignment.RescueUnit?.StationId ?? Guid.Empty;
+
+            await CommandCenter(assignment.ResponsibleStationId, unitStationId)
                 .SendAsync(RealtimeContract.ReceiveAssignmentStatus, assignment, cancellationToken);
 
-            // Đẩy tới người dân theo dõi sự cố
+            if (unitStationId != Guid.Empty)
+            {
+                await _incidentHub.Clients.Group(RealtimeContract.StationGroup(unitStationId.ToString()))
+                    .SendAsync(RealtimeContract.ReceiveAssignmentStatus, assignment, cancellationToken);
+            }
+
+            // Người dân theo dõi sự cố: bản rút gọn
             await _incidentHub.Clients.Group(RealtimeContract.IncidentGroup(assignment.IncidentId))
                 .SendAsync(RealtimeContract.ReceiveAssignmentStatus, new
                 {
@@ -107,60 +122,57 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
                     assignment.ArrivedAt,
                     assignment.CompletedAt
                 }, cancellationToken);
-        }
-        catch (Exception ex)
+        }, "trạng thái phân công", assignment.Id);
+
+    public Task TrafficHotspotReportedAsync(TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default)
+        => SafeAsync(() => _incidentHub.Clients.Groups(RealtimeContract.OperatorsGroup, RealtimeContract.RescuersGroup)
+            .SendAsync(RealtimeContract.ReceiveTrafficHotspot, hotspot, cancellationToken), "điểm nghẽn", hotspot.Id);
+
+    public Task EscalationAlertAsync(EscalationAlertDto alert, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
         {
-            _logger.LogWarning(ex, "Không đẩy được cập nhật trạng thái phân công {AssignmentId} qua SignalR.", assignment.Id);
-        }
-    }
+            // Cấp 2 (quá gấp đôi ngưỡng) hoặc sự cố chưa có trạm → mọi Operator; cấp 1 → trạm phụ trách + Admin
+            var target = alert.Tier >= 2 || !alert.ResponsibleStationId.HasValue
+                ? _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+                : CommandCenter(alert.ResponsibleStationId);
+            await target.SendAsync(RealtimeContract.ReceiveEscalationAlert, alert, cancellationToken);
 
-    public async Task TrafficHotspotReportedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
-                .SendAsync(RealtimeContract.ReceiveTrafficHotspot, hotspot, cancellationToken);
-
-            await _incidentHub.Clients.Group(RealtimeContract.RescuersGroup)
-                .SendAsync(RealtimeContract.ReceiveTrafficHotspot, hotspot, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Không đẩy được điểm nghẽn giao thông {HotspotId} qua SignalR.", hotspot.Id);
-        }
-    }
-
-    public async Task EscalationAlertAsync(EmergencyDispatch.Application.DTOs.Escalation.EscalationAlertDto alert, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            // Bắn cảnh báo còi hú / đỏ rực tới toàn bộ Operator và Admin
-            await _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
-                .SendAsync(RealtimeContract.ReceiveEscalationAlert, alert, cancellationToken);
-
-            await _incidentHub.Clients.Group(RealtimeContract.AdminsGroup)
-                .SendAsync(RealtimeContract.ReceiveEscalationAlert, alert, cancellationToken);
-
-            // Bắn tới group sự cố
             await _incidentHub.Clients.Group(RealtimeContract.IncidentGroup(alert.IncidentId))
                 .SendAsync(RealtimeContract.ReceiveEscalationAlert, alert, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Không đẩy được cảnh báo leo thang sự cố {IncidentId} qua SignalR.", alert.IncidentId);
-        }
-    }
+        }, "cảnh báo leo thang", alert.IncidentId);
 
-    public async Task NotificationCreatedAsync(Guid userId, EmergencyDispatch.Application.DTOs.Notification.NotificationDto notification, CancellationToken cancellationToken = default)
-    {
-        try
+    public Task NotificationCreatedAsync(Guid userId, NotificationDto notification, CancellationToken cancellationToken = default)
+        => SafeAsync(() => _incidentHub.Clients.User(userId.ToString())
+            .SendAsync(RealtimeContract.ReceiveNotification, notification, cancellationToken), "thông báo", notification.Id);
+
+    public Task OutOfAreaAlertAsync(OutOfAreaAlertDto alert, CancellationToken cancellationToken = default)
+        => SafeAsync(() => CommandCenter(alert.ResponsibleStationId)
+            .SendAsync(RealtimeContract.ReceiveOutOfAreaAlert, alert, cancellationToken), "cảnh báo ngoài khu vực", alert.IncidentId);
+
+    public Task SupportDispatchedAsync(Guid supportingStationId, DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default)
+        => SafeAsync(() => _incidentHub.Clients.Group(RealtimeContract.OperatorStationGroup(supportingStationId))
+            .SendAsync(RealtimeContract.ReceiveSupportDispatched, assignment, cancellationToken), "điều xe hỗ trợ", assignment.Id);
+
+    public Task IncidentTransferredAsync(IncidentTransferredDto transfer, IncidentResponseDto incident, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
         {
-            await _incidentHub.Clients.User(userId.ToString())
-                .SendAsync(RealtimeContract.ReceiveNotification, notification, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Không đẩy được thông báo {NotificationId} tới người dùng {UserId}.", notification.Id, userId);
-        }
-    }
+            var groups = new List<string> { RealtimeContract.OperatorStationGroup(transfer.ToStationId), RealtimeContract.AdminsGroup };
+            if (transfer.FromStationId.HasValue)
+            {
+                groups.Add(RealtimeContract.OperatorStationGroup(transfer.FromStationId.Value));
+            }
+            await _incidentHub.Clients.Groups(groups).SendAsync(RealtimeContract.ReceiveIncidentTransferred, transfer, cancellationToken);
+
+            // Trạm nhận thấy sự cố xuất hiện trong hàng đợi của mình ngay
+            await _incidentHub.Clients.Group(RealtimeContract.OperatorStationGroup(transfer.ToStationId))
+                .SendAsync(RealtimeContract.ReceiveNewIncident, incident, cancellationToken);
+        }, "chuyển trạm", transfer.IncidentId);
+
+    public Task IncidentLockChangedAsync(IncidentLockEventDto lockEvent, Guid? responsibleStationId, CancellationToken cancellationToken = default)
+        => SafeAsync(() => CommandCenter(responsibleStationId)
+            .SendAsync(RealtimeContract.ReceiveIncidentLock, lockEvent, cancellationToken), "khóa mềm", lockEvent.IncidentId);
+
+    public Task RescueUnitStatusChangedAsync(RescueUnitStatusEventDto unit, CancellationToken cancellationToken = default)
+        => SafeAsync(() => _incidentHub.Clients.Groups(RealtimeContract.OperatorsGroup, RealtimeContract.StationGroup(unit.StationId.ToString()))
+            .SendAsync(RealtimeContract.ReceiveRescueUnitStatus, unit, cancellationToken), "trạng thái xe", unit.RescueUnitId);
 }

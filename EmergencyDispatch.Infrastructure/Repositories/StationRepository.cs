@@ -14,6 +14,7 @@ public class StationRepository : GenericRepository<Station>, IStationRepository
     public async Task<Station?> GetByIdWithUnitsAndStaffAsync(Guid id)
     {
         return await _dbSet
+            .Include(s => s.HeadOperator)
             .Include(s => s.RescueUnits)
             .Include(s => s.StaffMembers)
                 .ThenInclude(u => u.TeamMembership)
@@ -25,6 +26,7 @@ public class StationRepository : GenericRepository<Station>, IStationRepository
     public async Task<IReadOnlyList<Station>> GetAllActiveAsync()
     {
         return await _dbSet
+            .Include(s => s.HeadOperator)
             .Include(s => s.RescueUnits)
             .Include(s => s.StaffMembers)
             .Where(s => s.IsActive)
@@ -35,6 +37,7 @@ public class StationRepository : GenericRepository<Station>, IStationRepository
     public async Task<IReadOnlyList<Station>> GetAllWithUnitsAndStaffAsync()
     {
         return await _dbSet
+            .Include(s => s.HeadOperator)
             .Include(s => s.RescueUnits)
             .Include(s => s.StaffMembers)
             .OrderBy(s => s.Name)

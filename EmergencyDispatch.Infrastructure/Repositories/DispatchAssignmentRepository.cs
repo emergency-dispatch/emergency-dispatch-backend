@@ -68,6 +68,27 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<DispatchAssignment>> GetActiveWithDetailsAsync(Guid? stationId, CancellationToken cancellationToken = default)
+    {
+        var query = _dbSet
+            .AsNoTracking()
+            .Include(d => d.Incident)
+            .Include(d => d.RescueUnit)
+                .ThenInclude(r => r!.Station)
+            .Where(d => d.Status == DispatchAssignmentStatus.Dispatched ||
+                        d.Status == DispatchAssignmentStatus.Accepted ||
+                        d.Status == DispatchAssignmentStatus.EnRoute ||
+                        d.Status == DispatchAssignmentStatus.OnScene);
+
+        if (stationId.HasValue)
+        {
+            query = query.Where(d => (d.Incident != null && d.Incident.ResponsibleStationId == stationId)
+                                     || (d.RescueUnit != null && d.RescueUnit.StationId == stationId));
+        }
+
+        return await query.OrderBy(d => d.DispatchedAt).ToListAsync(cancellationToken);
+    }
+
     public async Task AddStatusHistoryAsync(AssignmentStatusHistory history)
     {
         await _context.AssignmentStatusHistories.AddAsync(history);

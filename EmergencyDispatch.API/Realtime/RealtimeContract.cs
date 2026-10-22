@@ -13,6 +13,9 @@ public static class RealtimeContract
     public static string IncidentGroup(Guid incidentId) => $"incident:{incidentId}";
     public static string StationGroup(string stationId) => $"station:{stationId}";
 
+    /// <summary>Operator phụ trách một trạm (mỗi Operator quản lý 1 trạm)</summary>
+    public static string OperatorStationGroup(Guid stationId) => $"operators:station:{stationId}";
+
     // ===== Client events (server → client) =====
     /// <summary>Sự cố SOS mới (gửi tới Operator)</summary>
     public const string ReceiveNewIncident = "ReceiveNewIncident";
@@ -40,4 +43,22 @@ public static class RealtimeContract
 
     /// <summary>Thông báo cá nhân mới (gửi riêng tới từng người dùng theo userId)</summary>
     public const string ReceiveNotification = "ReceiveNotification";
+
+    /// <summary>Tài khoản bị khóa / xóa / đổi quyền / đổi trạm: client phải đăng xuất ngay. Payload: { reason }</summary>
+    public const string ForceLogout = "ForceLogout";
+
+    /// <summary>SOS nằm ngoài khu vực phục vụ (gửi Operator trạm gần nhất + Admin)</summary>
+    public const string ReceiveOutOfAreaAlert = "ReceiveOutOfAreaAlert";
+
+    /// <summary>Xe của trạm được điều đi hỗ trợ sự cố của trạm khác (gửi Operator trạm có xe)</summary>
+    public const string ReceiveSupportDispatched = "ReceiveSupportDispatched";
+
+    /// <summary>Sự cố được chuyển trạm phụ trách (gửi Operator trạm cũ, trạm mới, Admin)</summary>
+    public const string ReceiveIncidentTransferred = "ReceiveIncidentTransferred";
+
+    /// <summary>Xe đổi trạng thái (Available, Dispatched, CoolDown, Maintenance...)</summary>
+    public const string ReceiveRescueUnitStatus = "ReceiveRescueUnitStatus";
+
+    /// <summary>Khóa mềm sự cố bị lấy / gia hạn / nhả (lockedByOperatorId = null → đã nhả)</summary>
+    public const string ReceiveIncidentLock = "ReceiveIncidentLock";
 }

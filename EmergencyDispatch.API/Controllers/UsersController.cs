@@ -270,6 +270,10 @@ public class UsersController : ControllerBase
             var user = await _userService.GetByIdAsync(id);
             return Ok(ApiResponseDto<UserResponseDto>.Ok(user, "Lấy thông tin người dùng thành công."));
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail(ex.Message));
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(ApiResponseDto<object>.Fail(ex.Message));
@@ -326,6 +330,10 @@ public class UsersController : ControllerBase
         {
             var updated = await _userService.UpdateUserAsync(id, dto, GetCurrentRole());
             return Ok(ApiResponseDto<UserResponseDto>.Ok(updated, "Cập nhật người dùng thành công."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -409,6 +417,10 @@ public class UsersController : ControllerBase
             var updated = await _userService.AssignStaffToStationAndTeamAsync(id, dto, GetCurrentRole());
             return Ok(ApiResponseDto<UserResponseDto>.Ok(updated, "Phân công nhân viên vào trạm và tổ làm việc thành công."));
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
+        }
         catch (UnauthorizedAccessException ex)
         {
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail(ex.Message));
@@ -433,6 +445,11 @@ public class UsersController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetStaffByStation(Guid stationId)
     {
+        if (!User.CanViewStation(stationId))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail("Bạn chỉ được xem dữ liệu của trạm mình đang công tác."));
+        }
+
         try
         {
             var staff = await _userService.GetStaffByStationAsync(stationId);

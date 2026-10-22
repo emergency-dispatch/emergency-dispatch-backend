@@ -20,6 +20,16 @@ public interface IEscalationRepository
     /// </summary>
     Task<IReadOnlyList<Incident>> GetEscalatableIncidentsAsync(IReadOnlyCollection<SeverityLevel> severities, DateTime cutoffTime, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// BR-17 cấp 2: sự cố đã leo thang cấp 1, tạo trước cutoffTime (gấp đôi ngưỡng) mà vẫn chưa có đơn vị nhận, chưa leo thang cấp 2
+    /// </summary>
+    /// <summary>
+    /// Đánh dấu đã xử lý các lượt leo thang còn mở của sự cố (chưa SaveChanges)
+    /// </summary>
+    Task<int> ResolveOpenLogsAsync(Guid incidentId, DateTime resolvedAtUtc, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Incident>> GetTier2CandidatesAsync(DateTime cutoffTime, CancellationToken cancellationToken = default);
+
     Task<bool> HasRecentEscalationLogAsync(Guid incidentId, Guid ruleId, DateTime since, CancellationToken cancellationToken = default);
     Task AddLogAsync(EscalationLog log, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EscalationLog>> GetLogsAsync(Guid? incidentId, int page, int pageSize, CancellationToken cancellationToken = default);

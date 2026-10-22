@@ -16,6 +16,7 @@ using EmergencyDispatch.Infrastructure.Data;
 using EmergencyDispatch.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Localization;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
@@ -31,7 +32,11 @@ builder.Services.AddControllers()
     })
     .ConfigureApiBehaviorOptions(LocalizedValidationResponseFactory.Configure);
 
-builder.Services.AddSignalR()
+builder.Services.AddSignalR(options =>
+    {
+        // Chặn lời gọi hub từ kết nối của tài khoản vừa bị khóa / đổi quyền
+        options.AddFilter<EmergencyDispatch.API.Services.UserSessionHubFilter>();
+    })
     .AddJsonProtocol(options =>
     {
         options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -44,7 +49,9 @@ builder.Services.AddCors(options =>
         policy.SetIsOriginAllowed(_ => true)
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .AllowCredentials());
+              .AllowCredentials()
+              // FE đọc được lý do token bị từ chối và tên file báo cáo tải về
+              .WithExposedHeaders("X-Auth-Error", "Content-Disposition"));
 });
 
 // 2.1. Cấu hình đa ngôn ngữ (Bilingual vi/en Localization)
@@ -140,6 +147,7 @@ builder.Services.AddScoped<IBlockedPhoneRepository, BlockedPhoneRepository>();
 builder.Services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
 builder.Services.AddScoped<IStationTeamRepository, StationTeamRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.AddScoped<ISystemAuditLogRepository, SystemAuditLogRepository>();
 
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();
@@ -180,6 +188,26 @@ builder.Services.AddScoped<IBlockedNumberService, BlockedNumberService>();
 builder.Services.AddScoped<IStationTeamService, StationTeamService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<ITelemetryService, TelemetryService>();
+builder.Services.AddScoped<ISystemAuditService, SystemAuditService>();
+
+// Chỉ đường theo đường bộ (OSRM). Tự host bằng Docker: đổi Routing:OsrmBaseUrl, không cần sửa code
+builder.Services.AddHttpClient(EmergencyDispatch.Infrastructure.Services.OsrmRoutingService.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Routing:TimeoutSeconds", 5));
+    // Máy chủ OSRM demo từ chối (403) request không có User-Agent
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("EmergencyDispatch-SEP490/1.0");
+});
+builder.Services.AddSingleton<IRoutingService, EmergencyDispatch.Infrastructure.Services.OsrmRoutingService>();
+builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<IReportFileGenerator, EmergencyDispatch.Infrastructure.Services.ReportFileGenerator>();
+
+// Người dùng hiện tại + kiểm tra phiên đăng nhập còn hiệu lực (khóa tài khoản có hiệu lực ngay)
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ICurrentUserContext, EmergencyDispatch.API.Services.HttpCurrentUserContext>();
+builder.Services.AddSingleton<EmergencyDispatch.API.Services.UserSessionValidator>();
+builder.Services.AddSingleton<IUserSessionInvalidator>(sp => sp.GetRequiredService<EmergencyDispatch.API.Services.UserSessionValidator>());
+builder.Services.AddSingleton<EmergencyDispatch.API.Services.UserSessionHubFilter>();
 builder.Services.AddSingleton<IPushNotificationSender, EmergencyDispatch.Infrastructure.Services.FcmPushNotificationSender>();
 
 // 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
@@ -188,6 +216,7 @@ builder.Services.AddHostedService<AiAnalysisWorker>();
 builder.Services.AddHostedService<HotspotCleanupWorker>();
 builder.Services.AddHostedService<EscalationWorker>();
 builder.Services.AddHostedService<VehicleCoolDownWorker>();
+builder.Services.AddHostedService<IncidentAutoExpireWorker>();
 
 // 8.2. Kênh thông báo Realtime (SignalR Notifier)
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
@@ -225,6 +254,27 @@ builder.Services.AddAuthentication(options =>
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
             {
                 context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        },
+
+        // Token hết hiệu lực ngay khi tài khoản bị khóa / xóa / đổi role / đổi trạm
+        OnTokenValidated = async context =>
+        {
+            var validator = context.HttpContext.RequestServices.GetRequiredService<EmergencyDispatch.API.Services.UserSessionValidator>();
+            var reason = await validator.ValidateAsync(context.Principal!, context.HttpContext.RequestAborted);
+            if (reason != null)
+            {
+                context.Fail(reason);
+            }
+        },
+
+        // Trả lý do cho client (header) để FE hiện thông báo phù hợp thay vì "sai mật khẩu"
+        OnChallenge = context =>
+        {
+            if (context.AuthenticateFailure != null && !string.IsNullOrEmpty(context.AuthenticateFailure.Message))
+            {
+                context.Response.Headers["X-Auth-Error"] = Uri.EscapeDataString(context.AuthenticateFailure.Message);
             }
             return Task.CompletedTask;
         }

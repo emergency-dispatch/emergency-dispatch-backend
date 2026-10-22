@@ -19,6 +19,11 @@ public class DispatchSettingsDto
     /// Thời gian hồi sức (CoolDown) của xe sau khi nghiệm thu nhiệm vụ (BR-27)
     /// </summary>
     public double RecoveryMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// Sự cố chưa được xác minh quá số giờ này sẽ tự hủy (CancellationReason.AutoExpired)
+    /// </summary>
+    public double AutoExpireHours { get; set; } = 24;
 }
 
 public class LoadAwareWeightsDto

@@ -31,4 +31,9 @@ public class CreateStationDto
     /// </summary>
     [Range(5.0, 50.0, ErrorMessage = "Bán kính phụ trách phải từ 5 đến 50 km.")]
     public double CoverageRadiusKm { get; set; } = 10;
+
+    /// <summary>
+    /// Operator phụ trách trạm: Id tài khoản Operator đang hoạt động (bỏ trống nếu chưa có)
+    /// </summary>
+    public Guid? HeadOperatorId { get; set; }
 }

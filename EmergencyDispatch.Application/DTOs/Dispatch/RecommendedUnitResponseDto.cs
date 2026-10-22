@@ -70,4 +70,24 @@ public class RecommendedUnitResponseDto
     /// Diễn giải lý do đề xuất
     /// </summary>
     public string RecommendationReason { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Quãng đường theo đường bộ (OSRM); null khi máy chủ chỉ đường lỗi
+    /// </summary>
+    public double? RoadDistanceKm { get; set; }
+
+    /// <summary>
+    /// Thời gian chạy xe theo đường bộ (phút, chưa gồm thời gian xuất xe)
+    /// </summary>
+    public double? RoadDurationMinutes { get; set; }
+
+    /// <summary>
+    /// true = ETA / quãng đường ước lượng theo chim bay vì không gọi được máy chủ chỉ đường
+    /// </summary>
+    public bool IsApproximate { get; set; }
+
+    /// <summary>
+    /// Xe thuộc trạm khác trạm phụ trách sự cố (điều xe hỗ trợ)
+    /// </summary>
+    public bool IsSupportUnit { get; set; }
 }

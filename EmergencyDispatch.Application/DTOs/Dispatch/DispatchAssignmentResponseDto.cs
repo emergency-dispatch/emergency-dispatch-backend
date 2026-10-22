@@ -10,6 +10,11 @@ public class DispatchAssignmentResponseDto
 {
     public Guid Id { get; set; }
     public Guid IncidentId { get; set; }
+
+    /// <summary>
+    /// Trạm phụ trách sự cố; khác trạm của xe = xe được điều hỗ trợ
+    /// </summary>
+    public Guid? ResponsibleStationId { get; set; }
     public string IncidentTitle { get; set; } = string.Empty;
     public string IncidentAddress { get; set; } = string.Empty;
     public double IncidentLat { get; set; }

@@ -57,9 +57,15 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         int pageSize,
         string? search,
         UserRole? role,
-        UserStatus? status)
+        UserStatus? status,
+        Guid? stationId = null)
     {
         IQueryable<User> query = _dbSet.Include(u => u.Station);
+
+        if (stationId.HasValue)
+        {
+            query = query.Where(u => u.StationId == stationId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {

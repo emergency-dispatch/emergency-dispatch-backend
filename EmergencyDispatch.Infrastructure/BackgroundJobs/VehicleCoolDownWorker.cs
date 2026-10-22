@@ -1,3 +1,6 @@
+using EmergencyDispatch.Application.DTOs.Incident;
+using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -53,6 +56,24 @@ public class VehicleCoolDownWorker : BackgroundService
             if (released.Count > 0)
             {
                 _logger.LogInformation("CoolDown: {Count} xe đã hết thời gian hồi sức, trở lại trạng thái sẵn sàng.", released.Count);
+
+                // Live map / gợi ý xe của Operator cập nhật ngay khi xe sẵn sàng trở lại
+                var notifier = scope.ServiceProvider.GetRequiredService<IRealtimeNotifier>();
+                foreach (var id in released)
+                {
+                    var unit = await repository.GetByIdAsync(id);
+                    if (unit == null) continue;
+                    await notifier.RescueUnitStatusChangedAsync(new RescueUnitStatusEventDto
+                    {
+                        RescueUnitId = unit.Id,
+                        PlateNumber = unit.PlateNumber,
+                        StationId = unit.StationId,
+                        Status = RescueUnitStatus.Available,
+                        PreviousStatus = RescueUnitStatus.CoolDown,
+                        Reason = "Hết thời gian hồi sức (CoolDown)",
+                        ChangedAt = DateTime.UtcNow
+                    }, cancellationToken);
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

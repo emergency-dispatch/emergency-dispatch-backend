@@ -67,9 +67,16 @@ public class EscalationController : ControllerBase
             return BadRequest(ApiResponseDto<EscalationRuleDto>.FailureResult("Dữ liệu quy tắc không hợp lệ."));
         }
 
-        var created = await _escalationService.CreateRuleAsync(dto, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created,
-            ApiResponseDto<EscalationRuleDto>.SuccessResult(created, "Tạo mới quy tắc leo thang thành công."));
+        try
+        {
+            var created = await _escalationService.CreateRuleAsync(dto, cancellationToken);
+            return StatusCode(StatusCodes.Status201Created,
+                ApiResponseDto<EscalationRuleDto>.SuccessResult(created, "Tạo mới quy tắc leo thang thành công."));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponseDto<EscalationRuleDto>.FailureResult(ex.Message));
+        }
     }
 
     /// <summary>
@@ -84,7 +91,15 @@ public class EscalationController : ControllerBase
         [FromBody] UpdateEscalationRuleDto dto,
         CancellationToken cancellationToken)
     {
-        var updated = await _escalationService.UpdateRuleAsync(id, dto, cancellationToken);
+        EscalationRuleDto? updated;
+        try
+        {
+            updated = await _escalationService.UpdateRuleAsync(id, dto, cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponseDto<EscalationRuleDto>.FailureResult(ex.Message));
+        }
         if (updated == null)
         {
             return NotFound(ApiResponseDto<EscalationRuleDto>.FailureResult("Không tìm thấy quy tắc leo thang để cập nhật."));

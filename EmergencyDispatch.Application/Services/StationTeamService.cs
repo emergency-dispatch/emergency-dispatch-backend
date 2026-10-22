@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Team;
 using EmergencyDispatch.Application.Interfaces;
@@ -19,21 +20,41 @@ public class StationTeamService : IStationTeamService
     private readonly IStationRepository _stationRepository;
     private readonly IUserRepository _userRepository;
     private readonly IRescueUnitRepository _rescueUnitRepository;
+    private readonly ISystemAuditService _auditService;
+    private readonly ICurrentUserContext _currentUser;
 
     public StationTeamService(
         IStationTeamRepository teamRepository,
         IStationRepository stationRepository,
         IUserRepository userRepository,
-        IRescueUnitRepository rescueUnitRepository)
+        IRescueUnitRepository rescueUnitRepository,
+        ISystemAuditService auditService,
+        ICurrentUserContext currentUser)
     {
+        _currentUser = currentUser;
         _teamRepository = teamRepository;
         _stationRepository = stationRepository;
         _userRepository = userRepository;
         _rescueUnitRepository = rescueUnitRepository;
+        _auditService = auditService;
     }
+
+    private static object Snapshot(StationTeam t) => new
+    {
+        t.Name,
+        t.StationId,
+        t.RescueUnitId,
+        Members = t.Members.Select(m => new { m.StaffId, m.CrewRole }).ToList()
+    };
 
     public async Task<ApiResponseDto<List<StationTeamDto>>> GetTeamsAsync(Guid stationId, CancellationToken cancellationToken = default)
     {
+        var scopeError = _currentUser.CheckStation(stationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<List<StationTeamDto>>.ForbiddenResult(scopeError);
+        }
+
         if (await _stationRepository.GetByIdAsync(stationId) == null)
         {
             return ApiResponseDto<List<StationTeamDto>>.NotFoundResult("Không tìm thấy trạm cứu hộ.");
@@ -45,6 +66,12 @@ public class StationTeamService : IStationTeamService
 
     public async Task<ApiResponseDto<StationTeamDto>> CreateAsync(Guid stationId, StationTeamInputDto dto, CancellationToken cancellationToken = default)
     {
+        var scopeError = _currentUser.CheckStation(stationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<StationTeamDto>.ForbiddenResult(scopeError);
+        }
+
         if (await _stationRepository.GetByIdAsync(stationId) == null)
         {
             return ApiResponseDto<StationTeamDto>.NotFoundResult("Không tìm thấy trạm cứu hộ.");
@@ -68,11 +95,19 @@ public class StationTeamService : IStationTeamService
         await _teamRepository.SaveChangesAsync(cancellationToken);
 
         var saved = await _teamRepository.GetByIdAsync(team.Id, cancellationToken);
+        await _auditService.LogAsync(SystemAuditAction.Created, AuditEntityTypes.StationTeam, team.Id, team.Name,
+            $"Tạo tổ \"{team.Name}\" ({team.Members.Count} người)", newValue: Snapshot(team), cancellationToken: cancellationToken);
         return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), $"Đã tạo tổ \"{team.Name}\".");
     }
 
     public async Task<ApiResponseDto<StationTeamDto>> UpdateAsync(Guid stationId, Guid teamId, StationTeamInputDto dto, CancellationToken cancellationToken = default)
     {
+        var scopeError = _currentUser.CheckStation(stationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<StationTeamDto>.ForbiddenResult(scopeError);
+        }
+
         var team = await _teamRepository.GetByIdAsync(teamId, cancellationToken);
         if (team == null || team.StationId != stationId)
         {
@@ -82,6 +117,7 @@ public class StationTeamService : IStationTeamService
         var error = await ValidateAsync(stationId, teamId, dto, cancellationToken);
         if (error != null) return error;
 
+        var before = Snapshot(team);
         team.Name = dto.Name.Trim();
         team.RescueUnitId = dto.RescueUnitId;
         team.UpdatedAt = DateTime.UtcNow;
@@ -108,19 +144,30 @@ public class StationTeamService : IStationTeamService
         await _teamRepository.SaveChangesAsync(cancellationToken);
 
         var saved = await _teamRepository.GetByIdAsync(team.Id, cancellationToken);
+        await _auditService.LogAsync(SystemAuditAction.Updated, AuditEntityTypes.StationTeam, team.Id, team.Name,
+            $"Cập nhật tổ \"{team.Name}\"", before, Snapshot(saved ?? team), cancellationToken);
         return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), $"Đã cập nhật tổ \"{team.Name}\".");
     }
 
     public async Task<ApiResponseDto<bool>> DeleteAsync(Guid stationId, Guid teamId, CancellationToken cancellationToken = default)
     {
+        var scopeError = _currentUser.CheckStation(stationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<bool>.ForbiddenResult(scopeError);
+        }
+
         var team = await _teamRepository.GetByIdAsync(teamId, cancellationToken);
         if (team == null || team.StationId != stationId)
         {
             return ApiResponseDto<bool>.NotFoundResult("Không tìm thấy tổ.");
         }
 
+        var before = Snapshot(team);
         _teamRepository.Remove(team);
         await _teamRepository.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync(SystemAuditAction.Deleted, AuditEntityTypes.StationTeam, team.Id, team.Name,
+            $"Xóa tổ \"{team.Name}\"", before, cancellationToken: cancellationToken);
         return ApiResponseDto<bool>.SuccessResult(true, $"Đã xóa tổ \"{team.Name}\".");
     }
 

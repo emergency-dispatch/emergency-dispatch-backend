@@ -24,6 +24,62 @@ public class TelemetryService : ITelemetryService
         return BuildSummary(incidents, from, to);
     }
 
+    public async Task<IReadOnlyList<TelemetryIncidentRowDto>> GetIncidentRowsAsync(DateTime? from, DateTime? to, CancellationToken cancellationToken = default)
+    {
+        var incidents = await _incidentRepository.GetForTelemetryAsync(from, to, cancellationToken);
+        return incidents.OrderByDescending(i => i.CreatedAt).Select(ToRow).ToList();
+    }
+
+    public static TelemetryIncidentRowDto ToRow(Incident i)
+    {
+        static long? Ms(DateTime? a, DateTime? b) => a.HasValue && b.HasValue ? (long)(b.Value - a.Value).TotalMilliseconds : null;
+
+        var ai = i.AiClassification;
+        var assignments = i.DispatchAssignments.Where(a => a.Status != DispatchAssignmentStatus.Rejected).OrderBy(a => a.DispatchedAt).ToList();
+        var firstDispatch = assignments.Count > 0 ? assignments[0].DispatchedAt : (DateTime?)null;
+        var firstAccepted = assignments.Where(a => a.AcceptedAt.HasValue).Select(a => a.AcceptedAt).Min();
+        var firstArrived = assignments.Where(a => a.ArrivedAt.HasValue).Select(a => a.ArrivedAt).Min();
+        var closedAt = i.ClosedAt ?? i.CancelledAt;
+        var aiSucceeded = ai?.IsSuccess == true;
+
+        // T_Operator: từ lúc Operator có kết quả AI (hoặc lúc tạo nếu không có AI) tới khi xác minh
+        var operatorStart = aiSucceeded && i.VerifiedAt.HasValue && ai!.CreatedAt <= i.VerifiedAt ? ai.CreatedAt : i.CreatedAt;
+
+        return new TelemetryIncidentRowDto
+        {
+            IncidentId = i.Id,
+            CreatedAt = i.CreatedAt,
+            Status = i.Status,
+            ResponsibleStation = i.ResponsibleStation?.Name,
+            IsOutOfServiceArea = i.IsOutOfServiceArea,
+            HasAi = ai != null,
+            AiSuccess = ai?.IsSuccess,
+            AiProcessedAt = ai?.CreatedAt,
+            AiModelLatencyMs = ai?.ProcessingDurationMs,
+            AiModel = ai?.ModelName,
+            AiSeverity = ai?.SeverityScore,
+            AiEventType = ai?.EventType,
+            VerifiedAt = i.VerifiedAt,
+            VerifiedByUserId = i.VerifiedByUserId,
+            ConfirmedSeverity = i.Severity,
+            ConfirmedEventType = i.EventType,
+            WasAiOverridden = aiSucceeded && i.VerifiedAt.HasValue
+                              && (ai!.SeverityScore != i.Severity || (i.EventType != IncidentEventType.None && ai.EventType != i.EventType)),
+            FirstDispatchAt = firstDispatch,
+            Algorithm = assignments.Select(a => a.DispatchAlgorithm).FirstOrDefault(a => !string.IsNullOrEmpty(a)),
+            UnitsDispatched = assignments.Count,
+            FirstAcceptedAt = firstAccepted,
+            FirstArrivedAt = firstArrived,
+            ClosedAt = closedAt,
+            CancellationReason = i.CancellationReason,
+            TAiMs = Ms(i.CreatedAt, ai?.CreatedAt),
+            TOperatorMs = i.VerifiedAt.HasValue ? Ms(operatorStart, i.VerifiedAt) : null,
+            TDispatchMs = Ms(i.VerifiedAt, firstDispatch),
+            TResponseMs = Ms(i.CreatedAt, firstArrived),
+            TResolutionMs = i.ClosedAt.HasValue ? Ms(i.CreatedAt, i.ClosedAt) : null
+        };
+    }
+
     public static TelemetrySummaryDto BuildSummary(IReadOnlyList<Incident> incidents, DateTime? from, DateTime? to)
     {
         var tAi = new List<double>();

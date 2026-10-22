@@ -41,6 +41,11 @@ public class CitizenTrackingResponseDto
 
     // Đường di chuyển cứu hộ (Route trajectory) & Thời gian dự kiến (ETA)
     public List<RoutePointDto> RouteTrajectory { get; set; } = new();
+
+    /// <summary>
+    /// true = máy chủ chỉ đường lỗi, RouteTrajectory chỉ là đoạn thẳng (vẽ nét đứt) và ETA là ước lượng
+    /// </summary>
+    public bool IsApproximateRoute { get; set; }
     public double DistanceKm { get; set; }
     public int EstimatedArrivalMinutes { get; set; }
 
@@ -73,6 +78,11 @@ public class TrackedUnitDto
     public double VehicleLng { get; set; }
     public DateTime? LastLocationUpdateAt { get; set; }
     public List<RoutePointDto> RouteTrajectory { get; set; } = new();
+
+    /// <summary>
+    /// true = máy chủ chỉ đường lỗi, RouteTrajectory chỉ là đoạn thẳng (vẽ nét đứt) và ETA là ước lượng
+    /// </summary>
+    public bool IsApproximateRoute { get; set; }
     public double DistanceKm { get; set; }
     public int EstimatedArrivalMinutes { get; set; }
     public string DispatchStatus { get; set; } = string.Empty;

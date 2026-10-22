@@ -278,7 +278,7 @@ Các phần dưới đây là **nguồn sự thật nằm trong trình duyệt**
 | **Xếp ca trực / Lịch ca / Xin nghỉ / Đổi ca / Sao chép tuần / Tăng ca / Check-in-out** | `pages/admin/ShiftsPage.tsx`, `services/admin/shiftService.ts`, `components/staff/schedule/*` (8 file), `types/shift.ts`, `data/admin/shiftSeed.ts` | **~4.400 dòng** | SRS không có FR nào cho quản lý ca. Backend chưa có và chưa có kế hoạch làm |
 | Chữ ký điện tử khi kết thúc ca | `components/staff/StaffSignaturePad.tsx` | ~150 dòng | Không có trong FR-RS-03 |
 | Khóa / mở khóa tài khoản Citizen bởi Admin | `pages/admin/CitizensPage.tsx`, `services/admin/citizenAdminService.ts` | ~250 dòng | Không có FR tương ứng (SRS chỉ có chặn số spam ở FR-OP-03) |
-| "Trưởng trạm" (`headOperatorId`) — Operator quản lý trạm | `types/adminFleet.ts:31-32`, `types/stationTeam.ts` | — | SRS chỉ nhắc *Station Commander* là người **nhận cảnh báo leo thang**, không phải vai trò quản lý trạm |
+| "Operator phụ trách trạm" (`headOperatorId`) — Operator quản lý trạm | `types/adminFleet.ts:31-32`, `types/stationTeam.ts` | — | SRS chỉ nhắc *Station Commander* là người **nhận cảnh báo leo thang**, không phải vai trò quản lý trạm |
 | Tổ làm việc có tổ trưởng / vai trò kíp / xe phụ trách | `services/stationTeamService.ts` | ~1.100 dòng (commit `ec36793`) | Có trong yêu cầu nhóm ("Operator thêm staff vào trạm và Tổ làm việc") nhưng **SRS chưa mô tả**. Cần chốt thiết kế với backend trước khi làm tiếp (xem mục 4) |
 
 ### 5.4. Lệch tên gọi Web ↔ Backend (cần thống nhất khi tích hợp)
@@ -592,7 +592,7 @@ Backend tự tạo thông báo khi:
 | `PUT /api/rescue-units/{id}` và `PUT /{id}/status`: xe đang làm nhiệm vụ (`Dispatched`/`OnScene`/`Returning` hoặc còn phân công) **không đổi trạm / trạng thái được** (400). Trạng thái `Dispatched`, `OnScene`, `CoolDown` do hệ thống tự đặt; Admin chỉ đặt được `Available` / `Maintenance` / `OutOfService` / `Returning` | Ẩn các lựa chọn đó trong form đổi trạng thái xe |
 | `DELETE /api/rescue-units/{id}` đang làm nhiệm vụ → 400 | Hiện `message` |
 
-Các trường FE có nhưng backend **không làm** trong đợt này: `crewMemberId`, `maintenanceSince` (`AdminVehicle`), `headOperatorId` (trưởng trạm). Nhóm cần chốt có giữ hay bỏ (xem 5.3).
+Các trường FE có nhưng backend **không làm** trong đợt này: `crewMemberId`, `maintenanceSince` (`AdminVehicle`), `headOperatorId` (Operator phụ trách trạm). Nhóm cần chốt có giữ hay bỏ (xem 5.3).
 
 ### 7.7. 🟡 Số liệu thực nghiệm RQ2/RQ3 — Web Admin "Tổng quan" / trang nghiên cứu
 
@@ -606,3 +606,236 @@ Quyền: Admin, Operator. Trả về:
 
 ### 7.8. Cập nhật bảng 6.6
 Các mục ⚪ ở 6.5 nay đã có API thật: StationTeam, `my-reports`, `audit-trail`, `notifications` (cùng `ReceiveNotification`), quy tắc quản trị, `benchmark/telemetry-summary`. Push FCM đã có code, đang chờ cấu hình.
+
+
+---
+
+## 8. Cập nhật 22/10/2026: Web Operator hiển thị sai khi AI phân loại thất bại
+
+**Ví dụ thật:** sự cố "Hỏa hoạn & Khói khẩn cấp", ảnh là xe ô tô đang cháy. AI local bị quá thời gian chờ nên backend trả kết quả dự phòng:
+```json
+"severity": "Unclassified",
+"aiClassification": {
+  "isSuccess": false,
+  "severityScore": 0,
+  "eventType": "None",
+  "confidenceScore": 0,
+  "hazardTags": ["Unclassified", "NeedsHumanReview"]
+}
+```
+Màn hình chi tiết sự cố (`IncidentDetailDrawer.tsx`) lại hiện **"Loại sự kiện: Tai nạn"** và **"Cấp độ đề xuất: Cấp 1 · Nhẹ"**, nút Cấp 1 còn được chọn sẵn kèm nhãn **AI**. Operator dễ hiểu nhầm là AI đã đánh giá sự cố này là nhẹ.
+
+### 8.1. 🔴 `Unclassified` bị hiển thị thành Cấp 1, kèm nhãn "AI"
+- **Vị trí:** `src/types/incident.ts:186-194` (`SEVERITY_FROM_BACKEND`, `Unclassified: 1`) và dòng 248 (`?? 1`).
+- **Sai SRS:**
+  - FR-OP-02: Level 0 / Unclassified có **cùng mức ưu tiên với Level 3** và phải được Operator đánh giá thủ công.
+  - BR-03: Operator phải tự chọn mức độ.
+  - Hiện trạng: chọn sẵn Cấp 1 và gắn nhãn "AI". Chỉ cần bấm "Duyệt" là sự cố cháy bị xác minh thành Level 1, dẫn tới điều thiếu xe.
+- **Cần sửa:**
+  - Giữ riêng trạng thái "Chưa phân loại" (ví dụ `severity: 0` hoặc `null`). Badge hiện **"Chưa phân loại · Cần đánh giá"** (màu đỏ hoặc xám), không hiện "Cấp 1 · Nhẹ".
+  - Ở khối "Xác nhận mức độ nghiêm trọng": **không chọn sẵn nút nào** khi `severity === 'Unclassified'`, và không gắn nhãn `AI` cho nút nào. Operator bắt buộc phải tự chọn Cấp 1, 2 hoặc 3.
+  - Chỉ gắn nhãn `AI` khi `aiClassification.isSuccess === true` và `severityScore` nằm trong khoảng 1–3.
+  - Hàng đợi (`IncidentRow.tsx`): sự cố Unclassified hiện như mức ưu tiên cao nhất, cùng nhóm với Cấp 3 (backend đã sắp xếp sẵn theo thứ tự này).
+
+### 8.2. 🔴 Loại sự kiện mặc định là "Tai nạn" khi AI không xác định
+- **Vị trí:** `src/types/incident.ts:231-238`. Khi `eventType === 'None'` và không có tag `fire`, code luôn rơi vào `'accident'`.
+- **Cần sửa:**
+  - `eventType === 'None'` hoặc `isSuccess === false`: lấy theo **loại người dân đã chọn khi gửi SOS**. Hiện có thể suy ra từ tiêu đề (`SosModal.tsx:174`: "Hỏa hoạn & Khói…" là cháy, "Tai nạn & Va chạm…" là tai nạn).
+  - Nếu không suy ra được thì hiện **"Chưa xác định"**, không tự gán "Tai nạn".
+
+### 8.3. 🟡 Hiện rõ là AI thất bại, đừng chỉ ghi "độ tin cậy thấp"
+- Hiện tại: banner "Độ tin cậy thấp. Hình ảnh có thể không khớp với mô tả…" cùng "Độ tin cậy AI 0%".
+- Khi `aiClassification.isSuccess === false`, nên thay bằng banner **"AI chưa phân tích được (lỗi hoặc quá thời gian chờ) — vui lòng đánh giá thủ công"**. Ẩn các ô "Độ tin cậy AI" và "Cấp độ đề xuất", hoặc ghi "—".
+- `aiClassification.errorMessage` là thông tin kỹ thuật. Không hiện cho Operator, chỉ log ra console nếu cần.
+
+### 8.4. Ghi chú cho FE
+- Trường **`BackendSeverityLevel`** (`incident.ts:109`) vẫn còn `Level4` và `Level5`. Backend đã chuẩn hóa chỉ còn `Unclassified`, `Level1`, `Level2`, `Level3` (mục 6). Có thể bỏ hai giá trị cũ khi sửa 8.1.
+- AI local chạy trên GPU 4GB của máy dev nên thời gian phân tích dao động từ 30 đến hơn 90 giây. Trong lúc đó sự cố ở trạng thái `AiProcessing`, nên FE hiện "AI đang phân tích…" và chờ sự kiện SignalR cập nhật, không coi đó là lỗi.
+
+
+---
+
+## 9. Cập nhật 22/10/2026: các chức năng Admin (backend đã xong, FE cần làm)
+
+> Contract đầy đủ: `API_DOCUMENTATION.md` mục 8. Đã áp migration `Admin_Audit_HeadOperator` lên Neon.
+
+### 9.1. ⚪ Quyền xem đội xe: FE hiện tại không phải sửa, chỉ cần biết
+- `GET /api/rescue-units` (cùng `/{id}` và `/station/{id}`) giờ **bắt buộc đăng nhập**. Danh sách toàn bộ xe chỉ Admin và Operator xem được. RescueStaff chỉ xem được xe trạm mình, trạm khác trả 403.
+- `GET /api/stations` bắt buộc đăng nhập. Ai không quản lý trạm đó sẽ nhận `rescueUnits: []` và `staffMembers: []`.
+- Đã rà code Web: chỉ `DispatchContext` / `liveMapService` (nằm dưới `OperatorLayout`) và trang Admin gọi các API này, nên **không bị ảnh hưởng**. Mobile không gọi các API này.
+- Nếu sau này màn hình Citizen cần bản đồ trạm, hãy gọi `GET /api/stations` **kèm token**. Citizen chỉ xem xe của sự cố mình qua `tracking/incident/{id}`.
+
+### 9.2. 🔴 Form quy tắc leo thang: bỏ 2 trường đã không còn tác dụng
+- **Vị trí:** `components/admin/escalation/EscalationRuleFormDrawer.tsx:33-46, 107-115`.
+- **Lý do:** backend đã bỏ `timeoutMinutes` và `expandRadiusPercent` khỏi quy tắc. Ngưỡng thời gian và bán kính giờ chỉnh **chung** ở trang Cài đặt (`PUT /api/settings/escalation`). Trước đây FE sửa 2 trường này nhưng backend không dùng.
+- **Cần sửa:**
+  - Xóa 2 input đó. Form chỉ còn `minSeverityLevel` (1–3), `notifyRoles` (checkbox Admin / Operator / RescueStaff, gửi dạng chuỗi JSON `["Admin","Operator"]`), `isActive`, `description`.
+  - Hiện dòng chỉ đọc lấy từ response: "Đang áp dụng: ngày `effectiveDayThresholdMinutes` phút · đêm `effectiveNightThresholdMinutes` phút (`effectiveNightStart`–`effectiveNightEnd`) · bán kính ×`effectiveRadiusMultiplier`", kèm link sang trang Cài đặt leo thang.
+  - `notifyRoles` có giá trị khác 3 role trên thì backend trả 400 kèm `message`.
+
+### 9.3. 🟡 Operator phụ trách trạm: form trạm Admin
+- `POST/PUT /api/stations` thêm `headOperatorId` (có thể null). Danh sách để chọn lấy từ `GET /api/users?role=Operator&status=Active`.
+- Response có thêm `headOperatorId`, `headOperatorName`, `headOperatorPhone`. Hiện ở bảng trạm và chi tiết trạm.
+- Chọn tài khoản không phải Operator, hoặc tài khoản đang bị khóa, thì backend trả 400 kèm `message`.
+- Comment ở `types/stationTeam.ts:2` (Operator phụ trách trạm quản lý tổ của trạm mình) mới chỉ là **hiển thị**. Backend chưa giới hạn Operator theo trạm: mọi Operator vẫn quản lý được mọi trạm.
+
+### 9.4. 🔴 Nhật ký quản trị: thay mock bằng API thật
+- **Vị trí:** `services/admin/adminSettingsService.ts:87`, `services/admin/blockedNumberService.ts:94, 128` đang gọi `auditTrailService.record(...)` (mock lưu ở client).
+- **Cần sửa:** **bỏ toàn bộ `auditTrailService.record`**, vì backend tự ghi khi thao tác thành công. Trang Nhật ký đọc từ:
+  ```http
+  GET /api/audit-trail/system?entityType=&entityId=&actorId=&action=&from=&to=&pageIndex=1&pageSize=20
+  ```
+  Item: `{ id, actorName, actorRole, action, entityType, entityId, entityName, description, oldValueJson, newValueJson, ipAddress, timestamp }`.
+  `oldValueJson` / `newValueJson` là chuỗi JSON, nên `JSON.parse` rồi hiển thị so sánh trước/sau trong `AuditDetailDrawer.tsx`.
+- `entityType`: `Station`, `RescueUnit`, `User`, `StationTeam`, `Settings`, `EscalationRule`, `BlockedNumber`, `Report`.
+- `action`: `Created`, `Updated`, `Deleted`, `StatusChanged`, `Locked`, `Unlocked`, `StationAssigned`, `SettingsUpdated`, `Unblocked`, `BlockExtended`, `Exported`.
+- Nhật ký thao tác trên sự cố vẫn là `GET /api/audit-trail` (mục 7.3). Trang Admin có thể làm 2 tab: "Sự cố" và "Quản trị".
+
+### 9.5. 🔴 Khóa tài khoản có hiệu lực ngay: Web và Mobile phải xử lý đăng xuất
+Backend từ chối token (401) ngay khi tài khoản bị **khóa / xóa / đổi role / đổi trạm**:
+
+1. **Interceptor 401** (`services/apiClient.ts:42`; mobile tương tự):
+   - Logic refresh hiện tại đã đúng: đổi role hoặc trạm thì refresh thành công và có token mới; khóa tài khoản thì refresh thất bại và gọi `handleAuthFailure()`.
+   - **Cần thêm:** đọc header `X-Auth-Error` (dùng `decodeURIComponent`) để hiện đúng lý do, ví dụ "Tài khoản đã bị khóa.", thay vì thông báo chung.
+   - Sửa luôn `getApiErrorMessage`, hiện đang coi mọi 401 là "sai mật khẩu" (đã ghi ở mục 6).
+2. **SignalR:** lắng nghe sự kiện **`ForceLogout`** `{ reason }` trên `/hubs/incidents`. Khi nhận được thì hiện `reason`, xóa token, `connection.stop()` và chuyển về trang đăng nhập. Kết nối cũ gọi hub sẽ bị từ chối và bị đóng.
+3. Sau khi refresh vì **đổi trạm**: Staff phải tải lại `GET /api/users/my-team` (trạm, tổ, xe mới).
+
+### 9.6. 🟡 Trang Báo cáo / Lịch sử sự cố (Admin): trang mới
+| Thao tác | API |
+|---|---|
+| Bảng lịch sử (phân trang) | `GET /api/reports/incidents` |
+| Thẻ số liệu tổng hợp | `GET /api/reports/incidents/summary` |
+| Nút "Xuất CSV" / "Xuất PDF" | `GET /api/reports/incidents/export?format=Csv` hoặc `format=Pdf` |
+
+- Bộ lọc dùng chung cho cả 3 API: `from`, `to` (UTC, theo **thời điểm báo cáo**), `stationId`, `status` = `All|Completed|Cancelled`, `severity`, `search`.
+- Tải file **phải gửi token**, nên không dùng `<a href>`:
+  ```ts
+  const res = await apiClient.get('/reports/incidents/export', { params: { ...filters, format: 'Pdf' }, responseType: 'blob' });
+  const name = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(res.headers['content-disposition'] ?? '')?.[1] ?? 'bao-cao.pdf';
+  const url = URL.createObjectURL(res.data); const a = document.createElement('a'); a.href = url; a.download = decodeURIComponent(name); a.click(); URL.revokeObjectURL(url);
+  ```
+- Mỗi lần xuất tối đa 5000 dòng. PDF có ghi chú nếu kết quả bị cắt bớt.
+- Chỉ Admin dùng được; Operator gọi sẽ nhận 403.
+
+
+---
+
+## 10. Cập nhật 22/10/2026: mỗi Operator phụ trách 1 trạm, khu vực phục vụ, realtime theo trạm, chỉ đường đường bộ
+
+> Contract đầy đủ: `API_DOCUMENTATION.md` mục 9. Đã áp migration `Station_Scoped_Operations`.
+> Dữ liệu hiện tại: Operator `trungtin605@gmail.com` có `stationId` = FPT Station nhưng trạm này chưa có Operator phụ trách trạm. Admin nên vào form trạm FPT để gán.
+
+### 10.1. 🔴 Web Operator: hàng đợi và thao tác theo trạm
+- `GET /api/incidents/queue` và `GET /api/incidents` giờ **chỉ trả sự cố của trạm mình**. FE không cần lọc thêm.
+- Thao tác trên sự cố của trạm khác trả **403** kèm `message` "Sự cố này thuộc trạm khác phụ trách." → hiện toast bằng `message` này.
+- Operator chưa được gán trạm thì nhận 403 "Bạn chưa được Admin phân công trạm phụ trách." → hiện màn hình trống kèm hướng dẫn liên hệ Admin.
+- Hiện `responsibleStationName` trên thẻ sự cố và trong chi tiết sự cố.
+- **Nút "Chuyển trạm"** trong `IncidentDetailDrawer`:
+  - Gọi `POST /api/incidents/{id}/transfer` với body `{ stationId, reason }` (lý do ≥ 5 ký tự).
+  - Danh sách trạm lấy từ `GET /api/stations?activeOnly=true`, bỏ trạm hiện tại.
+- **Gợi ý xe:**
+  - Badge **"Xe hỗ trợ"** khi `isSupportUnit = true` (xe của trạm khác).
+  - Hiện `roadDistanceKm` (km đường bộ) thay cho `distanceKm` (chim bay).
+  - `isApproximate = true` → thêm chữ "ước lượng".
+
+### 10.2. 🔴 Realtime: thêm listener, giảm polling
+Đăng ký trong `services/realtime/incidentHubService.ts`:
+
+| Sự kiện | Việc FE làm |
+|---|---|
+| `ReceiveOutOfAreaAlert` `{ incidentId, incidentTitle, locationAddress, distanceOutsideAreaKm, serviceAreaName, responsibleStationName }` | Còi + banner đỏ "SOS ngoài khu vực phục vụ" |
+| `ReceiveSupportDispatched` (DispatchAssignmentResponseDto) | Toast "Xe {plate} của trạm bạn được điều hỗ trợ sự cố {incidentTitle}" |
+| `ReceiveIncidentTransferred` `{ incidentId, fromStationId, toStationId, toStationName, reason, transferredByName }` | Trạm cũ: bỏ sự cố khỏi hàng đợi. Trạm mới: tự nhận thêm `ReceiveNewIncident` |
+| `ReceiveRescueUnitStatus` `{ rescueUnitId, plateNumber, stationId, status, previousStatus, coolDownUntil, reason }` | Cập nhật marker / bảng xe tại chỗ. Có thể **giảm `POLL_MS` (`DispatchContext.tsx`, hiện 20s)** xuống 60s, chỉ để dự phòng |
+| `ReceiveEscalationAlert` có thêm `tier` (1 / 2) và `responsibleStationId` | `tier = 2` → còi to hơn, nội dung "Cần trạm khác hỗ trợ" |
+
+`ReceiveJobAssigned` giờ **chỉ gửi tới staff trạm có xe**: Web Staff và Mobile không cần tự lọc nữa.
+
+### 10.3. 🟡 Live map: vẽ đúng đường bộ
+- `routeTrajectory` giờ là tuyến đường bộ thật từ OSRM (hàng trăm điểm). Backend **đã bỏ đường cong giả**.
+- Khi `units[].isApproximateRoute = true` (máy chủ chỉ đường lỗi) thì chỉ có 2 điểm → **vẽ nét đứt** kèm chú thích "Tuyến ước lượng".
+  - Web: `hooks/useDispatchRoutes.ts:52-58`, thêm `dashArray`.
+  - Mobile: dùng `lineDashPattern` của Polyline.
+- `estimatedArrivalMinutes` / `distanceKm` đã theo đường bộ, FE không cần tính lại.
+- `REFRESH_MS = 30000` ở `useDispatchRoutes.ts` vẫn hợp lý. Vị trí xe vẫn cập nhật realtime qua `ReceiveRescueUnitLocation` (`/hubs/tracking`).
+
+### 10.4. 🔴 Staff (Web `StaffPage` + Mobile): Operator của mình và live map nhiệm vụ
+- `GET /api/users/my-team` → hiện thẻ **"Điều phối viên phụ trách"** từ `stationOperator { fullName, phoneNumber, avatarUrl }`, kèm nút gọi.
+- **Live map nhiệm vụ:**
+  - Khi có nhiệm vụ đang hoạt động (từ `my-assignments`), mở màn hình bản đồ gọi `GET /api/dispatch/tracking/incident/{incidentId}` (cùng API của Citizen).
+  - Vẽ vị trí sự cố, tuyến đường của xe mình (`units[]` theo `rescueUnitId`) và các xe khác cùng sự cố.
+  - Gọi `SubscribeIncident(incidentId)` trên `/hubs/tracking` để nhận vị trí xe realtime.
+- Staff gọi chi tiết hoặc tracking khi **không** được phân công (hoặc đã xong quá 30 phút) sẽ nhận **403**. Khi đó ẩn nút "Xem bản đồ".
+- Sau khi Admin/Operator **chuyển trạm** cho staff, token cũ bị 401 → interceptor tự refresh → **tải lại `my-team`** (mục 9.5).
+
+### 10.5. 🟡 Admin: khu vực phục vụ và Operator phụ trách trạm
+- **Trang Cài đặt → "Khu vực phục vụ":**
+  - Bản đồ chọn tâm, slider bán kính 1–100 km, ô tên khu vực, công tắc bật/tắt.
+  - Lưu bằng `PUT /api/settings/service-area`; đọc bằng `GET /api/settings/service-area`.
+  - Vẽ vòng tròn khu vực lên live map của Operator / Admin.
+- **Form trạm:** ô chọn Operator phụ trách trạm (mục 9.3).
+  - Chỉ liệt kê Operator **chưa phụ trách trạm nào** (`GET /api/users?role=Operator`, lọc `stationId == null` hoặc Operator đang là trưởng chính trạm này).
+  - Backend trả 400 nếu chọn Operator đang phụ trách trạm khác.
+- **Form tạo/sửa tài khoản** khi người dùng là **Operator:**
+  - Ẩn ô chọn trạm, vì backend tự gán trạm của Operator.
+  - Ẩn role khác ngoài `RescueStaff`.
+
+### 10.6. 🟡 Citizen (Web + Mobile): cảnh báo ngoài khu vực
+- Trước khi gửi SOS, gọi `GET /api/settings/service-area` (công khai, gọi được khi chưa đăng nhập).
+- Nếu `enabled` và vị trí GPS cách tâm quá `radiusKm`:
+  - Hiện cảnh báo "Vị trí của bạn nằm ngoài khu vực {name}. Yêu cầu vẫn được gửi, nhưng thời gian hỗ trợ có thể lâu hơn. Nếu nguy cấp hãy gọi 114 / 115."
+  - **Không chặn** nút gửi.
+- Response SOS có `isOutOfServiceArea`, `distanceOutsideAreaKm` → hiển thị lại trong màn hình theo dõi.
+
+
+---
+
+## 11. Trả lời "Backend Tasks — Gap Analysis" (23/10/2026)
+
+> Contract chi tiết: `API_DOCUMENTATION.md` mục 10. Đã áp migration `Incident_Cancellation_EventType`.
+
+### 11.1. Bảng trả lời 21 task
+
+| ID | Kết quả | FE cần làm |
+|---|---|---|
+| DB-01 | ✅ **Đã sửa**: Admin đổi trạm xe thì tọa độ = trạm mới. Migration đã đưa xe rảnh về đúng trạm | Không |
+| DB-02 | ⚠️ Backend xử lý | **Không chạy SQL trong tài liệu FE** (xem 11.3) |
+| API-01 | ✅ **Đã sửa** | Gửi `reasonCode` khi Operator hủy; hiển thị `cancellationReason`, `cancelledByName`, `cancellationNote` |
+| API-02 | ✅ **Đã sửa**: `?statuses=Verified,Dispatched,InProgress,Escalated&pageSize=200` | **Thay 4 request song song trong `incidentService.getDispatchBoard()` bằng 1 request** |
+| API-03 | ✅ **Đã sửa**: trường `confirmedEventType` | Xem 11.2 |
+| API-04 | Đã có từ trước | Gửi `allowExtraUnits: true` + `notes ≥ 5` cho Cấp 1–2. Cấp 3 tối đa 5 xe |
+| API-05 | ✅ **Đã thêm** `GET /api/dispatch/assignments/active` | Thay vòng gọi `assignments/incident/{id}` |
+| API-06 | Đã có | Trạng thái xe sau nghiệm thu tên là **`CoolDown`** (không có `Recovering`). `evidenceMediaUrls` ≥ 1, `victimsAssistedCount` bắt buộc |
+| API-07 | Đã có | Không |
+| API-08 | ✅ **Đã thêm** `stationId`, `status` | Tùy chọn |
+| API-09 | Đã có: `stationId = null` thì tự rời tổ | Không |
+| RT-01 | Đã có (22/10) | Tên đúng là **`ReceiveRescueUnitStatus`** (không phải `ReceiveRescueUnitStatusUpdate`). Xem mục 10.2 |
+| RT-02 | ✅ **Đã thêm** `ReceiveIncidentLock` | Cập nhật badge khóa ngay; vẫn gia hạn lock mỗi 60s (khóa 2 phút) |
+| RT-03 | Payload là `TrafficHotspotResponseDto` (`liveMapService.ts`) | Gõ kiểu cho listener |
+| BIZ-01 | ✅ **Đã bổ sung**: audit `DeEscalated` + đóng log leo thang | Không |
+| BIZ-02 | ✅ **Đã thêm** worker 24h (chỉ sự cố **chưa xác minh**) | Hiển thị `AutoExpired` = "Tự hủy do quá hạn" |
+| BIZ-03 | ✅ **Đã sửa**: ca `Unclassified` bắt buộc `operatorNotes ≥ 5` | Bắt buộc ô lý do khi duyệt ca chưa phân loại |
+| BIZ-04 | Đã có. Không có trạng thái `OnMission`: xe đang làm nhiệm vụ là `Dispatched` / `OnScene` / `Returning` | Ẩn tùy chọn bảo trì khi xe ở 3 trạng thái này |
+| BIZ-05 | Đã có (audit `PhoneRevealed`) | Không |
+| RQ-01 | ✅ **Đã thêm** `GET /api/benchmark/incidents?format=Csv` | Nút "Tải dữ liệu thực nghiệm" ở trang nghiên cứu |
+| RQ-02 | Đã có (`DispatchAssignment.dispatchAlgorithm`) | Luôn gửi `algorithm` khi `assign` |
+
+### 11.2. 🔴 Sửa body `verify` (tài liệu FE ghi sai tên trường)
+| FE đang ghi | Đúng |
+|---|---|
+| `overrideSeverity` | `confirmedSeverity` (`Level1` / `Level2` / `Level3`) |
+| `reason` | `operatorNotes` |
+| `overrideEventType: "Fire"` | `confirmedEventType: "FireExplosion"` hoặc `"TrafficAccident"` |
+| `confirmedTags` | Không có trường này |
+
+- Khi `incident.eventType === "None"`: **bắt buộc chọn** Cháy nổ / Tai nạn.
+- Khi `severity === "Unclassified"` hoặc đổi mức độ so với AI: **bắt buộc** `operatorNotes ≥ 5` ký tự.
+
+### 11.3. ⚠️ Không chạy các câu SQL trong tài liệu FE
+- **DB-01:** dùng cột `HasLiveGps` và API `PUT /rescue-units/{id}/station`, cả hai **không tồn tại**. Backend đã sửa bằng migration.
+- **DB-02:** `Status` lưu dạng **số**, nên `'Dispatched'` không khớp. `InProgress` không phải trạng thái phân công. Nếu chỉ đổi phân công thành `Cancelled` thì xe vẫn kẹt `Dispatched` và sự cố không đóng. Cách đúng: hủy **sự cố** qua `PUT /api/incidents/{id}/cancel` (Admin). Backend sẽ tự thu hồi xe, ghi audit và phát realtime.
+
+### 11.4. Dữ liệu hiện tại (23/10)
+- Chỉ còn 1 trạm (FPT Station). Tài khoản `operator@emergencydispatch.com` vẫn trỏ tới trạm Q1 đã xóa nên không thấy sự cố nào. Admin cần gán lại.
+- Lượt đang chạy: xe **51A-115.01** → "Emergency SOS Alarm" (`Accepted`, từ 22/10 20:27).

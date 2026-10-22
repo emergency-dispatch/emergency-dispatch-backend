@@ -19,6 +19,8 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
                 .ThenInclude(u => u!.IceContacts)
             .Include(i => i.VerifiedByUser)
             .Include(i => i.LockedByOperator)
+            .Include(i => i.CancelledByUser)
+            .Include(i => i.ResponsibleStation)
             .Include(i => i.MediaItems)
             .Include(i => i.AiClassification)
             .Include(i => i.DispatchAssignments)
@@ -34,17 +36,29 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         DateTime? toDate,
         int pageIndex,
         int pageSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Guid? responsibleStationId = null,
+        IReadOnlyCollection<IncidentStatus>? statuses = null)
     {
         var query = _context.Incidents
             .Include(i => i.ReportedByUser)
                 .ThenInclude(u => u!.IceContacts)
             .Include(i => i.VerifiedByUser)
+            .Include(i => i.ResponsibleStation)
             .Include(i => i.MediaItems)
             .Include(i => i.AiClassification)
             .AsNoTracking();
 
-        if (status.HasValue)
+        if (responsibleStationId.HasValue)
+        {
+            query = query.Where(i => i.ResponsibleStationId == null || i.ResponsibleStationId == responsibleStationId.Value);
+        }
+
+        if (statuses is { Count: > 0 })
+        {
+            query = query.Where(i => statuses.Contains(i.Status));
+        }
+        else if (status.HasValue)
         {
             query = query.Where(i => i.Status == status.Value);
         }
@@ -83,15 +97,17 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         return (items, totalCount);
     }
 
-    public async Task<List<Incident>> GetPendingQueueAsync(CancellationToken cancellationToken = default)
+    public async Task<List<Incident>> GetPendingQueueAsync(CancellationToken cancellationToken = default, Guid? responsibleStationId = null)
     {
         // Hàng đợi sự cố chưa được Operator xác minh (kể cả đang chờ AI hoặc đã bị leo thang trước khi duyệt)
         // FR-OP-02: Level 0 (Reject / AI lỗi) và Level 3 cùng nhóm ưu tiên cao nhất theo FIFO → Level 2 → Level 1
         return await _context.Incidents
             .Include(i => i.ReportedByUser)
             .Include(i => i.LockedByOperator)
+            .Include(i => i.ResponsibleStation)
             .Include(i => i.MediaItems)
             .Include(i => i.AiClassification)
+            .Where(i => !responsibleStationId.HasValue || i.ResponsibleStationId == null || i.ResponsibleStationId == responsibleStationId.Value)
             .Where(i => i.Status == IncidentStatus.Pending
                         || i.Status == IncidentStatus.AiProcessing
                         || i.Status == IncidentStatus.AiProcessed
@@ -100,6 +116,18 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
                         : i.Severity == SeverityLevel.Level2 ? 1
                         : 2)
             .ThenBy(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<Guid>> GetStaleUnverifiedIdsAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default)
+    {
+        return await _context.Incidents
+            .Where(i => (i.Status == IncidentStatus.Pending
+                         || i.Status == IncidentStatus.AiProcessing
+                         || i.Status == IncidentStatus.AiProcessed)
+                        && i.VerifiedAt == null
+                        && i.CreatedAt < cutoffUtc)
+            .Select(i => i.Id)
             .ToListAsync(cancellationToken);
     }
 
@@ -233,6 +261,7 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         var query = _context.Incidents
             .AsNoTracking()
             .Include(i => i.AiClassification)
+            .Include(i => i.ResponsibleStation)
             .Include(i => i.DispatchAssignments)
             .AsQueryable();
 
@@ -240,5 +269,56 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         if (to.HasValue) query = query.Where(i => i.CreatedAt <= to.Value);
 
         return await query.AsSplitQuery().ToListAsync(cancellationToken);
+    }
+
+    public async Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetClosedHistoryAsync(
+        IReadOnlyCollection<IncidentStatus> statuses,
+        DateTime? from,
+        DateTime? to,
+        Guid? stationId,
+        SeverityLevel? severity,
+        string? search,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Incidents
+            .AsNoTracking()
+            .Where(i => statuses.Contains(i.Status));
+
+        if (from.HasValue) query = query.Where(i => i.CreatedAt >= from.Value);
+        if (to.HasValue) query = query.Where(i => i.CreatedAt <= to.Value);
+        if (severity.HasValue) query = query.Where(i => i.Severity == severity.Value);
+        if (stationId.HasValue)
+        {
+            // Trạm có ít nhất một xe tham gia (không tính lượt bị từ chối)
+            query = query.Where(i => i.DispatchAssignments.Any(a =>
+                a.Status != DispatchAssignmentStatus.Rejected && a.RescueUnit != null && a.RescueUnit.StationId == stationId.Value));
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search.Trim()}%";
+            query = query.Where(i => EF.Functions.ILike(i.Title, pattern) || EF.Functions.ILike(i.LocationAddress, pattern));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+
+        var ordered = query
+            .Include(i => i.VerifiedByUser)
+            .Include(i => i.ClosedByUser)
+            .Include(i => i.AiClassification)
+            .Include(i => i.DispatchAssignments)
+                .ThenInclude(a => a.RescueUnit)
+                    .ThenInclude(r => r!.Station)
+            .OrderByDescending(i => i.CreatedAt)
+            .AsQueryable();
+
+        if (pageSize > 0)
+        {
+            ordered = ordered.Skip((Math.Max(1, pageIndex) - 1) * pageSize).Take(pageSize);
+        }
+
+        var items = await ordered.AsSplitQuery().ToListAsync(cancellationToken);
+        return (items, total);
     }
 }

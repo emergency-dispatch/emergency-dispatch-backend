@@ -45,6 +45,7 @@ public class ApplicationDbContext : DbContext
     // 8. Security
     public DbSet<BlockedPhoneNumber> BlockedPhoneNumbers => Set<BlockedPhoneNumber>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<SystemAuditLog> SystemAuditLogs => Set<SystemAuditLog>();
     public DbSet<StationTeam> StationTeams => Set<StationTeam>();
     public DbSet<StationTeamMember> StationTeamMembers => Set<StationTeamMember>();
 
@@ -141,6 +142,18 @@ public class ApplicationDbContext : DbContext
             entity.Property(s => s.Email).HasMaxLength(255);
             entity.Property(s => s.OperatingHours).HasMaxLength(100);
 
+            // Operator phụ trách trạm (các Operator ngang cấp, mỗi người 1 trạm); xóa tài khoản thì trạm chỉ mất người phụ trách
+            entity.HasOne(s => s.HeadOperator)
+                  .WithMany()
+                  .HasForeignKey(s => s.HeadOperatorId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            // Mỗi Operator chỉ phụ trách 1 trạm
+            entity.HasIndex(s => s.HeadOperatorId)
+                  .IsUnique()
+                  .HasFilter("\"HeadOperatorId\" IS NOT NULL AND \"IsDeleted\" = false")
+                  .HasDatabaseName("UQ_Stations_HeadOperator");
+
             entity.HasQueryFilter(s => !s.IsDeleted);
         });
 
@@ -201,6 +214,20 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(i => i.LockedByOperatorId)
                   .OnDelete(DeleteBehavior.SetNull);
+
+            // Người hủy sự cố (tách khỏi VerifiedBy để không làm sai số liệu RQ3)
+            entity.HasOne(i => i.CancelledByUser)
+                  .WithMany()
+                  .HasForeignKey(i => i.CancelledByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.Property(i => i.CancellationNote).HasMaxLength(500);
+
+            // Trạm phụ trách (phân hàng đợi theo trạm)
+            entity.HasOne(i => i.ResponsibleStation)
+                  .WithMany()
+                  .HasForeignKey(i => i.ResponsibleStationId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(i => new { i.ResponsibleStationId, i.Status }).HasDatabaseName("IX_Incidents_ResponsibleStation_Status");
 
             // Tự tham chiếu DuplicateOfIncident
             entity.HasOne(i => i.DuplicateOfIncident)
@@ -572,6 +599,26 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasQueryFilter(s => !s.IsDeleted);
+        });
+
+        // ==================== 25. SYSTEM AUDIT LOG (BR-AD-06) ====================
+        modelBuilder.Entity<SystemAuditLog>(entity =>
+        {
+            entity.HasKey(l => l.Id);
+            entity.HasIndex(l => l.Timestamp).HasDatabaseName("IX_SystemAuditLogs_Timestamp");
+            entity.HasIndex(l => new { l.EntityType, l.EntityId }).HasDatabaseName("IX_SystemAuditLogs_Entity");
+            entity.HasIndex(l => l.ActorId).HasDatabaseName("IX_SystemAuditLogs_Actor");
+
+            entity.Property(l => l.ActorName).HasMaxLength(200);
+            entity.Property(l => l.ActorRole).HasMaxLength(50);
+            entity.Property(l => l.EntityType).HasMaxLength(50).IsRequired();
+            entity.Property(l => l.EntityName).HasMaxLength(300);
+            entity.Property(l => l.Description).HasMaxLength(1000).IsRequired();
+            entity.Property(l => l.IpAddress).HasMaxLength(64);
+            entity.Property(l => l.Action).HasConversion<string>().HasMaxLength(50);
+
+            // Không dùng FK tới Users để nhật ký vẫn còn khi tài khoản bị xóa
+            entity.HasQueryFilter(l => !l.IsDeleted);
         });
 
         // BaseEntity tự gán Id = Guid.NewGuid() ở client. Nếu để EF coi khóa là "tự sinh",
