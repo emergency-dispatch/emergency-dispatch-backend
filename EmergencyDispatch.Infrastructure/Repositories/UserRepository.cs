@@ -16,7 +16,6 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     {
         return await _dbSet
             .Include(u => u.Station)
-            .Include(u => u.IceContacts)
             .Include(u => u.TeamMembership)
                 .ThenInclude(m => m!.Team)
                     .ThenInclude(t => t!.RescueUnit)

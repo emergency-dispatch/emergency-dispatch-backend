@@ -22,7 +22,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<DispatchAssignment> DispatchAssignments => Set<DispatchAssignment>();
     public DbSet<IncidentMedia> IncidentMedias => Set<IncidentMedia>();
     public DbSet<AiClassification> AiClassifications => Set<AiClassification>();
-    public DbSet<IceContact> IceContacts => Set<IceContact>();
 
     // 4. Dispatch & Completion
     public DbSet<CompletionReport> CompletionReports => Set<CompletionReport>();
@@ -75,7 +74,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(u => u.MobilityLimitations).HasDefaultValueSql("'{}'");
             entity.Property(u => u.PreferredLanguage).HasMaxLength(50);
             entity.Property(u => u.DependentsNote).HasMaxLength(1000);
-            entity.Property(u => u.SmsTemplate).HasMaxLength(500);
             entity.Property(u => u.EmergencyContactName).HasMaxLength(200);
             entity.Property(u => u.EmergencyContactPhone).HasMaxLength(20);
             entity.Property(u => u.EmergencyContactRelationship).HasMaxLength(50);
@@ -92,22 +90,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(u => u.LockReason).HasMaxLength(500);
 
             entity.HasQueryFilter(u => !u.IsDeleted);
-        });
-
-        // 1b. Cấu hình bảng IceContact (Người thân khẩn cấp)
-        modelBuilder.Entity<IceContact>(entity =>
-        {
-            entity.HasKey(c => c.Id);
-            entity.Property(c => c.Name).HasMaxLength(100).IsRequired();
-            entity.Property(c => c.PhoneNumber).HasMaxLength(20).IsRequired();
-            entity.Property(c => c.Relationship).HasMaxLength(50).IsRequired();
-
-            entity.HasOne(c => c.User)
-                  .WithMany(u => u.IceContacts)
-                  .HasForeignKey(c => c.UserId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasQueryFilter(c => !c.IsDeleted);
         });
 
         // ==================== 2. REFRESH TOKEN ====================

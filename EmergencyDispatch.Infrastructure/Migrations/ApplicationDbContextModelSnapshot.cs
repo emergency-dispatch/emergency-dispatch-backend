@@ -26,7 +26,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AiClassification", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<double?>("ConfidenceScore")
@@ -91,7 +90,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AssignmentStatusHistory", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("AssignmentId")
@@ -138,7 +136,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.BlockedPhoneNumber", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("BlockedAt")
@@ -205,7 +202,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CitizenFeedback", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("CitizenUserId")
@@ -244,7 +240,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReport", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<string>("ActionsSummary")
@@ -310,7 +305,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReportMedia", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("CompletionReportId")
@@ -351,7 +345,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.DispatchAssignment", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime?>("AcceptedAt")
@@ -430,7 +423,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.EscalationLog", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<string>("ActionTaken")
@@ -486,7 +478,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.EscalationRule", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -531,53 +522,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IceContact", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsPrimary")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("PhoneNumber")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Relationship")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("IceContacts");
-                });
-
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Incident", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<int?>("CancellationReason")
@@ -711,7 +658,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentAuditTrail", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<int>("Action")
@@ -779,7 +725,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentMedia", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -824,7 +769,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentStatusHistory", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("ChangedAt")
@@ -874,7 +818,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -939,7 +882,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -986,7 +928,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.RescueUnit", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime?>("CoolDownUntil")
@@ -1037,7 +978,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Station", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<string>("Address")
@@ -1100,7 +1040,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeam", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1141,7 +1080,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeamMember", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1177,7 +1115,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.SystemSetting", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1215,7 +1152,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.TrafficHotspot", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<int>("CongestionLevel")
@@ -1294,7 +1230,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<string>("Address")
@@ -1306,9 +1241,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("text[]")
                         .HasDefaultValueSql("'{}'");
-
-                    b.Property<bool>("AutoSendSmsOnSos")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("AvatarUrl")
                         .HasMaxLength(500)
@@ -1438,10 +1370,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Property<int>("Role")
                         .HasColumnType("integer");
-
-                    b.Property<string>("SmsTemplate")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
 
                     b.Property<Guid?>("StationId")
                         .HasColumnType("uuid");
@@ -1614,17 +1542,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("EscalationRule");
 
                     b.Navigation("Incident");
-                });
-
-            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IceContact", b =>
-                {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "User")
-                        .WithMany("IceContacts")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Incident", b =>
@@ -1873,8 +1790,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>
                 {
                     b.Navigation("CitizenFeedbacks");
-
-                    b.Navigation("IceContacts");
 
                     b.Navigation("Notifications");
 

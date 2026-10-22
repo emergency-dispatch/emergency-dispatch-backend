@@ -133,7 +133,6 @@ builder.Services.AddScoped<IStationRepository, StationRepository>();
 builder.Services.AddScoped<IRescueUnitRepository, RescueUnitRepository>();
 builder.Services.AddScoped<IDispatchAssignmentRepository, DispatchAssignmentRepository>();
 builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
-builder.Services.AddScoped<IIceContactRepository, IceContactRepository>();
 builder.Services.AddScoped<ITrafficHotspotRepository, TrafficHotspotRepository>();
 builder.Services.AddScoped<IEscalationRepository, EscalationRepository>();
 builder.Services.AddScoped<IBlockedPhoneRepository, BlockedPhoneRepository>();

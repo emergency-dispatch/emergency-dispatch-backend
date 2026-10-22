@@ -16,7 +16,6 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
     {
         return await _context.Incidents
             .Include(i => i.ReportedByUser)
-                .ThenInclude(u => u!.IceContacts)
             .Include(i => i.VerifiedByUser)
             .Include(i => i.LockedByOperator)
             .Include(i => i.MediaItems)
@@ -38,7 +37,6 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
     {
         var query = _context.Incidents
             .Include(i => i.ReportedByUser)
-                .ThenInclude(u => u!.IceContacts)
             .Include(i => i.VerifiedByUser)
             .Include(i => i.MediaItems)
             .Include(i => i.AiClassification)

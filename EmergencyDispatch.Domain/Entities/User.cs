@@ -37,10 +37,6 @@ public class User : BaseEntity
     public string? DependentsNote { get; set; }
     public int? HouseholdMembersCount { get; set; }
 
-    // Cấu hình gửi SMS khẩn cấp
-    public bool AutoSendSmsOnSos { get; set; } = false;
-    public string? SmsTemplate { get; set; }
-
     // Người liên hệ khẩn cấp chính (Backward compatibility)
     public string? EmergencyContactName { get; set; }
     public string? EmergencyContactPhone { get; set; }
@@ -74,7 +70,6 @@ public class User : BaseEntity
     /// </summary>
     public StationTeamMember? TeamMembership { get; set; }
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
-    public ICollection<IceContact> IceContacts { get; set; } = new List<IceContact>();
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
     public ICollection<CitizenFeedback> CitizenFeedbacks { get; set; } = new List<CitizenFeedback>();
     public ICollection<TrafficHotspot> TrafficHotspots { get; set; } = new List<TrafficHotspot>();

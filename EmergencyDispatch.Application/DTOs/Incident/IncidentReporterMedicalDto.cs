@@ -1,9 +1,7 @@
-using EmergencyDispatch.Application.DTOs.User;
-
 namespace EmergencyDispatch.Application.DTOs.Incident;
 
 /// <summary>
-/// DTO chứa thông tin y tế khẩn cấp, đặc thù căn hộ và danh bạ người thân ICE của người báo cáo
+/// DTO chứa thông tin y tế khẩn cấp, đặc thù căn hộ và người liên hệ khẩn cấp của người báo cáo
 /// Phục vụ kíp cấp cứu 115 và lực lượng cứu hộ 114 tiếp cận hiện trường
 /// </summary>
 public class IncidentReporterMedicalDto
@@ -25,6 +23,8 @@ public class IncidentReporterMedicalDto
     public string? DependentsNote { get; set; }
     public int HouseholdMembersCount { get; set; }
 
-    // Danh bạ người thân khẩn cấp ICE
-    public List<IceContactDto> IceContacts { get; set; } = new();
+    // Một người liên hệ khẩn cấp từ hồ sơ cá nhân
+    public string? EmergencyContactName { get; set; }
+    public string? EmergencyContactPhone { get; set; }
+    public string? EmergencyContactRelationship { get; set; }
 }
