@@ -131,5 +131,7 @@ public enum AuditAction
     Closed = 12,
     ReDispatched = 13,
     PhoneRevealed = 14,
-    ReporterBlocked = 15
+    ReporterBlocked = 15,
+    TransferredStation = 16,
+    OutOfServiceArea = 17
 }

@@ -21,4 +21,5 @@ public class SettingsDefaultsDto
 {
     public EscalationSettingsDto Escalation { get; set; } = new();
     public DispatchSettingsDto Dispatch { get; set; } = new();
+    public ServiceAreaSettingsDto ServiceArea { get; set; } = new();
 }

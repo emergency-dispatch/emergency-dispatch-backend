@@ -39,6 +39,30 @@ public class IncidentResponseDto
     public string? LockedByOperatorName { get; set; }
     public DateTime? LockExpiresAt { get; set; }
 
+    /// <summary>
+    /// Trạm phụ trách theo vị trí (chỉ Operator trạm này và Admin xử lý); null = mọi Operator
+    /// </summary>
+    public Guid? ResponsibleStationId { get; set; }
+    public string? ResponsibleStationName { get; set; }
+
+    /// <summary>
+    /// Vị trí nằm ngoài khu vực phục vụ đã cấu hình (vẫn được tiếp nhận)
+    /// </summary>
+    public bool IsOutOfServiceArea { get; set; }
+    public double? DistanceOutsideAreaKm { get; set; }
+
+    /// <summary>
+    /// Loại sự cố đã xác nhận (AI đề xuất hoặc Operator sửa khi verify)
+    /// </summary>
+    public IncidentEventType EventType { get; set; }
+
+    // Thông tin hủy (tách khỏi VerifiedAt / OperatorNotes)
+    public CancellationReason? CancellationReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public Guid? CancelledByUserId { get; set; }
+    public string? CancelledByName { get; set; }
+    public string? CancellationNote { get; set; }
+
     public List<IncidentMediaDto> MediaItems { get; set; } = new();
     public AiClassificationResultDto? AiClassification { get; set; }
 

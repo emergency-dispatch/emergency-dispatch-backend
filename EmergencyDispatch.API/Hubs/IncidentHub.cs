@@ -67,6 +67,13 @@ internal static class HubGroupHelper
             await groups.AddToGroupAsync(context.ConnectionId, RealtimeContract.OperatorsGroup);
         }
 
+        // Operator nhận sự kiện của trạm mình phụ trách
+        if (user.IsInRole(nameof(UserRole.Operator))
+            && Guid.TryParse(user.FindFirstValue("StationId"), out var operatorStationId))
+        {
+            await groups.AddToGroupAsync(context.ConnectionId, RealtimeContract.OperatorStationGroup(operatorStationId));
+        }
+
         if (user.IsInRole(nameof(UserRole.Admin)))
         {
             await groups.AddToGroupAsync(context.ConnectionId, RealtimeContract.AdminsGroup);

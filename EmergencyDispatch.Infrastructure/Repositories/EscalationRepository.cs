@@ -80,6 +80,33 @@ public class EscalationRepository : IEscalationRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<int> ResolveOpenLogsAsync(Guid incidentId, DateTime resolvedAtUtc, CancellationToken cancellationToken = default)
+    {
+        var open = await _context.EscalationLogs
+            .Where(l => l.IncidentId == incidentId && l.ResolvedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var log in open)
+        {
+            log.ResolvedAt = resolvedAtUtc;
+            log.ResolutionTimeMs = (long)(resolvedAtUtc - log.TriggerTime).TotalMilliseconds;
+        }
+        return open.Count;
+    }
+
+    public async Task<IReadOnlyList<Incident>> GetTier2CandidatesAsync(DateTime cutoffTime, CancellationToken cancellationToken = default)
+    {
+        return await _context.Incidents
+            .Where(i => !i.IsDeleted
+                        && i.Status == IncidentStatus.Escalated
+                        && i.CreatedAt <= cutoffTime
+                        && !i.DispatchAssignments.Any(da => da.Status == DispatchAssignmentStatus.Accepted
+                                                         || da.Status == DispatchAssignmentStatus.EnRoute
+                                                         || da.Status == DispatchAssignmentStatus.OnScene
+                                                         || da.Status == DispatchAssignmentStatus.Completed)
+                        && !_context.EscalationLogs.Any(l => l.IncidentId == i.Id && l.EscalationLevel >= 2))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<bool> HasRecentEscalationLogAsync(Guid incidentId, Guid ruleId, DateTime since, CancellationToken cancellationToken = default)
     {
         return await _context.EscalationLogs

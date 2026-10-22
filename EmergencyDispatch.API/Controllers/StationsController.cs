@@ -9,6 +9,7 @@ namespace EmergencyDispatch.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class StationsController : ControllerBase
 {
     private readonly IStationService _stationService;
@@ -28,7 +29,9 @@ public class StationsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<StationResponseDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll([FromQuery] bool activeOnly = false)
     {
-        var stations = await _stationService.GetAllAsync(activeOnly);
+        var stations = (await _stationService.GetAllAsync(activeOnly))
+            .Select(s => User.CanViewStation(s.Id) ? s : WithoutFleetDetails(s))
+            .ToList();
         return Ok(ApiResponseDto<IReadOnlyList<StationResponseDto>>.Ok(stations, "Lấy danh sách trạm cứu hộ thành công."));
     }
 
@@ -43,6 +46,10 @@ public class StationsController : ControllerBase
         try
         {
             var station = await _stationService.GetByIdAsync(id);
+            if (!User.CanViewStation(id))
+            {
+                station = WithoutFleetDetails(station);
+            }
             return Ok(ApiResponseDto<StationResponseDto>.Ok(station, "Lấy thông tin trạm cứu hộ thành công."));
         }
         catch (KeyNotFoundException ex)
@@ -60,9 +67,16 @@ public class StationsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateStationDto dto)
     {
-        var created = await _stationService.CreateAsync(dto);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id },
-            ApiResponseDto<StationResponseDto>.Ok(created, "Thêm mới trạm cứu hộ thành công."));
+        try
+        {
+            var created = await _stationService.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = created.Id },
+                ApiResponseDto<StationResponseDto>.Ok(created, "Thêm mới trạm cứu hộ thành công."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
+        }
     }
 
     /// <summary>
@@ -82,6 +96,10 @@ public class StationsController : ControllerBase
         catch (KeyNotFoundException ex)
         {
             return NotFound(ApiResponseDto<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
         }
     }
 
@@ -118,6 +136,11 @@ public class StationsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetStationStaff(Guid id)
     {
+        if (!User.CanViewStation(id))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail("Bạn chỉ được xem dữ liệu của trạm mình đang công tác."));
+        }
+
         try
         {
             var station = await _stationService.GetByIdAsync(id);
@@ -136,7 +159,13 @@ public class StationsController : ControllerBase
     [Authorize(Roles = "Admin,Operator,RescueStaff")]
     [ProducesResponseType(typeof(ApiResponseDto<List<StationTeamDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTeams(Guid id, CancellationToken cancellationToken)
-        => this.ToHttpResult(await _teamService.GetTeamsAsync(id, cancellationToken));
+    {
+        if (!User.CanViewStation(id))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseDto<object>.Fail("Bạn chỉ được xem dữ liệu của trạm mình đang công tác."));
+        }
+        return this.ToHttpResult(await _teamService.GetTeamsAsync(id, cancellationToken));
+    }
 
     /// <summary>
     /// Tạo tổ làm việc: tối đa 6 người, tối đa 1 tổ trưởng (Commander), thành viên là RescueStaff của trạm, mỗi xe tối đa 1 tổ
@@ -166,4 +195,18 @@ public class StationsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteTeam(Guid id, Guid teamId, CancellationToken cancellationToken)
         => this.ToHttpResult(await _teamService.DeleteAsync(id, teamId, cancellationToken));
+
+    /// <summary>
+    /// Người không quản lý trạm (Citizen, nhân viên trạm khác) chỉ thấy thông tin công khai của trạm:
+    /// ẩn vị trí / trạng thái từng xe và danh sách nhân sự
+    /// </summary>
+    private static StationResponseDto WithoutFleetDetails(StationResponseDto s)
+    {
+        s.RescueUnits = new List<EmergencyDispatch.Application.DTOs.RescueUnit.RescueUnitResponseDto>();
+        s.StaffMembers = new List<StationStaffMemberDto>();
+        s.ActiveUnitsCount = 0;
+        s.StaffCount = 0;
+        s.HeadOperatorPhone = null;
+        return s;
+    }
 }

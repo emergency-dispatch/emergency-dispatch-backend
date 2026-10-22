@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.RescueUnit;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Entities;
@@ -11,15 +12,24 @@ public class RescueUnitService : IRescueUnitService
     private readonly IRescueUnitRepository _rescueUnitRepository;
     private readonly IStationRepository _stationRepository;
     private readonly IDispatchAssignmentRepository _assignmentRepository;
+    private readonly ISystemAuditService _auditService;
+    private readonly ICurrentUserContext _currentUser;
+    private readonly IRealtimeNotifier _realtimeNotifier;
 
     public RescueUnitService(
         IRescueUnitRepository rescueUnitRepository,
         IStationRepository stationRepository,
-        IDispatchAssignmentRepository assignmentRepository)
+        IDispatchAssignmentRepository assignmentRepository,
+        ISystemAuditService auditService,
+        ICurrentUserContext currentUser,
+        IRealtimeNotifier realtimeNotifier)
     {
+        _currentUser = currentUser;
+        _realtimeNotifier = realtimeNotifier;
         _rescueUnitRepository = rescueUnitRepository;
         _stationRepository = stationRepository;
         _assignmentRepository = assignmentRepository;
+        _auditService = auditService;
     }
 
     public async Task<IReadOnlyList<RescueUnitResponseDto>> GetAllAsync()
@@ -59,6 +69,7 @@ public class RescueUnitService : IRescueUnitService
 
     public async Task<RescueUnitResponseDto> CreateAsync(CreateRescueUnitDto dto)
     {
+        EnsureOwnStation(dto.StationId);
         var station = await _stationRepository.GetByIdAsync(dto.StationId);
         if (station == null)
         {
@@ -90,6 +101,8 @@ public class RescueUnitService : IRescueUnitService
 
         // Nạp lại dữ liệu kèm Station name
         unit.Station = station;
+        await _auditService.LogAsync(SystemAuditAction.Created, AuditEntityTypes.RescueUnit, unit.Id, unit.PlateNumber,
+            $"Thêm xe {unit.PlateNumber} ({unit.UnitType}) vào trạm \"{station.Name}\"", newValue: Snapshot(unit));
         return MapToDto(unit);
     }
 
@@ -99,6 +112,13 @@ public class RescueUnitService : IRescueUnitService
         if (unit == null)
         {
             throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
+        }
+
+        // Operator chỉ sửa xe trạm mình; chuyển xe sang trạm khác chỉ Admin
+        EnsureOwnStation(unit.StationId);
+        if (_currentUser.IsStationScoped() && dto.StationId != unit.StationId)
+        {
+            throw new UnauthorizedAccessException("Chỉ Admin được chuyển xe sang trạm khác.");
         }
 
         var station = await _stationRepository.GetByIdAsync(dto.StationId);
@@ -120,6 +140,15 @@ public class RescueUnitService : IRescueUnitService
         }
         EnsureManualStatusAllowed(dto.Status, unit.Status);
 
+        var before = Snapshot(unit);
+        // Chuyển trạm: xe về đỗ tại trạm mới → cập nhật vị trí để gợi ý xe / ETA tính đúng (xe đang làm nhiệm vụ đã bị chặn ở trên)
+        if (dto.StationId != unit.StationId)
+        {
+            unit.CurrentLat = station.Latitude;
+            unit.CurrentLng = station.Longitude;
+            unit.LastLocationUpdateAt = DateTime.UtcNow;
+        }
+
         unit.PlateNumber = dto.PlateNumber.Trim().ToUpperInvariant();
         unit.UnitType = dto.UnitType;
         unit.Status = dto.Status;
@@ -128,6 +157,9 @@ public class RescueUnitService : IRescueUnitService
         unit.UpdatedAt = DateTime.UtcNow;
 
         await _rescueUnitRepository.UpdateAsync(unit);
+        await _auditService.LogAsync(SystemAuditAction.Updated, AuditEntityTypes.RescueUnit, unit.Id, unit.PlateNumber,
+            $"Cập nhật xe {unit.PlateNumber}", before, Snapshot(unit));
+        await PublishStatusAsync(unit, null, "Cập nhật thông tin xe");
         return MapToDto(unit);
     }
 
@@ -153,6 +185,7 @@ public class RescueUnitService : IRescueUnitService
             throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
         }
 
+        EnsureOwnStation(unit.StationId);
         if (dto.Status != unit.Status)
         {
             var hasActiveAssignment = await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null;
@@ -163,12 +196,21 @@ public class RescueUnitService : IRescueUnitService
             EnsureManualStatusAllowed(dto.Status, unit.Status);
         }
 
+        var oldStatus = unit.Status;
         unit.UpdateStatus(dto.Status);
         if (dto.Status != RescueUnitStatus.CoolDown)
         {
             unit.CoolDownUntil = null;
         }
         await _rescueUnitRepository.UpdateAsync(unit);
+
+        if (oldStatus != dto.Status)
+        {
+            await PublishStatusAsync(unit, oldStatus, "Đổi trạng thái thủ công");
+            await _auditService.LogAsync(SystemAuditAction.StatusChanged, AuditEntityTypes.RescueUnit, unit.Id, unit.PlateNumber,
+                $"Đổi trạng thái xe {unit.PlateNumber}: {oldStatus} → {dto.Status}",
+                new { status = oldStatus }, new { status = dto.Status });
+        }
 
         return MapToDto(unit);
     }
@@ -187,7 +229,43 @@ public class RescueUnitService : IRescueUnitService
         }
 
         await _rescueUnitRepository.DeleteAsync(unit);
+        await _auditService.LogAsync(SystemAuditAction.Deleted, AuditEntityTypes.RescueUnit, unit.Id, unit.PlateNumber,
+            $"Xóa xe {unit.PlateNumber}", Snapshot(unit));
     }
+
+    /// <summary>
+    /// Operator chỉ quản lý xe trạm mình (Admin không giới hạn)
+    /// </summary>
+    private void EnsureOwnStation(Guid stationId)
+    {
+        var error = _currentUser.CheckStation(stationId);
+        if (error != null)
+        {
+            throw new UnauthorizedAccessException(error);
+        }
+    }
+
+    private Task PublishStatusAsync(RescueUnit unit, RescueUnitStatus? previous, string reason)
+        => _realtimeNotifier.RescueUnitStatusChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.RescueUnitStatusEventDto
+        {
+            RescueUnitId = unit.Id,
+            PlateNumber = unit.PlateNumber,
+            StationId = unit.StationId,
+            Status = unit.Status,
+            PreviousStatus = previous,
+            CoolDownUntil = unit.CoolDownUntil,
+            Reason = reason,
+            ChangedAt = DateTime.UtcNow
+        });
+
+    private static object Snapshot(RescueUnit u) => new
+    {
+        u.PlateNumber,
+        u.UnitType,
+        u.Status,
+        u.StationId,
+        StationName = u.Station?.Name
+    };
 
     /// <summary>
     /// Xe đang trong vòng đời nhiệm vụ (đã nhận lệnh, tại hiện trường, đang quay về)

@@ -31,6 +31,11 @@ public class StaffTeamResponseDto
     public string? StationName { get; set; }
     public string? StationAddress { get; set; }
     public string? StationPhoneNumber { get; set; }
+
+    /// <summary>
+    /// Operator phụ trách trạm (nhân viên biết ai điều phối mình)
+    /// </summary>
+    public StationOperatorDto? StationOperator { get; set; }
     public string? MyTeamName { get; set; } // Tổ làm việc của cán bộ hiện tại
     public Guid? MyTeamId { get; set; }
     public string? MyCrewRole { get; set; }
@@ -43,6 +48,15 @@ public class StaffTeamResponseDto
     public List<TeamMemberSummaryDto> MyTeamMembers { get; set; } = new();
     public List<TeamMemberSummaryDto> TeamMembers { get; set; } = new();
     public List<StationVehicleSummaryDto> StationVehicles { get; set; } = new();
+}
+
+public class StationOperatorDto
+{
+    public Guid Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? Email { get; set; }
+    public string? AvatarUrl { get; set; }
 }
 
 /// <summary>

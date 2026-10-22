@@ -15,6 +15,12 @@ public class Station : BaseEntity
     public string? OperatingHours { get; set; }
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Operator phụ trách trạm (các Operator ngang cấp, mỗi người 1 trạm; tên trường giữ HeadOperatorId để tương thích FE)
+    /// </summary>
+    public Guid? HeadOperatorId { get; set; }
+    public User? HeadOperator { get; set; }
+
     // Navigation properties
     public ICollection<User> StaffMembers { get; set; } = new List<User>();
     public ICollection<RescueUnit> RescueUnits { get; set; } = new List<RescueUnit>();

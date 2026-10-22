@@ -116,6 +116,33 @@ public class Incident : BaseEntity
     public DateTime? LockExpiresAt { get; set; }
 
     /// <summary>
+    /// Trạm phụ trách theo vị trí sự cố: chỉ Operator của trạm này (và Admin) xử lý.
+    /// Null = dữ liệu cũ / chưa xác định → mọi Operator đều xử lý được.
+    /// </summary>
+    public Guid? ResponsibleStationId { get; set; }
+    public Station? ResponsibleStation { get; set; }
+
+    /// <summary>
+    /// Vị trí báo cáo nằm ngoài khu vực phục vụ đã cấu hình (vẫn tiếp nhận, nhưng cảnh báo Operator)
+    /// </summary>
+    public bool IsOutOfServiceArea { get; set; }
+    public double? DistanceOutsideAreaKm { get; set; }
+
+    /// <summary>
+    /// Loại sự cố đã xác nhận (Cháy nổ / Tai nạn). Mặc định lấy từ AI, Operator xác nhận hoặc sửa khi verify.
+    /// Dùng để chọn chủng loại xe khi gợi ý điều phối (BR-13).
+    /// </summary>
+    public IncidentEventType EventType { get; set; } = IncidentEventType.None;
+
+    /// <summary>
+    /// Thông tin hủy sự cố — tách riêng để không ghi đè VerifiedAt / OperatorNotes (số liệu RQ3)
+    /// </summary>
+    public Guid? CancelledByUserId { get; set; }
+    public User? CancelledByUser { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancellationNote { get; set; }
+
+    /// <summary>
     /// Thời gian phản hồi tính bằng mili-giây (từ khi tạo đến khi Operator xác minh)
     /// </summary>
     public long? ResponseTimeMs { get; set; }

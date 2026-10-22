@@ -31,6 +31,11 @@ public interface IDispatchService
     /// <summary>
     /// Điều phối xe cứu hộ tới hiện trường sự cố
     /// </summary>
+    /// <summary>
+    /// Mọi lượt phân công đang chạy (Dispatched / Accepted / EnRoute / OnScene). Operator: sự cố trạm mình hoặc xe trạm mình
+    /// </summary>
+    Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> GetActiveAssignmentsAsync(CancellationToken cancellationToken = default);
+
     Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignUnitAsync(
         AssignDispatchDto dto,
         Guid operatorId,

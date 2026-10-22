@@ -17,7 +17,8 @@ public interface IUserRepository : IGenericRepository<User>
         int pageSize,
         string? search,
         UserRole? role,
-        UserStatus? status);
+        UserStatus? status,
+        Guid? stationId = null);
 
     /// <summary>
     /// Nhân sự thuộc trạm kèm tổ làm việc

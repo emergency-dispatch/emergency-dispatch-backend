@@ -55,6 +55,25 @@ public class SettingsController : ControllerBase
     /// <summary>
     /// Giá trị mặc định theo SRS (phục vụ nút "Khôi phục mặc định")
     /// </summary>
+    /// <summary>
+    /// Khu vực phục vụ (tâm + bán kính). Công khai để app Citizen / khách vãng lai cảnh báo trước khi gửi SOS
+    /// </summary>
+    [HttpGet("service-area")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetServiceArea(CancellationToken cancellationToken)
+        => Ok(ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>.Ok(await _settingsService.GetServiceAreaRecordAsync(cancellationToken)));
+
+    /// <summary>
+    /// Admin cấu hình khu vực phục vụ: SOS ngoài vùng vẫn được nhận nhưng gắn cờ và báo realtime cho Operator / Admin
+    /// </summary>
+    [HttpPut("service-area")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateServiceArea([FromBody] ServiceAreaSettingsDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _settingsService.UpdateServiceAreaAsync(dto, GetCurrentUserId(), cancellationToken));
+
     [HttpGet("defaults")]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsDefaultsDto>), StatusCodes.Status200OK)]
     public IActionResult GetDefaults() => Ok(ApiResponseDto<SettingsDefaultsDto>.Ok(new SettingsDefaultsDto()));

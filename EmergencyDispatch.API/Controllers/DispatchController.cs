@@ -147,6 +147,16 @@ public class DispatchController : ControllerBase
     }
 
     /// <summary>
+    /// Mọi lượt điều phối đang thực hiện (Dispatched / Accepted / EnRoute / OnScene) kèm sự cố và xe.
+    /// Operator: sự cố trạm mình phụ trách hoặc xe trạm mình (kể cả xe đi hỗ trợ); Admin: toàn bộ.
+    /// </summary>
+    [HttpGet("assignments/active")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetActiveAssignments(CancellationToken cancellationToken)
+        => this.ToHttpResult(await _dispatchService.GetActiveAssignmentsAsync(cancellationToken));
+
+    /// <summary>
     /// Lấy danh sách các nhiệm vụ được phân công cho nhân viên cứu hộ đang đăng nhập
     /// </summary>
     [HttpGet("my-assignments")]

@@ -1200,3 +1200,210 @@ async function submitSosReport(file: File, description: string, lat: number, lng
 
 **Giới hạn:** SOS 5 lần/phút/IP và 1 sự cố đang hoạt động / 3 phút / tài khoản hoặc SĐT; mô tả SOS ≤ 200 ký tự; đăng nhập 10 lần/phút/IP; sai mật khẩu 5 lần khóa 15 phút.
 
+
+
+---
+
+## 8. ADMIN: QUYỀN XEM ĐỘI XE, NHẬT KÝ QUẢN TRỊ, KHÓA TỨC THÌ, BÁO CÁO, TRƯỞNG TRẠM (đợt 22/10/2026)
+
+### 8.1. Quyền xem đội xe / trạm
+
+| Endpoint | Trước | Nay |
+|---|---|---|
+| `GET /api/rescue-units` | Công khai | **Admin, Operator** |
+| `GET /api/rescue-units/{id}` | Công khai | Admin, Operator; RescueStaff chỉ xe trạm mình (403) |
+| `GET /api/rescue-units/station/{stationId}` | Công khai | Admin, Operator; RescueStaff chỉ trạm mình (403) |
+| `PUT /api/rescue-units/{id}/location`, `/status` | RescueStaff sửa được xe mọi trạm | RescueStaff chỉ xe trạm mình (403); lỗi nghiệp vụ trả 400 thay vì 500 |
+| `GET /api/stations`, `/api/stations/{id}` | Công khai, lộ xe + email/SĐT nhân sự | Bắt buộc đăng nhập. Ai không quản lý trạm đó (Citizen, nhân viên trạm khác) nhận `rescueUnits: []`, `staffMembers: []`, `activeUnitsCount/staffCount = 0` |
+| `GET /api/stations/{id}/staff`, `/teams`, `GET /api/users/station/{stationId}` | RescueStaff xem mọi trạm | RescueStaff chỉ trạm mình (403) |
+
+Citizen chỉ thấy xe được phân công cho sự cố của mình qua `GET /api/dispatch/tracking/incident/{id}` (không đổi). Thêm/sửa xe: Admin, Operator; xóa xe: Admin.
+
+### 8.2. Operator phụ trách trạm
+
+`POST/PUT /api/stations` nhận thêm `headOperatorId` (tùy chọn). Phải là tài khoản **Operator đang hoạt động**, nếu không thì trả 400. `StationResponseDto` có thêm `headOperatorId`, `headOperatorName`, `headOperatorPhone`. Xóa tài khoản Operator thì các trạm do người đó làm trưởng sẽ bỏ trống Operator phụ trách trạm.
+
+### 8.3. Cấu hình leo thang (Admin chỉnh qua API)
+
+- **Ngưỡng thời gian và bán kính:** `GET/PUT /api/settings/escalation` (Admin sửa, Operator xem):
+  ```json
+  { "dayThresholdMinutes": 5, "nightThresholdMinutes": 2.5, "nightStart": "22:00", "nightEnd": "06:00", "radiusMultiplier": 2, "maxRadiusKm": 30 }
+  ```
+- **Quy tắc:** `/api/escalation/rules` chỉ còn `minSeverityLevel` (1–3, Level 0 luôn được quét), `notifyRoles`, `isActive`, `description`.
+  - `notifyRoles` là mảng JSON gồm `Admin`, `Operator`, `RescueStaff`. Giá trị khác trả 400.
+  - Trường này **nay có tác dụng thật**: trước đây hệ thống luôn báo cho Operator và Admin.
+- **Bỏ khỏi quy tắc:** `timeoutMinutes`, `expandRadiusPercent` (trước đây không có tác dụng). Response thêm các trường chỉ đọc `effectiveDayThresholdMinutes`, `effectiveNightThresholdMinutes`, `effectiveNightStart`, `effectiveNightEnd`, `effectiveRadiusMultiplier`, `effectiveMaxRadiusKm`.
+
+### 8.4. Nhật ký thao tác quản trị (BR-AD-06)
+
+`GET /api/audit-trail/system?entityType=&entityId=&actorId=&action=&from=&to=&pageIndex=&pageSize=` (Admin)
+
+Mỗi dòng: `{ id, actorId, actorName, actorRole, action, entityType, entityId, entityName, description, oldValueJson, newValueJson, ipAddress, timestamp }`.
+
+| `entityType` | Thao tác được ghi |
+|---|---|
+| `Station` | Created, Updated, Deleted |
+| `RescueUnit` | Created, Updated, StatusChanged, Deleted |
+| `User` | Created, Updated, Deleted, Locked, Unlocked, StationAssigned |
+| `StationTeam` | Created, Updated, Deleted |
+| `Settings` | SettingsUpdated (`entityName` = `escalation` / `dispatch`) |
+| `EscalationRule` | Created, Updated, Deleted |
+| `BlockedNumber` | Unblocked, BlockExtended |
+| `Report` | Exported |
+
+Nhật ký thao tác trên sự cố vẫn ở `GET /api/audit-trail` như trước.
+
+### 8.5. Khóa tài khoản có hiệu lực ngay
+
+- Mỗi request có token, backend so token với trạng thái tài khoản (bộ nhớ đệm 60 giây, bị xóa ngay khi Admin thay đổi). Token bị từ chối (**401**) khi tài khoản bị **khóa / xóa / tạm ngưng**, **đổi role**, hoặc **đổi trạm**. Header `X-Auth-Error` (đã URL-encode) chứa lý do, ví dụ "Tài khoản đã bị khóa.".
+- SignalR gửi sự kiện **`ForceLogout`** `{ reason }` tới người bị khóa / xóa / đổi quyền / đổi trạm. Mọi lời gọi hub từ kết nối cũ đều bị từ chối và kết nối bị đóng.
+- Đổi trạm hoặc đổi role thì client chỉ cần `POST /api/auth/refresh` để lấy token mới. Riêng khóa tài khoản thì refresh token cũng đã bị thu hồi.
+
+### 8.6. Lịch sử sự cố đã đóng & xuất báo cáo (Admin)
+
+| Endpoint | Mô tả |
+|---|---|
+| `GET /api/reports/incidents` | Lịch sử sự cố `Completed` / `Cancelled`, phân trang (tối đa 100 / trang) |
+| `GET /api/reports/incidents/summary` | Tổng, hoàn thành, hủy, số lượng theo mức độ, thời gian phản ứng / xử lý trung bình |
+| `GET /api/reports/incidents/export?format=Csv\|Pdf` | Tải file (tối đa 5000 dòng). CSV UTF-8 có BOM (mở thẳng bằng Excel), PDF khổ A4 ngang. Tên file trong `Content-Disposition` |
+
+Bộ lọc chung (query): `from`, `to` (UTC, theo thời điểm **báo cáo**), `stationId` (trạm có xe tham gia), `status` = `All|Completed|Cancelled`, `severity`, `search` (tiêu đề / địa chỉ), `pageIndex`, `pageSize`. Nếu `from > to` thì trả 400.
+
+Mỗi dòng: `{ id, title, locationAddress, severity, aiSeverityScore, status, cancellationReason, resolutionSummary, reportedAt, verifiedAt, firstDispatchedAt, firstArrivedAt, closedAt, responseMinutes, resolutionMinutes, verifiedByName, closedByName, stations[], units[] }`.
+
+**CORS** đã cho phép client đọc header `X-Auth-Error` và `Content-Disposition`.
+
+
+---
+
+## 9. VẬN HÀNH THEO TRẠM: MỖI OPERATOR PHỤ TRÁCH 1 TRẠM (đợt 22/10/2026)
+
+Migration `Station_Scoped_Operations` đã áp lên Neon.
+
+### 9.1. Mô hình
+- Một khu vực phục vụ (VD: KCNC) có nhiều trạm. **Mỗi trạm 1 Operator phụ trách** (`Station.headOperatorId`, unique). Mỗi Operator chỉ phụ trách 1 trạm.
+- Gán Operator phụ trách trạm qua `PUT /api/stations/{id}` (`headOperatorId`) sẽ tự đặt `user.stationId` của Operator. Operator cũ bị gỡ trạm.
+  - Gán một Operator đang phụ trách trạm khác thì trả **400**.
+  - Token của cả 2 Operator bị hủy (401). Client gọi `refresh` để lấy claim `StationId` mới.
+- `POST/PUT /api/users` (Admin) với `role = Operator`, `stationId = X` thì tự thành Operator phụ trách trạm X. Trạm X đã có Operator thì trả 400.
+
+### 9.2. Phạm vi của Operator (Admin không giới hạn)
+
+| Chức năng | Operator |
+|---|---|
+| Hàng đợi `GET /api/incidents/queue`, danh sách `GET /api/incidents` | Chỉ sự cố có `responsibleStationId` = trạm mình (hoặc chưa xác định trạm) |
+| `lock`, `verify`, `cancel`, `reveal-phone`, `block-reporter`, `audit-trail`, `recommend`, `assign`, `transfer` | Chỉ sự cố trạm mình; trạm khác trả **403** "Sự cố này thuộc trạm khác phụ trách." |
+| `GET /api/incidents/{id}` | Sự cố trạm mình, hoặc sự cố có xe trạm mình đang hỗ trợ |
+| Tài khoản | Chỉ tạo/sửa `RescueStaff`; nhân viên **luôn thuộc trạm mình** (bỏ qua `stationId` client gửi). `GET /api/users` chỉ trả nhân sự trạm mình |
+| `assign-station-team` | Chỉ kéo nhân viên **chưa có trạm** về trạm mình, hoặc sắp xếp trong trạm mình |
+| Tổ `/api/stations/{id}/teams`, nhân sự `/api/stations/{id}/staff`, `/api/users/station/{id}` | Chỉ trạm mình |
+| Xe | Thêm / sửa / đổi trạng thái **xe trạm mình**. Chuyển xe sang trạm khác và xóa xe chỉ Admin. **Xem** vị trí, trạng thái xe mọi trạm (live map, điều hỗ trợ) |
+| `GET /api/stations/{id}` trạm khác | Chỉ thông tin công khai (không có xe, nhân sự) |
+
+### 9.3. Trạm phụ trách sự cố
+- Khi SOS được tạo: trạm đang hoạt động **gần nhất có bán kính phủ chứa vị trí**. Không trạm nào phủ tới thì lấy trạm gần nhất.
+- `IncidentResponseDto` thêm `responsibleStationId`, `responsibleStationName`, `isOutOfServiceArea`, `distanceOutsideAreaKm`.
+- **Chuyển trạm:** `POST /api/incidents/{id}/transfer` `{ "stationId": "...", "reason": "≥ 5 ký tự" }` (Operator trạm đang phụ trách / Admin). Khóa mềm được nhả. Ghi audit `TransferredStation`. Operator trạm nhận được báo realtime và có thông báo.
+- **Điều xe xuyên trạm (Load-Aware):** `recommend` vẫn trả xe mọi trạm, mỗi xe có `isSupportUnit`. Khi `assign` xe trạm khác: Operator trạm có xe nhận `ReceiveSupportDispatched` và thông báo "XE TRẠM BẠN ĐƯỢC ĐIỀU HỖ TRỢ". Staff trạm đó nhận lệnh như bình thường.
+- **Leo thang:**
+  - Cấp 1 (quá ngưỡng): báo Operator trạm phụ trách + Admin (`ReceiveEscalationAlert`, `tier: 1`).
+  - **Cấp 2 (quá gấp đôi ngưỡng, BR-17):** báo **mọi Operator** + Admin (`tier: 2`).
+
+### 9.4. Staff
+- `GET /api/users/my-team` thêm `stationOperator { id, fullName, phoneNumber, email, avatarUrl }`.
+- Staff chỉ xem sự cố / tracking / `SubscribeIncident` khi **xe trạm mình đang làm nhiệm vụ** của sự cố đó, hoặc vừa hoàn tất ≤ 30 phút. Trước đây staff mọi trạm xem được chi tiết mọi sự cố.
+- `GET /api/dispatch/tracking/incident/{id}`: dùng chung cho Citizen (sự cố của mình) và Staff (được phân công). Trả tuyến đường bộ của từng xe.
+
+### 9.5. Khu vực phục vụ
+
+| Endpoint | Quyền |
+|---|---|
+| `GET /api/settings/service-area` | **Công khai** (app Citizen cảnh báo trước khi gửi) |
+| `PUT /api/settings/service-area` | Admin |
+
+```json
+{ "enabled": true, "name": "Khu Công nghệ cao", "centerLat": 10.8411, "centerLng": 106.8098, "radiusKm": 10 }
+```
+
+SOS ngoài bán kính **vẫn được tiếp nhận** và giao trạm gần nhất, kèm `isOutOfServiceArea = true`, `distanceOutsideAreaKm`. Backend gửi realtime `ReceiveOutOfAreaAlert` và thông báo khẩn tới Operator trạm đó + Admin. Mặc định `enabled = false` cho tới khi Admin cấu hình.
+
+### 9.6. Chỉ đường đường bộ (OSRM)
+- `recommend`: thêm `roadDistanceKm`, `roadDurationMinutes`, `isApproximate`. ETA = thời gian đường bộ + 2 phút xuất xe. Cost Load-Aware dùng quãng đường đường bộ.
+- `tracking`: `routeTrajectory` là tuyến đường bộ thật (hàng trăm điểm), `distanceKm` / `estimatedArrivalMinutes` theo đường bộ. Thêm `isApproximateRoute` (true = máy chủ chỉ đường lỗi, chỉ có đoạn thẳng 2 điểm → **vẽ nét đứt**). Đã **bỏ đường cong giả**.
+- Cấu hình `Routing:OsrmBaseUrl`. Hướng dẫn tự host Docker xem `README.md`.
+
+### 9.7. SignalR — nhóm và sự kiện
+Nhóm tự gán khi kết nối `/hubs/incidents`:
+- `operators`: mọi Operator + Admin.
+- `operators:station:{id}`: Operator của trạm.
+- `admins`: Admin.
+- `station:{id}`: nhân viên trạm.
+
+| Sự kiện | Người nhận |
+|---|---|
+| `ReceiveNewIncident`, `ReceiveIncidentUpdate` | Operator trạm phụ trách + Admin (sự cố chưa có trạm → mọi Operator) |
+| `ReceiveJobAssigned` | **Chỉ staff trạm có xe** (trước đây mọi staff mọi trạm) + Operator trạm phụ trách / trạm có xe + Admin |
+| `ReceiveAssignmentStatus` | Như trên + nhóm `incident:{id}` (bản rút gọn) |
+| `ReceiveEscalationAlert` | Cấp 1: trạm phụ trách + Admin; cấp 2: mọi Operator |
+| **`ReceiveOutOfAreaAlert`** | Operator trạm phụ trách + Admin |
+| **`ReceiveSupportDispatched`** | Operator trạm có xe được điều hỗ trợ |
+| **`ReceiveIncidentTransferred`** | Operator trạm cũ, trạm mới, Admin (trạm mới nhận thêm `ReceiveNewIncident`) |
+| **`ReceiveRescueUnitStatus`** | Mọi Operator / Admin + staff trạm có xe. Phát khi giao xe, đổi tiến độ, hoàn tất (CoolDown), **hết CoolDown**, đổi tay |
+| `ReceiveNotification`, `ForceLogout` | Từng người dùng |
+
+
+---
+
+## 10. SỬA THEO GAP ANALYSIS CỦA FE (đợt 23/10/2026)
+
+Migration `Incident_Cancellation_EventType` đã áp lên Neon.
+
+### 10.1. Hủy sự cố — `PUT /api/incidents/{id}/cancel`
+Body: `{ "reason": "…", "reasonCode": "FalseReport|Duplicate|TestReport|Other" }`. `reasonCode` chỉ dành cho Operator / Admin; Citizen tự hủy luôn là `CitizenCancelled`.
+- **Không còn ghi đè** `verifiedAt`, `verifiedByUserId`, `operatorNotes`.
+- `IncidentResponseDto` thêm `cancellationReason`, `cancelledAt`, `cancelledByUserId`, `cancelledByName`, `cancellationNote`.
+- Ghi `IncidentStatusHistory` + `IncidentAuditTrail` (`Cancelled`). Nhả khóa mềm.
+- Chỉ thu hồi các lượt **đang hoạt động**: lượt đã từ chối / hoàn tất giữ nguyên, không đụng tới xe của chúng.
+- Xe được thu hồi phát `ReceiveRescueUnitStatus`.
+- Dữ liệu cũ: migration khôi phục `verifiedAt` / `verifiedByUserId` / `operatorNotes` thật từ lịch sử trạng thái (lần xác minh gốc), và tách thông tin hủy sang các cột mới.
+
+### 10.2. Xác minh — `PUT /api/incidents/{id}/verify`
+```json
+{ "confirmedSeverity": "Level3", "confirmedEventType": "FireExplosion", "operatorNotes": "≥ 5 ký tự khi cần", "adjustedTitle": null }
+```
+- `confirmedEventType` (`FireExplosion` / `TrafficAccident`) **bắt buộc khi loại sự cố hiện tại là `None`** (AI không xác định hoặc không có ảnh) → nếu thiếu trả 400.
+- `operatorNotes` ≥ 5 ký tự bắt buộc khi: ghi đè mức độ AI, **hoặc sự cố đang `Unclassified`** (kể cả SOS không ảnh).
+- Sửa loại sự cố so với AI được ghi audit `SeverityOverridden`.
+- `IncidentResponseDto.eventType` = loại đã xác nhận. Gợi ý xe dùng loại này để khớp chủng loại xe (BR-13).
+
+### 10.3. Lọc nhiều trạng thái — `GET /api/incidents`
+`?statuses=Verified,Dispatched,InProgress,Escalated&pageSize=200`. `pageSize` tối đa 200 (các danh sách khác vẫn 50). Trạng thái sai trả 400. `status` cũ vẫn dùng được.
+
+### 10.4. `GET /api/dispatch/assignments/active` (Operator, Admin)
+Mọi lượt `Dispatched` / `Accepted` / `EnRoute` / `OnScene` kèm sự cố, xe, trạm.
+- Operator: sự cố trạm mình **hoặc** xe trạm mình (xe đi hỗ trợ).
+- Admin: toàn bộ.
+
+### 10.5. `GET /api/rescue-units`
+Thêm `stationId`, `status` (ngoài `unitType`, `availableOnly`). Admin chuyển xe sang trạm khác thì **tọa độ xe = tọa độ trạm mới**. Migration đã đưa các xe rảnh nằm sai trạm về đúng trạm.
+
+### 10.6. Realtime khóa mềm — `ReceiveIncidentLock`
+Payload `{ incidentId, lockedByOperatorId, lockedByOperatorName, lockExpiresAt, changedAt }`; `lockedByOperatorId = null` → đã nhả. Gửi tới Operator trạm phụ trách + Admin khi khóa / gia hạn / nhả / chuyển trạm / hủy.
+
+### 10.7. Hạ thang
+Sự cố `Escalated` được giao xe hoặc có đơn vị nhận lệnh thì:
+- Ghi audit **`DeEscalated`**.
+- Đóng các lượt leo thang (`EscalationLog.resolvedAt`, `resolutionTimeMs`).
+- Phát `ReceiveIncidentUpdate`.
+
+### 10.8. Tự hủy sự cố quá hạn
+Worker quét mỗi giờ: sự cố `Pending` / `AiProcessing` / `AiProcessed` **chưa xác minh** quá `AutoExpireHours` (mặc định 24, trong `PUT /api/settings/dispatch`, khoảng 1–168) → `Cancelled`, `cancellationReason = AutoExpired`, kèm audit. Sự cố đã xác minh / đã điều xe không bao giờ bị tự hủy.
+
+### 10.9. Dữ liệu thực nghiệm từng sự cố — `GET /api/benchmark/incidents?from&to&format=Json|Csv`
+Mỗi dòng gồm các nhóm trường sau:
+- Mốc thời gian: `createdAt`, `aiProcessedAt`, `verifiedAt`, `firstDispatchAt`, `firstAcceptedAt`, `firstArrivedAt`, `closedAt`.
+- AI: `aiModelLatencyMs`, `aiSeverity`, `aiEventType`.
+- Xác nhận và điều phối: `confirmedSeverity`, `confirmedEventType`, `wasAiOverridden`, `algorithm`, `unitsDispatched`, `cancellationReason`.
+- Độ trễ suy ra: `tAiMs`, `tOperatorMs`, `tDispatchMs`, `tResponseMs`, `tResolutionMs`.
+
+Dùng cho RQ2 / RQ3. CSV có giờ dạng ISO-8601 UTC.

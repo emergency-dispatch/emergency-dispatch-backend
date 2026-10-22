@@ -31,6 +31,12 @@ public class IncidentService : IIncidentService
     private readonly IValidator<CreateIncidentDto> _validator;
     private readonly ILogger<IncidentService> _logger;
     private readonly IGuestCancellationTokenService _guestTokens;
+    private readonly IStationRepository _stationRepository;
+    private readonly ISystemSettingsService _settingsService;
+    private readonly ICurrentUserContext _currentUser;
+
+    // Đội cứu hộ vẫn xem được sự cố trong 30 phút sau khi hoàn tất để nộp báo cáo nghiệm thu
+    private static readonly TimeSpan StaffAccessAfterCompletion = TimeSpan.FromMinutes(30);
 
     public IncidentService(
         IIncidentRepository incidentRepository,
@@ -42,8 +48,14 @@ public class IncidentService : IIncidentService
         INotificationService notificationService,
         IValidator<CreateIncidentDto> validator,
         ILogger<IncidentService> logger,
-        IGuestCancellationTokenService guestTokens)
+        IGuestCancellationTokenService guestTokens,
+        IStationRepository stationRepository,
+        ISystemSettingsService settingsService,
+        ICurrentUserContext currentUser)
     {
+        _stationRepository = stationRepository;
+        _settingsService = settingsService;
+        _currentUser = currentUser;
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
         _blockedPhoneRepository = blockedPhoneRepository;
@@ -131,8 +143,18 @@ public class IncidentService : IIncidentService
                 "Bạn vừa gửi một yêu cầu cứu hộ đang được xử lý. Vui lòng chờ 3 phút hoặc gọi trực tiếp 114 / 115 nếu cần hỗ trợ thêm.");
         }
 
+        // Trạm phụ trách theo vị trí (mỗi Operator xử lý sự cố của trạm mình) + kiểm tra khu vực phục vụ
+        var responsibleStation = StationAssignment.PickResponsibleStation(
+            await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
+        var serviceArea = await _settingsService.GetServiceAreaAsync(cancellationToken);
+        var outsideKm = StationAssignment.DistanceOutsideArea(serviceArea, dto.Latitude, dto.Longitude);
+
         var incident = new Incident
         {
+            ResponsibleStationId = responsibleStation?.Id,
+            ResponsibleStation = responsibleStation,
+            IsOutOfServiceArea = outsideKm > 0,
+            DistanceOutsideAreaKm = outsideKm > 0 ? outsideKm : null,
             Title = title,
             Description = dto.Description?.Trim() ?? string.Empty,
             Latitude = dto.Latitude,
@@ -202,6 +224,18 @@ public class IncidentService : IIncidentService
             Timestamp = incident.CreatedAt
         });
 
+        if (incident.IsOutOfServiceArea)
+        {
+            incident.AuditTrails.Add(new IncidentAuditTrail
+            {
+                IncidentId = incident.Id,
+                ActorRole = "System",
+                Action = AuditAction.OutOfServiceArea,
+                Description = $"Vị trí báo cáo nằm ngoài khu vực phục vụ \"{serviceArea.Name}\" {outsideKm:F1} km. Vẫn tiếp nhận, giao trạm gần nhất {responsibleStation?.Name ?? "(chưa có trạm)"}.",
+                Timestamp = incident.CreatedAt
+            });
+        }
+
         // 5. Lưu vào cơ sở dữ liệu (không chờ AI → phản hồi nhanh cho người báo)
         await _incidentRepository.AddAsync(incident);
 
@@ -222,6 +256,32 @@ public class IncidentService : IIncidentService
         // 7. Map kết quả trả về + đẩy realtime tới Operator
         // Operator nhận bản đã che số (BR-32); người báo nhận bản đầy đủ của chính mình
         await _realtimeNotifier.IncidentCreatedAsync(MapToResponseDto(incident, null, smsDispatchLog), cancellationToken);
+
+        if (incident.IsOutOfServiceArea)
+        {
+            await _realtimeNotifier.OutOfAreaAlertAsync(new OutOfAreaAlertDto
+            {
+                IncidentId = incident.Id,
+                IncidentTitle = incident.Title,
+                LocationAddress = incident.LocationAddress,
+                Latitude = incident.Latitude,
+                Longitude = incident.Longitude,
+                DistanceOutsideAreaKm = outsideKm,
+                ServiceAreaName = serviceArea.Name,
+                ResponsibleStationId = responsibleStation?.Id,
+                ResponsibleStationName = responsibleStation?.Name,
+                CreatedAt = incident.CreatedAt
+            }, cancellationToken);
+
+            await NotifyCommandCenterAsync(responsibleStation?.Id, new NotificationRequest
+            {
+                Type = NotificationType.System,
+                Title = "SOS NGOÀI KHU VỰC PHỤC VỤ",
+                Message = $"{incident.Title} — {incident.LocationAddress} nằm ngoài \"{serviceArea.Name}\" {outsideKm:F1} km. Cần xác minh và phối hợp đơn vị ngoài khu vực nếu cần.",
+                IncidentId = incident.Id,
+                HighPriority = true
+            }, cancellationToken);
+        }
         var responseDto = MapToResponseDto(incident, null, smsDispatchLog, revealPhone: true);
 
         // Return the secret only to the creator, after publishing the realtime event.
@@ -279,6 +339,10 @@ public class IncidentService : IIncidentService
             var oldStatus = incident.Status;
             incident.Severity = aiResult.SeverityLevel;
             incident.Status = IncidentStatus.AiProcessed;
+            if (incident.EventType == IncidentEventType.None)
+            {
+                incident.EventType = aiResult.EventType;
+            }
             incident.UpdatedAt = DateTime.UtcNow;
 
             await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
@@ -335,6 +399,15 @@ public class IncidentService : IIncidentService
             return ApiResponseDto<IncidentResponseDto>.NotFoundResult("Không tìm thấy sự cố với mã yêu cầu.");
         }
 
+        if (viewerUserId.HasValue)
+        {
+            var viewer = await _userRepository.GetByIdAsync(viewerUserId.Value);
+            if (viewer == null || !CanAccess(incident, viewer))
+            {
+                return ApiResponseDto<IncidentResponseDto>.ForbiddenResult("Bạn không có quyền xem sự cố này.");
+            }
+        }
+
         // Người báo luôn thấy số của chính mình; người khác thấy số đã che (BR-32)
         var isReporter = viewerUserId.HasValue && incident.ReportedByUserId == viewerUserId;
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(MapToResponseDto(incident, revealPhone: isReporter));
@@ -344,6 +417,16 @@ public class IncidentService : IIncidentService
         IncidentFilterDto filter,
         CancellationToken cancellationToken = default)
     {
+        IReadOnlyCollection<IncidentStatus>? statuses;
+        try
+        {
+            statuses = filter.ParseStatuses();
+        }
+        catch (ArgumentException ex)
+        {
+            return ApiResponseDto<PaginatedResultDto<IncidentResponseDto>>.FailureResult(ex.Message);
+        }
+
         var (items, totalCount) = await _incidentRepository.GetFilteredIncidentsAsync(
             filter.Status,
             filter.Severity,
@@ -352,7 +435,9 @@ public class IncidentService : IIncidentService
             filter.ToDate,
             filter.PageIndex,
             filter.PageSize,
-            cancellationToken);
+            cancellationToken,
+            _currentUser.FilterStationId(),
+            statuses);
 
         var dtoList = items.Select(i => MapToResponseDto(i)).ToList();
         var paginated = new PaginatedResultDto<IncidentResponseDto>(dtoList, totalCount, filter.PageIndex, filter.PageSize);
@@ -362,7 +447,7 @@ public class IncidentService : IIncidentService
 
     public async Task<ApiResponseDto<List<IncidentResponseDto>>> GetQueueAsync(CancellationToken cancellationToken = default)
     {
-        var queueItems = await _incidentRepository.GetPendingQueueAsync(cancellationToken);
+        var queueItems = await _incidentRepository.GetPendingQueueAsync(cancellationToken, _currentUser.FilterStationId());
         var dtos = queueItems.Select(i => MapToResponseDto(i)).ToList();
         return ApiResponseDto<List<IncidentResponseDto>>.SuccessResult(dtos, "Lấy danh sách hàng đợi sự cố thành công.");
     }
@@ -377,6 +462,12 @@ public class IncidentService : IIncidentService
         if (incident == null)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Không tìm thấy sự cố cần xác minh.");
+        }
+
+        var scopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<IncidentResponseDto>.ForbiddenResult(scopeError);
         }
 
         // Cho phép Operator xác minh ngay cả khi AI chưa xong (Human-in-the-loop luôn được ưu tiên),
@@ -398,16 +489,30 @@ public class IncidentService : IIncidentService
         var oldStatus = incident.Status;
         var aiSeverity = incident.AiClassification?.SeverityScore;
 
-        // BR-03 (MSG25): ghi đè mức độ AI đề xuất bắt buộc kèm lý do để lưu vết bất biến
+        // BR-03 (MSG25): ghi đè mức độ AI đề xuất, hoặc tự đánh giá ca chưa phân loại (Level 0 / không có AI), bắt buộc kèm lý do
         var isOverride = aiSeverity.HasValue && aiSeverity.Value != dto.ConfirmedSeverity;
-        if (isOverride && (dto.OperatorNotes?.Trim().Length ?? 0) < MinOverrideReasonLength)
+        var manualAssessment = incident.Severity == SeverityLevel.Unclassified;
+        if ((isOverride || manualAssessment) && (dto.OperatorNotes?.Trim().Length ?? 0) < MinOverrideReasonLength)
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult(isOverride
+                ? $"Bạn đang thay đổi mức độ AI đề xuất ({aiSeverity} → {dto.ConfirmedSeverity}). Vui lòng nhập lý do ghi đè (tối thiểu {MinOverrideReasonLength} ký tự) vào operatorNotes."
+                : $"Sự cố chưa được AI phân loại. Vui lòng nhập căn cứ đánh giá mức độ (tối thiểu {MinOverrideReasonLength} ký tự) vào operatorNotes.");
+        }
+
+        // BR-13: loại sự cố quyết định chủng loại xe; AI chưa xác định thì Operator phải chọn
+        var aiEventType = incident.AiClassification?.EventType ?? IncidentEventType.None;
+        var currentEventType = incident.EventType != IncidentEventType.None ? incident.EventType : aiEventType;
+        var confirmedEventType = dto.ConfirmedEventType is { } chosen && chosen != IncidentEventType.None ? chosen : currentEventType;
+        if (confirmedEventType == IncidentEventType.None)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult(
-                $"Bạn đang thay đổi mức độ AI đề xuất ({aiSeverity} → {dto.ConfirmedSeverity}). Vui lòng nhập lý do ghi đè (tối thiểu {MinOverrideReasonLength} ký tự) vào operatorNotes.");
+                "AI chưa xác định được loại sự cố. Vui lòng chọn confirmedEventType: FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).");
         }
+        var eventTypeOverridden = aiEventType != IncidentEventType.None && aiEventType != confirmedEventType;
 
         // Cập nhật thông tin xác minh bởi Operator (Human-in-the-loop)
         incident.Severity = dto.ConfirmedSeverity;
+        incident.EventType = confirmedEventType;
         incident.Status = IncidentStatus.Verified;
         incident.VerifiedByUserId = operatorId;
         incident.VerifiedAt = DateTime.UtcNow;
@@ -422,7 +527,7 @@ public class IncidentService : IIncidentService
             incident.Title = dto.AdjustedTitle.Trim();
         }
 
-        var severityOverridden = isOverride;
+        var severityOverridden = isOverride || eventTypeOverridden;
 
         await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
         {
@@ -441,13 +546,14 @@ public class IncidentService : IIncidentService
             ActorRole = UserRole.Operator.ToString(),
             Action = severityOverridden ? AuditAction.SeverityOverridden : AuditAction.Verified,
             Description = severityOverridden
-                ? $"Operator ghi đè mức độ AI {aiSeverity} → {dto.ConfirmedSeverity}"
-                : "Operator xác minh sự cố",
-            OldStateJson = JsonSerializer.Serialize(new { status = oldStatus.ToString(), aiSeverity = aiSeverity?.ToString() }),
+                ? $"Operator ghi đè đánh giá AI: mức độ {aiSeverity?.ToString() ?? "—"} → {dto.ConfirmedSeverity}, loại {aiEventType} → {confirmedEventType}"
+                : manualAssessment ? $"Operator tự đánh giá sự cố chưa phân loại: {dto.ConfirmedSeverity}, {confirmedEventType}" : "Operator xác minh sự cố",
+            OldStateJson = JsonSerializer.Serialize(new { status = oldStatus.ToString(), aiSeverity = aiSeverity?.ToString(), aiEventType = aiEventType.ToString() }),
             NewStateJson = JsonSerializer.Serialize(new
             {
                 status = IncidentStatus.Verified.ToString(),
                 severity = dto.ConfirmedSeverity.ToString(),
+                eventType = confirmedEventType.ToString(),
                 tOperatorMs = incident.ResponseTimeMs
             })
         }, cancellationToken);
@@ -483,12 +589,19 @@ public class IncidentService : IIncidentService
         string reason,
         Guid? cancelledByUserId = null,
         CancellationToken cancellationToken = default,
-        string? guestCancellationToken = null)
+        string? guestCancellationToken = null,
+        CancellationReason? reasonCode = null)
     {
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
         if (incident == null)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Không tìm thấy sự cố cần hủy.");
+        }
+
+        var cancelScopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (cancelScopeError != null)
+        {
+            return ApiResponseDto<IncidentResponseDto>.ForbiddenResult(cancelScopeError);
         }
 
         // Kiểm tra trạng thái: Không được hủy sự cố đã hoàn tất hoặc đã bị hủy trước đó
@@ -534,54 +647,126 @@ public class IncidentService : IIncidentService
             }
         }
 
-        var actorDescription = $"{cancellingUser.Role} {cancellingUser.FullName} ({cancellingUser.Id})";
+        var code = isCommandCenter
+            ? reasonCode is { } rc && rc is not (CancellationReason.CitizenCancelled or CancellationReason.AutoExpired) ? rc : CancellationReason.Other
+            : CancellationReason.CitizenCancelled;
+        return await CancelCoreAsync(incident, reason, code, cancellingUser, cancellationToken);
+    }
 
-        // Thực tế: Nếu xe đã xuất phát (Dispatched / EnRoute / OnScene), hủy sự cố sẽ tự động THU HỒI XE về trạng thái Sẵn sàng (Available)
-        var recalledUnitsCount = 0;
-        if (incident.DispatchAssignments != null && incident.DispatchAssignments.Any())
+    public async Task<int> AutoExpireStaleIncidentsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+    {
+        var ids = await _incidentRepository.GetStaleUnverifiedIdsAsync(DateTime.UtcNow - maxAge, cancellationToken);
+        var count = 0;
+        foreach (var id in ids)
         {
-            foreach (var assignment in incident.DispatchAssignments)
-            {
-                if (assignment.Status != DispatchAssignmentStatus.Completed &&
-                    assignment.Status != DispatchAssignmentStatus.Cancelled)
-                {
-                    assignment.Status = DispatchAssignmentStatus.Cancelled;
-                    assignment.Notes = $"[THU HỒI XE]: Sự cố bị hủy bởi {actorDescription}. Lý do: {reason}";
-                    assignment.UpdatedAt = DateTime.UtcNow;
+            var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
+            if (incident == null || incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled) continue;
 
-                    if (assignment.RescueUnit != null)
-                    {
-                        assignment.RescueUnit.Status = RescueUnitStatus.Available;
-                        assignment.RescueUnit.UpdatedAt = DateTime.UtcNow;
-                        recalledUnitsCount++;
-                    }
-                }
+            var result = await CancelCoreAsync(incident,
+                $"Tự động hủy: không được xác minh sau {maxAge.TotalHours:0.#} giờ.", CancellationReason.AutoExpired, null, cancellationToken);
+            if (result.Success) count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Hủy sự cố: thu hồi xe đang làm nhiệm vụ, ghi lịch sử + audit bất biến, phát realtime.
+    /// Không đụng VerifiedAt / VerifiedByUserId / OperatorNotes để giữ đúng số liệu RQ3.
+    /// </summary>
+    private async Task<ApiResponseDto<IncidentResponseDto>> CancelCoreAsync(
+        Incident incident,
+        string reason,
+        CancellationReason code,
+        User? actor,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var actorRole = actor?.Role.ToString() ?? "System";
+        var actorName = actor != null ? $"{actor.Role} {actor.FullName}" : "Hệ thống";
+        var note = reason.Trim();
+        if (note.Length > 500) note = note[..500];
+
+        // Chỉ thu hồi các lượt đang hoạt động (lượt đã từ chối / hoàn tất giữ nguyên, không đụng tới xe của chúng)
+        var recalledUnits = new List<RescueUnit>();
+        foreach (var assignment in incident.DispatchAssignments.Where(a => a.IsActive))
+        {
+            assignment.Status = DispatchAssignmentStatus.Cancelled;
+            assignment.Notes = $"[THU HỒI XE] Sự cố bị hủy bởi {actorName}. Lý do: {note}";
+            assignment.UpdatedAt = now;
+
+            if (assignment.RescueUnit is { } unit
+                && unit.Status is RescueUnitStatus.Dispatched or RescueUnitStatus.OnScene or RescueUnitStatus.Returning)
+            {
+                unit.Status = RescueUnitStatus.Available;
+                unit.UpdatedAt = now;
+                recalledUnits.Add(unit);
             }
         }
 
+        var oldStatus = incident.Status;
         incident.Status = IncidentStatus.Cancelled;
-        if (cancelledByUserId.HasValue)
+        incident.CancellationReason = code;
+        incident.CancelledByUserId = actor?.Id;
+        incident.CancelledAt = now;
+        incident.CancellationNote = note;
+        incident.LockedByOperatorId = null;
+        incident.LockExpiresAt = null;
+        incident.UpdatedAt = now;
+
+        await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
         {
-            incident.VerifiedByUserId = cancelledByUserId;
-            incident.VerifiedAt = DateTime.UtcNow;
-        }
+            IncidentId = incident.Id,
+            OldStatus = oldStatus,
+            NewStatus = IncidentStatus.Cancelled,
+            ChangedByUserId = actor?.Id,
+            ChangedByRole = actorRole,
+            Notes = $"[{code}] {note}",
+            ChangedAt = now
+        }, cancellationToken);
 
-        var recallNote = recalledUnitsCount > 0 ? $" (Đã thu hồi {recalledUnitsCount} xe đang xuất phát)" : string.Empty;
-        incident.OperatorNotes = $"[ĐÃ HỦY bởi {actorDescription}{recallNote}]: {reason}".Trim();
-        incident.UpdatedAt = DateTime.UtcNow;
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = actor?.Id,
+            ActorRole = actorRole,
+            Action = AuditAction.Cancelled,
+            Description = $"Hủy sự cố ({code}) bởi {actorName}. Lý do: {note}" +
+                          (recalledUnits.Count > 0 ? $". Thu hồi {recalledUnits.Count} xe: {string.Join(", ", recalledUnits.Select(u => u.PlateNumber))}" : string.Empty),
+            OldStateJson = JsonSerializer.Serialize(new { status = oldStatus.ToString() }),
+            NewStateJson = JsonSerializer.Serialize(new
+            {
+                status = IncidentStatus.Cancelled.ToString(),
+                cancellationReason = code.ToString(),
+                recalledUnits = recalledUnits.Select(u => u.PlateNumber)
+            }),
+            Timestamp = now
+        }, cancellationToken);
 
-        await _incidentRepository.UpdateAsync(incident);
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Sự cố {IncidentId} đã bị hủy bởi {Actor}. Thu hồi {Count} xe. Lý do: {Reason}",
-            id, actorDescription, recalledUnitsCount, reason);
-
-        var successMessage = recalledUnitsCount > 0
-            ? $"Đã hủy sự cố thành công và tự động phát lệnh thu hồi {recalledUnitsCount} xe cứu hộ quay về trạm."
-            : "Đã hủy sự cố thành công.";
+        _logger.LogInformation("Sự cố {IncidentId} đã bị hủy ({Code}) bởi {Actor}. Thu hồi {Count} xe. Lý do: {Reason}",
+            incident.Id, code, actorName, recalledUnits.Count, note);
 
         var responseDto = MapToResponseDto(incident);
         await _realtimeNotifier.IncidentUpdatedAsync(responseDto, cancellationToken);
+        await _realtimeNotifier.IncidentLockChangedAsync(new IncidentLockEventDto { IncidentId = incident.Id, ChangedAt = now },
+            incident.ResponsibleStationId, cancellationToken);
+        foreach (var unit in recalledUnits)
+        {
+            await _realtimeNotifier.RescueUnitStatusChangedAsync(new RescueUnitStatusEventDto
+            {
+                RescueUnitId = unit.Id,
+                PlateNumber = unit.PlateNumber,
+                StationId = unit.StationId,
+                Status = unit.Status,
+                Reason = "Thu hồi do sự cố bị hủy",
+                ChangedAt = now
+            }, cancellationToken);
+        }
 
+        var successMessage = recalledUnits.Count > 0
+            ? $"Đã hủy sự cố thành công và tự động phát lệnh thu hồi {recalledUnits.Count} xe cứu hộ quay về trạm."
+            : "Đã hủy sự cố thành công.";
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(responseDto, successMessage);
     }
 
@@ -594,6 +779,12 @@ public class IncidentService : IIncidentService
         if (incident == null)
         {
             return ApiResponseDto<IncidentLockDto>.NotFoundResult("Không tìm thấy sự cố.");
+        }
+
+        var lockScopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (lockScopeError != null)
+        {
+            return ApiResponseDto<IncidentLockDto>.ForbiddenResult(lockScopeError);
         }
 
         if (incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
@@ -611,6 +802,14 @@ public class IncidentService : IIncidentService
         }
 
         var operatorUser = await _userRepository.GetByIdAsync(operatorId);
+        await _realtimeNotifier.IncidentLockChangedAsync(new IncidentLockEventDto
+        {
+            IncidentId = id,
+            LockedByOperatorId = operatorId,
+            LockedByOperatorName = operatorUser?.FullName,
+            LockExpiresAt = expiresAt,
+            ChangedAt = now
+        }, incident.ResponsibleStationId, cancellationToken);
         return ApiResponseDto<IncidentLockDto>.SuccessResult(new IncidentLockDto
         {
             IncidentId = id,
@@ -627,6 +826,12 @@ public class IncidentService : IIncidentService
         CancellationToken cancellationToken = default)
     {
         var released = await _incidentRepository.ReleaseLockAsync(id, operatorId, force, cancellationToken);
+        if (released)
+        {
+            var incident = await _incidentRepository.GetByIdAsync(id);
+            await _realtimeNotifier.IncidentLockChangedAsync(new IncidentLockEventDto { IncidentId = id },
+                incident?.ResponsibleStationId, cancellationToken);
+        }
         return ApiResponseDto<bool>.SuccessResult(released,
             released ? "Đã nhả quyền xử lý sự cố." : "Sự cố không bị khóa bởi bạn.");
     }
@@ -640,6 +845,12 @@ public class IncidentService : IIncidentService
         if (incident == null)
         {
             return ApiResponseDto<RevealPhoneDto>.NotFoundResult("Không tìm thấy sự cố.");
+        }
+
+        var revealScopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (revealScopeError != null)
+        {
+            return ApiResponseDto<RevealPhoneDto>.ForbiddenResult(revealScopeError);
         }
 
         var actor = await _userRepository.GetByIdAsync(actorUserId);
@@ -679,6 +890,12 @@ public class IncidentService : IIncidentService
         if (incident == null)
         {
             return ApiResponseDto<BlockedNumberDto>.NotFoundResult("Không tìm thấy sự cố.");
+        }
+
+        var blockScopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (blockScopeError != null)
+        {
+            return ApiResponseDto<BlockedNumberDto>.ForbiddenResult(blockScopeError);
         }
 
         var phone = PhoneMasking.Normalize(incident.ReporterPhone ?? incident.ReportedByUser?.PhoneNumber);
@@ -736,18 +953,143 @@ public class IncidentService : IIncidentService
     {
         var user = await _userRepository.GetByIdAsync(userId);
         if (user == null) return false;
-        if (user.Role is UserRole.Operator or UserRole.Admin) return true;
+        if (user.Role == UserRole.Admin) return true;
 
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
-        if (incident == null) return false;
+        return incident != null && CanAccess(incident, user);
+    }
 
+    /// <summary>
+    /// Admin: mọi sự cố. Operator: sự cố trạm mình phụ trách (hoặc chưa xác định trạm), hoặc có xe trạm mình đang hỗ trợ.
+    /// Citizen: sự cố mình báo. RescueStaff: chỉ khi xe trạm mình đang làm nhiệm vụ (hoặc vừa hoàn tất ≤ 30 phút).
+    /// </summary>
+    private static bool CanAccess(Incident incident, User user)
+    {
+        var now = DateTime.UtcNow;
         return user.Role switch
         {
+            UserRole.Admin => true,
+            UserRole.Operator => incident.ResponsibleStationId == null
+                                 || incident.ResponsibleStationId == user.StationId
+                                 || incident.DispatchAssignments.Any(a => a.IsActive && a.RescueUnit?.StationId == user.StationId),
             UserRole.Citizen => incident.ReportedByUserId == user.Id,
             UserRole.RescueStaff => user.StationId.HasValue
-                                    && incident.DispatchAssignments.Any(a => a.RescueUnit?.StationId == user.StationId),
+                                    && incident.DispatchAssignments.Any(a => a.RescueUnit?.StationId == user.StationId
+                                        && (a.IsActive || (a.Status == DispatchAssignmentStatus.Completed
+                                                           && a.CompletedAt >= now - StaffAccessAfterCompletion))),
             _ => false
         };
+    }
+
+    /// <summary>
+    /// Gửi thông báo khẩn tới trung tâm chỉ huy của sự cố: Operator trạm phụ trách + Admin
+    /// (trạm chưa có Operator → mọi Operator)
+    /// </summary>
+    private async Task NotifyCommandCenterAsync(Guid? stationId, NotificationRequest request, CancellationToken cancellationToken)
+    {
+        var staffRoles = await _userRepository.GetActiveByRolesAsync(new[] { UserRole.Operator, UserRole.Admin });
+        var stationOperators = staffRoles.Where(u => u.Role == UserRole.Operator && stationId.HasValue && u.StationId == stationId).ToList();
+        var recipients = stationOperators.Count > 0
+            ? stationOperators.Concat(staffRoles.Where(u => u.Role == UserRole.Admin))
+            : staffRoles;
+
+        await _notificationService.NotifyUsersAsync(recipients.Select(u => u.Id).Distinct().ToList(), request, cancellationToken);
+    }
+
+    public async Task<ApiResponseDto<IncidentResponseDto>> TransferIncidentAsync(
+        Guid id,
+        TransferIncidentDto dto,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
+        if (incident == null)
+        {
+            return ApiResponseDto<IncidentResponseDto>.NotFoundResult("Không tìm thấy sự cố.");
+        }
+
+        var scopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<IncidentResponseDto>.ForbiddenResult(scopeError);
+        }
+        if (incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Không thể chuyển trạm cho sự cố đã đóng.");
+        }
+        var reason = dto.Reason?.Trim() ?? string.Empty;
+        if (reason.Length < 5)
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Lý do chuyển trạm tối thiểu 5 ký tự.");
+        }
+        if (dto.StationId == incident.ResponsibleStationId)
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Sự cố đã thuộc trạm này.");
+        }
+
+        var target = await _stationRepository.GetByIdAsync(dto.StationId);
+        if (target == null || target.IsDeleted)
+        {
+            return ApiResponseDto<IncidentResponseDto>.NotFoundResult("Không tìm thấy trạm nhận.");
+        }
+        if (!target.IsActive)
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Trạm nhận đang tạm ngưng hoạt động.");
+        }
+
+        var actor = await _userRepository.GetByIdAsync(actorUserId);
+        var from = incident.ResponsibleStation;
+        var now = DateTime.UtcNow;
+
+        incident.ResponsibleStationId = target.Id;
+        incident.ResponsibleStation = target;
+        // Nhả khóa mềm để Operator trạm nhận xử lý ngay
+        incident.LockedByOperatorId = null;
+        incident.LockExpiresAt = null;
+        incident.UpdatedAt = now;
+
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = actorUserId,
+            ActorRole = actor?.Role.ToString(),
+            Action = AuditAction.TransferredStation,
+            Description = $"Chuyển trạm phụ trách: {from?.Name ?? "(chưa có)"} → {target.Name}. Lý do: {reason}",
+            OldStateJson = JsonSerializer.Serialize(new { responsibleStationId = from?.Id }),
+            NewStateJson = JsonSerializer.Serialize(new { responsibleStationId = target.Id }),
+            Timestamp = now
+        }, cancellationToken);
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+
+        var incidentDto = MapToResponseDto(incident);
+        if (from != null)
+        {
+            await _realtimeNotifier.IncidentLockChangedAsync(new IncidentLockEventDto { IncidentId = incident.Id, ChangedAt = now },
+                from.Id, cancellationToken);
+        }
+        await _realtimeNotifier.IncidentTransferredAsync(new IncidentTransferredDto
+        {
+            IncidentId = incident.Id,
+            IncidentTitle = incident.Title,
+            FromStationId = from?.Id,
+            FromStationName = from?.Name,
+            ToStationId = target.Id,
+            ToStationName = target.Name,
+            Reason = reason,
+            TransferredByName = actor?.FullName,
+            TransferredAt = now
+        }, incidentDto, cancellationToken);
+
+        await NotifyCommandCenterAsync(target.Id, new NotificationRequest
+        {
+            Type = NotificationType.NewIncident,
+            Title = "SỰ CỐ ĐƯỢC CHUYỂN TỚI TRẠM BẠN",
+            Message = $"{incident.Title} — {incident.LocationAddress} (từ {from?.Name ?? "trạm khác"}). Lý do: {reason}",
+            IncidentId = incident.Id,
+            HighPriority = incident.Severity is SeverityLevel.Level3 or SeverityLevel.Unclassified
+        }, cancellationToken);
+
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(incidentDto, $"Đã chuyển sự cố sang {target.Name}.");
     }
 
     /// <summary>
@@ -757,7 +1099,8 @@ public class IncidentService : IIncidentService
     {
         var allowed = actor.Role switch
         {
-            UserRole.Operator or UserRole.Admin => true,
+            UserRole.Admin => true,
+            UserRole.Operator => CanAccess(incident, actor),
             UserRole.RescueStaff => actor.StationId.HasValue
                                     && incident.DispatchAssignments.Any(a => a.IsActive && a.RescueUnit?.StationId == actor.StationId),
             UserRole.Citizen => incident.ReportedByUserId == actor.Id,
@@ -822,6 +1165,18 @@ public class IncidentService : IIncidentService
         if (filter.From.HasValue && filter.To.HasValue && filter.From > filter.To)
         {
             return ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>.FailureResult("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.");
+        }
+
+        if (_currentUser.IsStationScoped())
+        {
+            var scoped = filter.IncidentId.HasValue ? await _incidentRepository.GetByIdAsync(filter.IncidentId.Value) : null;
+            var auditScopeError = scoped == null
+                ? OperatorScope.OtherStationMessage
+                : _currentUser.CheckIncident(scoped.ResponsibleStationId);
+            if (auditScopeError != null)
+            {
+                return ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>.ForbiddenResult(auditScopeError);
+            }
         }
 
         var pageSize = Math.Clamp(filter.PageSize, 1, 100);
@@ -934,6 +1289,18 @@ public class IncidentService : IIncidentService
             LockedByOperatorId = hasActiveLock ? incident.LockedByOperatorId : null,
             LockedByOperatorName = hasActiveLock ? incident.LockedByOperator?.FullName : null,
             LockExpiresAt = hasActiveLock ? incident.LockExpiresAt : null,
+            ResponsibleStationId = incident.ResponsibleStationId,
+            ResponsibleStationName = incident.ResponsibleStation?.Name,
+            IsOutOfServiceArea = incident.IsOutOfServiceArea,
+            DistanceOutsideAreaKm = incident.DistanceOutsideAreaKm,
+            EventType = incident.EventType != IncidentEventType.None
+                ? incident.EventType
+                : incident.AiClassification?.EventType ?? IncidentEventType.None,
+            CancellationReason = incident.CancellationReason,
+            CancelledAt = incident.CancelledAt,
+            CancelledByUserId = incident.CancelledByUserId,
+            CancelledByName = incident.CancelledByUser?.FullName,
+            CancellationNote = incident.CancellationNote,
             MediaItems = incident.MediaItems.Select(m => new IncidentMediaDto
             {
                 Id = m.Id,

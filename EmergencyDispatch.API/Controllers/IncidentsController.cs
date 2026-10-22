@@ -120,7 +120,7 @@ public class IncidentsController : ControllerBase
     public async Task<IActionResult> GetIncidents([FromQuery] IncidentFilterDto filter, CancellationToken cancellationToken)
     {
         var response = await _incidentService.GetIncidentsAsync(filter, cancellationToken);
-        return Ok(response);
+        return this.ToHttpResult(response);
     }
 
     /// <summary>
@@ -178,7 +178,7 @@ public class IncidentsController : ControllerBase
         }
 
         var reason = !string.IsNullOrWhiteSpace(dto?.Reason) ? dto.Reason : "Người dùng tự hủy sự cố";
-        var response = await _incidentService.CancelIncidentAsync(id, reason, currentUserId, cancellationToken);
+        var response = await _incidentService.CancelIncidentAsync(id, reason, currentUserId, cancellationToken, reasonCode: dto?.ReasonCode);
         return this.ToHttpResult(response);
     }
 
@@ -221,6 +221,17 @@ public class IncidentsController : ControllerBase
         var response = await _incidentService.RevealReporterPhoneAsync(id, GetCurrentUserId(), cancellationToken);
         return this.ToHttpResult(response);
     }
+
+    /// <summary>
+    /// Chuyển sự cố sang trạm khác phụ trách (sự cố sát ranh giới / trạm hiện tại quá tải).
+    /// Operator chỉ chuyển được sự cố của trạm mình; Operator trạm nhận được báo realtime.
+    /// </summary>
+    [HttpPost("{id:guid}/transfer")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Transfer(Guid id, [FromBody] TransferIncidentDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _incidentService.TransferIncidentAsync(id, dto, GetCurrentUserId(), cancellationToken));
 
     /// <summary>
     /// Chặn số điện thoại báo khống của sự cố (FR-OP-03, BR-05). Số bị chặn sẽ không gửi SOS được cho tới khi hết hạn.

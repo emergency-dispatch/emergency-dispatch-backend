@@ -20,4 +20,14 @@ public class EscalationAlertDto
     public string ActionTaken { get; set; } = string.Empty;
     public int ExpandRadiusPercent { get; set; }
     public DateTime TriggeredAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Trạm phụ trách sự cố
+    /// </summary>
+    public Guid? ResponsibleStationId { get; set; }
+
+    /// <summary>
+    /// 1 = báo Operator trạm phụ trách + Admin; 2 = quá gấp đôi ngưỡng, báo mọi Operator (BR-17)
+    /// </summary>
+    public int Tier { get; set; } = 1;
 }

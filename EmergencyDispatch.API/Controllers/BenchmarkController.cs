@@ -15,10 +15,39 @@ namespace EmergencyDispatch.API.Controllers;
 public class BenchmarkController : ControllerBase
 {
     private readonly ITelemetryService _telemetryService;
+    private readonly IReportFileGenerator _fileGenerator;
 
-    public BenchmarkController(ITelemetryService telemetryService)
+    public BenchmarkController(ITelemetryService telemetryService, IReportFileGenerator fileGenerator)
     {
         _telemetryService = telemetryService;
+        _fileGenerator = fileGenerator;
+    }
+
+    /// <summary>
+    /// Dữ liệu từng sự cố cho phân tích RQ2 / RQ3: mốc AI, xác minh, điều xe, tới nơi, đóng; có ghi đè AI không; thuật toán điều phối
+    /// </summary>
+    /// <param name="from">Lọc sự cố tạo từ thời điểm (UTC)</param>
+    /// <param name="to">Lọc sự cố tạo đến thời điểm (UTC)</param>
+    /// <param name="format">Json (mặc định) hoặc Csv (tải file)</param>
+    /// <param name="cancellationToken">Hủy khi client ngắt kết nối</param>
+    [HttpGet("incidents")]
+    [Produces("application/json", "text/csv")]
+    [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<TelemetryIncidentRowDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetIncidentRows([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] string format = "Json", CancellationToken cancellationToken = default)
+    {
+        if (from.HasValue && to.HasValue && from > to)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail("Thời gian bắt đầu phải trước thời gian kết thúc."));
+        }
+
+        var rows = await _telemetryService.GetIncidentRowsAsync(from, to, cancellationToken);
+        if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
+        {
+            return File(_fileGenerator.BuildTelemetryCsv(rows), "text/csv; charset=utf-8",
+                $"telemetry-incidents_{DateTime.UtcNow.AddHours(7):yyyyMMdd_HHmm}.csv");
+        }
+
+        return Ok(ApiResponseDto<IReadOnlyList<TelemetryIncidentRowDto>>.Ok(rows, $"{rows.Count} sự cố."));
     }
 
     /// <summary>

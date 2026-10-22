@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Security;
 using EmergencyDispatch.Application.Interfaces;
@@ -15,11 +16,13 @@ public class BlockedNumberService : IBlockedNumberService
 {
     private readonly IBlockedPhoneRepository _repository;
     private readonly ILogger<BlockedNumberService> _logger;
+    private readonly ISystemAuditService _auditService;
 
-    public BlockedNumberService(IBlockedPhoneRepository repository, ILogger<BlockedNumberService> logger)
+    public BlockedNumberService(IBlockedPhoneRepository repository, ILogger<BlockedNumberService> logger, ISystemAuditService auditService)
     {
         _repository = repository;
         _logger = logger;
+        _auditService = auditService;
     }
 
     public async Task<PaginatedResultDto<BlockedNumberDto>> GetPagedAsync(
@@ -56,6 +59,8 @@ public class BlockedNumberService : IBlockedNumberService
         await _repository.UpdateAsync(block);
 
         _logger.LogInformation("Admin {Actor} gỡ chặn số {Phone}: {Reason}", actorUserId, PhoneMasking.Mask(block.PhoneNumber), block.RemoveReason);
+        await _auditService.LogAsync(SystemAuditAction.Unblocked, AuditEntityTypes.BlockedNumber, block.Id, PhoneMasking.Mask(block.PhoneNumber),
+            $"Gỡ chặn số {PhoneMasking.Mask(block.PhoneNumber)}. Lý do: {block.RemoveReason}", cancellationToken: cancellationToken);
         return ApiResponseDto<BlockedNumberDto>.SuccessResult(Map(block, now), "Đã gỡ chặn số điện thoại.");
     }
 
@@ -73,6 +78,7 @@ public class BlockedNumberService : IBlockedNumberService
         }
 
         var now = DateTime.UtcNow;
+        var before = new { block.Duration, block.ExpiresAt };
         block.Duration = dto.Duration;
         block.ExpiresAt = BlockedPhoneNumber.CalculateExpiry(dto.Duration, now);
         block.LastExtendedAt = now;
@@ -82,6 +88,9 @@ public class BlockedNumberService : IBlockedNumberService
         await _repository.UpdateAsync(block);
 
         _logger.LogInformation("Admin {Actor} gia hạn chặn số {Phone} ({Duration})", actorUserId, PhoneMasking.Mask(block.PhoneNumber), dto.Duration);
+        await _auditService.LogAsync(SystemAuditAction.BlockExtended, AuditEntityTypes.BlockedNumber, block.Id, PhoneMasking.Mask(block.PhoneNumber),
+            $"Gia hạn chặn số {PhoneMasking.Mask(block.PhoneNumber)} ({dto.Duration}). Lý do: {dto.Reason.Trim()}",
+            before, new { block.Duration, block.ExpiresAt }, cancellationToken);
         return ApiResponseDto<BlockedNumberDto>.SuccessResult(Map(block, now), "Đã gia hạn thời gian chặn.");
     }
 

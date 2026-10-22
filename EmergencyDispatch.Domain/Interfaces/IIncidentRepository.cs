@@ -14,8 +14,19 @@ public interface IIncidentRepository : IGenericRepository<Incident>
         DateTime? toDate,
         int pageIndex,
         int pageSize,
-        CancellationToken cancellationToken = default);
-    Task<List<Incident>> GetPendingQueueAsync(CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Guid? responsibleStationId = null,
+        IReadOnlyCollection<IncidentStatus>? statuses = null);
+
+    /// <summary>
+    /// Sự cố chưa được Operator xác minh (Pending / AiProcessing / AiProcessed) tạo trước cutoffUtc — để tự hủy sau 24h
+    /// </summary>
+    Task<List<Guid>> GetStaleUnverifiedIdsAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// responsibleStationId != null → chỉ sự cố của trạm đó và sự cố chưa xác định trạm
+    /// </summary>
+    Task<List<Incident>> GetPendingQueueAsync(CancellationToken cancellationToken = default, Guid? responsibleStationId = null);
 
     /// <summary>
     /// Lấy các sự cố kẹt ở trạng thái AiProcessing mà chưa có kết quả AI (do server restart làm mất hàng đợi in-memory)
@@ -73,4 +84,19 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     /// Sự cố kèm kết quả AI và phân công trong khoảng thời gian (phục vụ số liệu RQ2/RQ3)
     /// </summary>
     Task<IReadOnlyList<Incident>> GetForTelemetryAsync(DateTime? from, DateTime? to, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lịch sử sự cố đã đóng (Completed / Cancelled) cho Admin: lọc theo thời điểm báo cáo, trạm có xe tham gia,
+    /// mức độ, từ khóa; mới nhất trước. pageSize = 0 → lấy tất cả (dùng khi xuất báo cáo, có giới hạn maxRows).
+    /// </summary>
+    Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetClosedHistoryAsync(
+        IReadOnlyCollection<IncidentStatus> statuses,
+        DateTime? from,
+        DateTime? to,
+        Guid? stationId,
+        SeverityLevel? severity,
+        string? search,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
 }

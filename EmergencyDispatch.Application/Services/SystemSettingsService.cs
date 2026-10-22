@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Text.Json;
+using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Settings;
 using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 
@@ -15,17 +17,20 @@ public class SystemSettingsService : ISystemSettingsService
 {
     public const string DispatchKey = "dispatch";
     public const string EscalationKey = "escalation";
+    public const string ServiceAreaKey = "serviceArea";
     private const double WeightSumTolerance = 0.001;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly ISystemSettingRepository _repository;
     private readonly ILogger<SystemSettingsService> _logger;
+    private readonly ISystemAuditService _auditService;
 
-    public SystemSettingsService(ISystemSettingRepository repository, ILogger<SystemSettingsService> logger)
+    public SystemSettingsService(ISystemSettingRepository repository, ILogger<SystemSettingsService> logger, ISystemAuditService auditService)
     {
         _repository = repository;
         _logger = logger;
+        _auditService = auditService;
     }
 
     public async Task<DispatchSettingsDto> GetDispatchSettingsAsync(CancellationToken cancellationToken = default)
@@ -53,8 +58,11 @@ public class SystemSettingsService : ISystemSettingsService
         }
 
         values.RadiusStepsKm = values.RadiusStepsKm.OrderBy(r => r).ToList();
+        var before = await GetDispatchSettingsAsync(cancellationToken);
         await _repository.UpsertAsync(DispatchKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
         _logger.LogInformation("Admin {Actor} cập nhật tham số điều phối: {Json}", actorUserId, JsonSerializer.Serialize(values, JsonOptions));
+        await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, DispatchKey,
+            "Cập nhật tham số điều phối (trọng số Load-Aware, bán kính tìm xe, thời gian CoolDown)", before, values, cancellationToken);
 
         return ApiResponseDto<SettingsRecordDto<DispatchSettingsDto>>.SuccessResult(
             await GetDispatchRecordAsync(cancellationToken), "Đã lưu tham số điều phối.");
@@ -66,17 +74,48 @@ public class SystemSettingsService : ISystemSettingsService
         CancellationToken cancellationToken = default)
     {
         var dispatch = await GetDispatchSettingsAsync(cancellationToken);
+        var escalationBefore = await GetEscalationSettingsAsync(cancellationToken);
         var errors = ValidateEscalation(values, dispatch.RadiusStepsKm);
         if (errors.Count > 0)
         {
             return ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>.FailureResult(errors, "Cấu hình leo thang không hợp lệ.");
         }
 
+        var before = escalationBefore;
         await _repository.UpsertAsync(EscalationKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
         _logger.LogInformation("Admin {Actor} cập nhật cấu hình leo thang: {Json}", actorUserId, JsonSerializer.Serialize(values, JsonOptions));
+        await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, EscalationKey,
+            "Cập nhật cấu hình leo thang (ngưỡng ngày/đêm, khung giờ đêm, mở rộng bán kính)", before, values, cancellationToken);
 
         return ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>.SuccessResult(
             await GetEscalationRecordAsync(cancellationToken), "Đã lưu cấu hình leo thang.");
+    }
+
+    public async Task<ServiceAreaSettingsDto> GetServiceAreaAsync(CancellationToken cancellationToken = default)
+        => (await GetServiceAreaRecordAsync(cancellationToken)).Values;
+
+    public Task<SettingsRecordDto<ServiceAreaSettingsDto>> GetServiceAreaRecordAsync(CancellationToken cancellationToken = default)
+        => LoadAsync<ServiceAreaSettingsDto>(ServiceAreaKey, cancellationToken);
+
+    public async Task<ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>> UpdateServiceAreaAsync(
+        ServiceAreaSettingsDto values,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        values.Name = values.Name?.Trim() ?? string.Empty;
+        var errors = StationAssignment.ValidateServiceArea(values);
+        if (errors.Count > 0)
+        {
+            return ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>.FailureResult(errors, "Cấu hình khu vực phục vụ không hợp lệ.");
+        }
+
+        var before = await GetServiceAreaAsync(cancellationToken);
+        await _repository.UpsertAsync(ServiceAreaKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
+        await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, ServiceAreaKey,
+            $"Cập nhật khu vực phục vụ \"{values.Name}\" (bán kính {values.RadiusKm} km, {(values.Enabled ? "bật" : "tắt")} kiểm tra)", before, values, cancellationToken);
+
+        return ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>.SuccessResult(
+            await GetServiceAreaRecordAsync(cancellationToken), "Đã lưu khu vực phục vụ.");
     }
 
     /// <summary>
@@ -102,6 +141,7 @@ public class SystemSettingsService : ISystemSettingsService
         else if (steps[^1] > maxRadiusKm) errors.Add($"Nấc cuối không được vượt bán kính tối đa của cấu hình leo thang ({maxRadiusKm} km).");
 
         if (!(s.RecoveryMinutes > 0)) errors.Add("Thời gian hồi sức phải lớn hơn 0.");
+        if (!(s.AutoExpireHours >= 1 && s.AutoExpireHours <= 168)) errors.Add("Thời gian tự hủy sự cố chưa xác minh phải từ 1 đến 168 giờ.");
         return errors;
     }
 
