@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.Security.Claims;
 using EmergencyDispatch.API.Realtime;
 using EmergencyDispatch.Application.Interfaces;
@@ -39,7 +40,7 @@ public class IncidentHub : Hub
         var userId = Guid.TryParse(Context.User?.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
         if (userId == Guid.Empty || !await _incidentService.CanAccessIncidentAsync(incidentId, userId))
         {
-            throw new HubException("Bạn không có quyền theo dõi sự cố này.");
+            throw new HubException(LocalizationHelper.Localize("Bạn không có quyền theo dõi sự cố này."));
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, RealtimeContract.IncidentGroup(incidentId));

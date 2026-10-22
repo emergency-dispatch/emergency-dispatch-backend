@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Escalation;
 using EmergencyDispatch.Application.Interfaces;
@@ -151,6 +152,6 @@ public class EscalationController : ControllerBase
     public async Task<IActionResult> TriggerCheck(CancellationToken cancellationToken)
     {
         var count = await _escalationService.ProcessEscalationsAsync(cancellationToken);
-        return Ok(ApiResponseDto<int>.SuccessResult(count, $"Đã thực hiện quét kiểm tra và kích hoạt {count} sự cố leo thang."));
+        return Ok(ApiResponseDto<int>.SuccessResult(count, LocalizationHelper.Localize("Đã thực hiện quét kiểm tra và kích hoạt {0} sự cố leo thang.", count)));
     }
 }

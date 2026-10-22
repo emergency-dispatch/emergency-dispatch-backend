@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Domain.Enums;
 
@@ -34,7 +35,7 @@ public class IncidentFilterDto : PaginationParamsDto
         {
             if (!Enum.TryParse<IncidentStatus>(part, true, out var s) || !Enum.IsDefined(s))
             {
-                throw new ArgumentException($"Trạng thái \"{part}\" không hợp lệ.");
+                throw new ArgumentException(LocalizationHelper.Localize("Trạng thái \"{0}\" không hợp lệ.", part));
             }
             if (!result.Contains(s)) result.Add(s);
         }

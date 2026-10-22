@@ -499,8 +499,8 @@ public class IncidentService : IIncidentService
         if ((isOverride || manualAssessment) && (dto.OperatorNotes?.Trim().Length ?? 0) < MinOverrideReasonLength)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult(isOverride
-                ? $"Bạn đang thay đổi mức độ AI đề xuất ({aiSeverity} → {dto.ConfirmedSeverity}). Vui lòng nhập lý do ghi đè (tối thiểu {MinOverrideReasonLength} ký tự) vào operatorNotes."
-                : $"Sự cố chưa được AI phân loại. Vui lòng nhập căn cứ đánh giá mức độ (tối thiểu {MinOverrideReasonLength} ký tự) vào operatorNotes.");
+                ? LocalizationHelper.Localize("Bạn đang thay đổi mức độ AI đề xuất ({0} → {1}). Vui lòng nhập lý do ghi đè (tối thiểu {2} ký tự) vào operatorNotes.", aiSeverity.GetValueOrDefault(), dto.ConfirmedSeverity, MinOverrideReasonLength)
+                : LocalizationHelper.Localize("Sự cố chưa được AI phân loại. Vui lòng nhập căn cứ đánh giá mức độ (tối thiểu {0} ký tự) vào operatorNotes.", MinOverrideReasonLength));
         }
 
         // BR-13: loại sự cố quyết định chủng loại xe; AI chưa xác định thì Operator phải chọn
@@ -794,7 +794,7 @@ public class IncidentService : IIncidentService
 
         if (incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
         {
-            return ApiResponseDto<IncidentLockDto>.FailureResult($"Sự cố đã ở trạng thái '{incident.Status}', không cần khóa.");
+            return ApiResponseDto<IncidentLockDto>.FailureResult(LocalizationHelper.Localize("Sự cố đã ở trạng thái '{0}', không cần khóa.", incident.Status));
         }
 
         var now = DateTime.UtcNow;
@@ -803,7 +803,7 @@ public class IncidentService : IIncidentService
         if (!acquired)
         {
             return ApiResponseDto<IncidentLockDto>.ConflictResult(
-                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}.");
+                LocalizationHelper.Localize("Sự cố đang được xử lý bởi {0}.", incident.LockedByOperator?.FullName ?? LocalizationHelper.Localize("điều phối viên khác")));
         }
 
         var operatorUser = await _userRepository.GetByIdAsync(operatorId);
@@ -1094,7 +1094,7 @@ public class IncidentService : IIncidentService
             HighPriority = incident.Severity is SeverityLevel.Level3 or SeverityLevel.Unclassified
         }, cancellationToken);
 
-        return ApiResponseDto<IncidentResponseDto>.SuccessResult(incidentDto, $"Đã chuyển sự cố sang {target.Name}.");
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(incidentDto, LocalizationHelper.Localize("Đã chuyển sự cố sang {0}.", target.Name));
     }
 
     /// <summary>

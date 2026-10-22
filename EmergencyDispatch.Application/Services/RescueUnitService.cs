@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.RescueUnit;
 using EmergencyDispatch.Application.Interfaces;
@@ -43,7 +44,7 @@ public class RescueUnitService : IRescueUnitService
         var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(id);
         if (unit == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ với ID: {0}", id));
         }
 
         return MapToDto(unit);
@@ -54,7 +55,7 @@ public class RescueUnitService : IRescueUnitService
         var station = await _stationRepository.GetByIdAsync(stationId);
         if (station == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với ID: {stationId}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với ID: {0}", stationId));
         }
 
         var units = await _rescueUnitRepository.GetByStationIdAsync(stationId);
@@ -73,12 +74,12 @@ public class RescueUnitService : IRescueUnitService
         var station = await _stationRepository.GetByIdAsync(dto.StationId);
         if (station == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với ID: {dto.StationId}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với ID: {0}", dto.StationId));
         }
 
         if (await _rescueUnitRepository.PlateNumberExistsAsync(dto.PlateNumber))
         {
-            throw new InvalidOperationException($"Biển số / Mã hiệu xe '{dto.PlateNumber}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException(LocalizationHelper.Localize("Biển số / Mã hiệu xe '{0}' đã tồn tại trong hệ thống.", dto.PlateNumber));
         }
 
         // Nếu không cung cấp tọa độ ban đầu, mặc định lấy tọa độ của trạm
@@ -111,7 +112,7 @@ public class RescueUnitService : IRescueUnitService
         var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(id);
         if (unit == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ với ID: {0}", id));
         }
 
         // Operator chỉ sửa xe trạm mình; chuyển xe sang trạm khác chỉ Admin
@@ -124,12 +125,12 @@ public class RescueUnitService : IRescueUnitService
         var station = await _stationRepository.GetByIdAsync(dto.StationId);
         if (station == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với ID: {dto.StationId}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với ID: {0}", dto.StationId));
         }
 
         if (await _rescueUnitRepository.PlateNumberExistsAsync(dto.PlateNumber, id))
         {
-            throw new InvalidOperationException($"Biển số / Mã hiệu xe '{dto.PlateNumber}' đã được sử dụng bởi phương tiện khác.");
+            throw new InvalidOperationException(LocalizationHelper.Localize("Biển số / Mã hiệu xe '{0}' đã được sử dụng bởi phương tiện khác.", dto.PlateNumber));
         }
 
         // BR-AD-03: xe đang làm nhiệm vụ không được đổi trạm, đổi trạng thái tay hay đưa đi bảo trì
@@ -168,7 +169,7 @@ public class RescueUnitService : IRescueUnitService
         var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(id);
         if (unit == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ với ID: {0}", id));
         }
 
         unit.UpdateLocation(dto.Latitude, dto.Longitude);
@@ -182,7 +183,7 @@ public class RescueUnitService : IRescueUnitService
         var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(id);
         if (unit == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ với ID: {0}", id));
         }
 
         EnsureOwnStation(unit.StationId);
@@ -220,7 +221,7 @@ public class RescueUnitService : IRescueUnitService
         var unit = await _rescueUnitRepository.GetByIdAsync(id);
         if (unit == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy phương tiện cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ với ID: {0}", id));
         }
 
         if (IsOnMission(unit.Status) || await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null)
@@ -281,7 +282,7 @@ public class RescueUnitService : IRescueUnitService
         if (newStatus == currentStatus) return;
         if (newStatus is RescueUnitStatus.Dispatched or RescueUnitStatus.OnScene or RescueUnitStatus.CoolDown)
         {
-            throw new InvalidOperationException($"Trạng thái '{newStatus}' do hệ thống tự cập nhật theo nhiệm vụ, không đặt thủ công được.");
+            throw new InvalidOperationException(LocalizationHelper.Localize("Trạng thái '{0}' do hệ thống tự cập nhật theo nhiệm vụ, không đặt thủ công được.", newStatus));
         }
     }
 

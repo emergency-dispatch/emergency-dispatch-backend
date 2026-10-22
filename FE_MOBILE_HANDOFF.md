@@ -839,3 +839,23 @@ Backend từ chối token (401) ngay khi tài khoản bị **khóa / xóa / đ�
 ### 11.4. Dữ liệu hiện tại (23/10)
 - Chỉ còn 1 trạm (FPT Station). Tài khoản `operator@emergencydispatch.com` vẫn trỏ tới trạm Q1 đã xóa nên không thấy sự cố nào. Admin cần gán lại.
 - Lượt đang chạy: xe **51A-115.01** → "Emergency SOS Alarm" (`Accepted`, từ 22/10 20:27).
+
+
+---
+
+## 12. Cập nhật 23/10/2026: thông báo song ngữ vi / en cho các API mới
+
+Các thông báo lỗi và thành công của các module mới (trạm phụ trách, xe, tổ, điều phối, leo thang, khu vực phục vụ, báo cáo, khóa phiên, chuyển trạm, verify…) đã **song ngữ**. FE chọn ngôn ngữ như sau:
+
+| Kênh | Cách chọn ngôn ngữ |
+|---|---|
+| REST API | Header `Accept-Language: en` (hoặc `vi`), hoặc query `?culture=en` |
+| SignalR (`/hubs/incidents`, `/hubs/tracking`) | Thêm `?culture=en` vào URL khi kết nối. Ví dụ: `withUrl(`${HUB}/incidents?culture=${lang}`, { accessTokenFactory })`. `HubException` (VD "You do not have permission to track this incident.") trả theo ngôn ngữ này |
+| Header `X-Auth-Error` (401 do khóa / đổi quyền / đổi trạm) | Theo `Accept-Language` của request. Nhớ dùng `decodeURIComponent` |
+| Lỗi validation (400 `errors{}`) | Theo `Accept-Language` |
+
+Hai loại thông báo **giữ nguyên tiếng Việt**:
+- **Nội dung thông báo và push** (`/api/notifications`, FCM): lưu vào DB lúc tạo và gửi cho **người khác**, nên không biết trước ngôn ngữ người nhận.
+- **Mô tả audit trail / nhật ký quản trị:** dữ liệu lưu vết nội bộ.
+
+Khi đổi ngôn ngữ trong app, FE cần **kết nối lại SignalR** với `culture` mới.

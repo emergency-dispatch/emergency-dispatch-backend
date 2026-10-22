@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.ComponentModel.DataAnnotations;
 using EmergencyDispatch.API.Realtime;
 using EmergencyDispatch.Application.DTOs.RescueUnit;
@@ -41,7 +42,7 @@ public class TrackingHub : Hub
         var userId = Guid.TryParse(Context.User?.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
         if (userId == Guid.Empty || !await _incidentService.CanAccessIncidentAsync(incidentId, userId))
         {
-            throw new HubException("Bạn không có quyền theo dõi sự cố này.");
+            throw new HubException(LocalizationHelper.Localize("Bạn không có quyền theo dõi sự cố này."));
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, RealtimeContract.IncidentGroup(incidentId));
@@ -60,13 +61,13 @@ public class TrackingHub : Hub
                       || user?.IsInRole(nameof(UserRole.Admin)) == true;
         if (!allowed)
         {
-            throw new HubException("Chỉ nhân viên cứu hộ mới được gửi vị trí.");
+            throw new HubException(LocalizationHelper.Localize("Chỉ nhân viên cứu hộ mới được gửi vị trí."));
         }
 
         var validation = new List<ValidationResult>();
         if (!Validator.TryValidateObject(message, new ValidationContext(message), validation, true))
         {
-            throw new HubException(string.Join("; ", validation.Select(v => v.ErrorMessage)));
+            throw new HubException(string.Join("; ", validation.Select(v => LocalizationHelper.Localize(v.ErrorMessage))));
         }
 
         // Nhân viên cứu hộ chỉ được gửi vị trí của xe thuộc trạm mình
@@ -80,12 +81,12 @@ public class TrackingHub : Hub
             }
             catch (KeyNotFoundException)
             {
-                throw new HubException("Không tìm thấy phương tiện cứu hộ.");
+                throw new HubException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ."));
             }
 
             if (!Guid.TryParse(stationClaim, out var stationId) || unitInfo.StationId != stationId)
             {
-                throw new HubException("Bạn chỉ được gửi vị trí của xe thuộc trạm mình.");
+                throw new HubException(LocalizationHelper.Localize("Bạn chỉ được gửi vị trí của xe thuộc trạm mình."));
             }
         }
 
@@ -100,7 +101,7 @@ public class TrackingHub : Hub
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "TrackingHub: không cập nhật được vị trí xe {RescueUnitId}", message.RescueUnitId);
-            throw new HubException("Không cập nhật được vị trí đội cứu hộ.");
+            throw new HubException(LocalizationHelper.Localize("Không cập nhật được vị trí đội cứu hộ."));
         }
 
         var payload = new

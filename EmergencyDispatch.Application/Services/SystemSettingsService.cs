@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.Globalization;
 using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Audit;
@@ -138,7 +139,7 @@ public class SystemSettingsService : ISystemSettingsService
         if (steps.Count == 0) errors.Add("Cần ít nhất 1 nấc bán kính.");
         else if (steps.Any(r => !(r > 0))) errors.Add("Mỗi nấc bán kính phải lớn hơn 0.");
         else if (steps.Where((r, i) => i > 0 && r <= steps[i - 1]).Any()) errors.Add("Các nấc bán kính phải tăng dần.");
-        else if (steps[^1] > maxRadiusKm) errors.Add($"Nấc cuối không được vượt bán kính tối đa của cấu hình leo thang ({maxRadiusKm} km).");
+        else if (steps[^1] > maxRadiusKm) errors.Add(LocalizationHelper.Localize("Nấc cuối không được vượt bán kính tối đa của cấu hình leo thang ({0} km).", maxRadiusKm));
 
         if (!(s.RecoveryMinutes > 0)) errors.Add("Thời gian hồi sức phải lớn hơn 0.");
         if (!(s.AutoExpireHours >= 1 && s.AutoExpireHours <= 168)) errors.Add("Thời gian tự hủy sự cố chưa xác minh phải từ 1 đến 168 giờ.");
@@ -163,7 +164,7 @@ public class SystemSettingsService : ISystemSettingsService
 
         var lastStep = dispatchStepsKm.Count > 0 ? dispatchStepsKm.Max() : 0;
         if (!(s.MaxRadiusKm > 0)) errors.Add("Bán kính tối đa phải lớn hơn 0.");
-        else if (s.MaxRadiusKm < lastStep) errors.Add($"Bán kính tối đa không được nhỏ hơn nấc bán kính cuối của tham số điều phối ({lastStep} km).");
+        else if (s.MaxRadiusKm < lastStep) errors.Add(LocalizationHelper.Localize("Bán kính tối đa không được nhỏ hơn nấc bán kính cuối của tham số điều phối ({0} km).", lastStep));
 
         return errors;
     }

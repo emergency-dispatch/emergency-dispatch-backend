@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Traffic;
 using EmergencyDispatch.Application.Interfaces;
@@ -84,7 +85,7 @@ public class TrafficService : ITrafficService
 
         return ApiResponseDto<List<TrafficHotspotResponseDto>>.SuccessResult(
             dtos,
-            $"Lấy danh sách {dtos.Count} điểm nghẽn đang hoạt động thành công.");
+            LocalizationHelper.Localize("Lấy danh sách {0} điểm nghẽn đang hoạt động thành công.", dtos.Count));
     }
 
     public async Task<ApiResponseDto<TrafficHotspotResponseDto>> ResolveHotspotAsync(

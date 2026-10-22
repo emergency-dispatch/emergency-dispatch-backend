@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Benchmark;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.Interfaces;
@@ -47,7 +48,7 @@ public class BenchmarkController : ControllerBase
                 $"telemetry-incidents_{DateTime.UtcNow.AddHours(7):yyyyMMdd_HHmm}.csv");
         }
 
-        return Ok(ApiResponseDto<IReadOnlyList<TelemetryIncidentRowDto>>.Ok(rows, $"{rows.Count} sự cố."));
+        return Ok(ApiResponseDto<IReadOnlyList<TelemetryIncidentRowDto>>.Ok(rows, LocalizationHelper.Localize("{0} sự cố.", rows.Count)));
     }
 
     /// <summary>

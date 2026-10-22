@@ -5,7 +5,7 @@ namespace EmergencyDispatch.Application.Localization;
 /// <summary>
 /// Từ điển từ vựng và câu thông báo song ngữ (Vietnamese / English)
 /// </summary>
-public static class LocalizationCatalog
+public static partial class LocalizationCatalog
 {
     // Từ điển ánh xạ Vietnamese -> English
     public static readonly Dictionary<string, string> ViToEn = new(StringComparer.OrdinalIgnoreCase)
@@ -178,6 +178,12 @@ public static class LocalizationCatalog
 
     static LocalizationCatalog()
     {
+        // Gộp từ điển các module vận hành (LocalizationCatalog.Operations.cs)
+        foreach (var kv in OperationsViToEn)
+        {
+            ViToEn.TryAdd(kv.Key, kv.Value);
+        }
+
         foreach (var kv in ViToEn)
         {
             if (!EnToVi.ContainsKey(kv.Value))

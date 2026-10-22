@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.RescueUnit;
 using EmergencyDispatch.Application.DTOs.Station;
@@ -43,7 +44,7 @@ public class StationService : IStationService
         var station = await _stationRepository.GetByIdWithUnitsAndStaffAsync(id);
         if (station == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với ID: {0}", id));
         }
 
         return MapToDto(station);
@@ -78,7 +79,7 @@ public class StationService : IStationService
         var station = await _stationRepository.GetByIdWithUnitsAndStaffAsync(id);
         if (station == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với ID: {0}", id));
         }
 
         var before = Snapshot(station);
@@ -108,7 +109,7 @@ public class StationService : IStationService
         var station = await _stationRepository.GetByIdWithUnitsAndStaffAsync(id);
         if (station == null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với ID: {id}");
+            throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với ID: {0}", id));
         }
 
         // BR-AD-03: không xóa trạm khi còn xe đang làm nhiệm vụ
@@ -173,7 +174,7 @@ public class StationService : IStationService
         var otherStation = (await _stationRepository.GetAllAsync(s => s.HeadOperatorId == user.Id && s.Id != stationId)).FirstOrDefault();
         if (otherStation != null)
         {
-            throw new InvalidOperationException($"{user.FullName} đang phụ trách trạm \"{otherStation.Name}\". Mỗi Operator chỉ phụ trách 1 trạm, hãy gỡ khỏi trạm đó trước.");
+            throw new InvalidOperationException(LocalizationHelper.Localize("{0} đang phụ trách trạm \"{1}\". Mỗi Operator chỉ phụ trách 1 trạm, hãy gỡ khỏi trạm đó trước.", user.FullName, otherStation.Name));
         }
 
         return user;

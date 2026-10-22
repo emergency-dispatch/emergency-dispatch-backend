@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Dispatch;
@@ -195,12 +196,12 @@ public class DispatchService : IDispatchService
 
             return ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
                 ranked,
-                $"Đề xuất theo '{algorithm}' trong bán kính {radiusKm} km: {ranked.Count} phương tiện phù hợp.");
+                LocalizationHelper.Localize("Đề xuất theo '{0}' trong bán kính {1} km: {2} phương tiện phù hợp.", algorithm, radiusKm, ranked.Count));
         }
 
         return ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
             new List<RecommendedUnitResponseDto>(),
-            $"Không có phương tiện phù hợp đang sẵn sàng trong bán kính {radii[^1]} km.");
+            LocalizationHelper.Localize("Không có phương tiện phù hợp đang sẵn sàng trong bán kính {0} km.", radii[^1]));
     }
 
     public async Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetAvailableUnitsNearbyAsync(
@@ -225,7 +226,7 @@ public class DispatchService : IDispatchService
 
         var items = await _assignmentRepository.GetActiveWithDetailsAsync(_currentUser.FilterStationId(), cancellationToken);
         var dtos = items.Select(a => MapToAssignmentDto(a, a.Incident, a.RescueUnit)).ToList();
-        return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(dtos, $"Có {dtos.Count} lượt điều phối đang thực hiện.");
+        return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(dtos, LocalizationHelper.Localize("Có {0} lượt điều phối đang thực hiện.", dtos.Count));
     }
 
     /// <summary>
@@ -273,7 +274,7 @@ public class DispatchService : IDispatchService
 
         if (incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
         {
-            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult($"Không thể điều phối cho sự cố đã ở trạng thái '{incident.Status}'.");
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(LocalizationHelper.Localize("Không thể điều phối cho sự cố đã ở trạng thái '{0}'.", incident.Status));
         }
 
         // BR-01 / FR-OP-04: mọi sự cố (kể cả Level 0) phải được Operator xác minh trước khi điều xe
@@ -287,7 +288,7 @@ public class DispatchService : IDispatchService
         if (incident.IsLockedByOther(operatorId, DateTime.UtcNow))
         {
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(
-                $"Sự cố đang được xử lý bởi {incident.LockedByOperator?.FullName ?? "điều phối viên khác"}.");
+                LocalizationHelper.Localize("Sự cố đang được xử lý bởi {0}.", incident.LockedByOperator?.FullName ?? LocalizationHelper.Localize("điều phối viên khác")));
         }
 
         // BR-14: Level 3 điều tối đa 5 xe; Level 1–2 mặc định 1 xe (vượt giới hạn phải có lý do)
@@ -297,8 +298,8 @@ public class DispatchService : IDispatchService
         if (activeCount + unitIds.Count > maxUnits && !overrideAllowed)
         {
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
-                $"Sự cố {incident.Severity} chỉ được điều tối đa {maxUnits} xe (đang có {activeCount} xe). " +
-                (incident.Severity == SeverityLevel.Level3 ? string.Empty : "Đặt allowExtraUnits = true và ghi lý do vào notes nếu cần thêm xe."));
+                LocalizationHelper.Localize("Sự cố {0} chỉ được điều tối đa {1} xe (đang có {2} xe).", incident.Severity, maxUnits, activeCount) +
+                (incident.Severity == SeverityLevel.Level3 ? string.Empty : " " + LocalizationHelper.Localize("Đặt allowExtraUnits = true và ghi lý do vào notes nếu cần thêm xe.")));
         }
 
         var activeUnitIds = incident.DispatchAssignments.Where(a => a.IsActive).Select(a => a.RescueUnitId).ToHashSet();
@@ -308,12 +309,12 @@ public class DispatchService : IDispatchService
             var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(unitId);
             if (unit == null || unit.IsDeleted)
             {
-                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.NotFoundResult($"Không tìm thấy phương tiện cứu hộ {unitId}.");
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.NotFoundResult(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ {0}.", unitId));
             }
 
             if (activeUnitIds.Contains(unit.Id))
             {
-                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult($"Phương tiện {unit.PlateNumber} đã được phát lệnh cho sự cố này trước đó.");
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(LocalizationHelper.Localize("Phương tiện {0} đã được phát lệnh cho sự cố này trước đó.", unit.PlateNumber));
             }
 
             units.Add(unit);
@@ -331,7 +332,7 @@ public class DispatchService : IDispatchService
                 }
 
                 return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(
-                    $"Phương tiện {unit.PlateNumber} không còn sẵn sàng (trạng thái {unit.Status}) hoặc vừa được điều phối cho sự cố khác. Vui lòng tải lại danh sách gợi ý.");
+                    LocalizationHelper.Localize("Phương tiện {0} không còn sẵn sàng (trạng thái {1}) hoặc vừa được điều phối cho sự cố khác. Vui lòng tải lại danh sách gợi ý.", unit.PlateNumber, unit.Status));
             }
 
             reserved.Add(unit);
@@ -490,7 +491,7 @@ public class DispatchService : IDispatchService
 
         return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(
             dtos,
-            $"Đã phát lệnh điều phối {units.Count} phương tiện: {plates}.");
+            LocalizationHelper.Localize("Đã phát lệnh điều phối {0} phương tiện: {1}.", units.Count, plates));
     }
 
     public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> RejectAssignmentAsync(
@@ -523,7 +524,7 @@ public class DispatchService : IDispatchService
         if (!assignment.CanTransitionTo(DispatchAssignmentStatus.Rejected))
         {
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(
-                $"Không thể từ chối nhiệm vụ đang ở trạng thái '{assignment.Status}'.");
+                LocalizationHelper.Localize("Không thể từ chối nhiệm vụ đang ở trạng thái '{0}'.", assignment.Status));
         }
 
         var now = DateTime.UtcNow;
@@ -697,7 +698,7 @@ public class DispatchService : IDispatchService
 
         if (!assignment.IsActive)
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult($"Nhiệm vụ đã ở trạng thái '{assignment.Status}', không thể thay đổi.");
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(LocalizationHelper.Localize("Nhiệm vụ đã ở trạng thái '{0}', không thể thay đổi.", assignment.Status));
         }
 
         if (dto.Status == DispatchAssignmentStatus.Completed)
@@ -734,7 +735,7 @@ public class DispatchService : IDispatchService
         if (!assignment.CanTransitionTo(dto.Status))
         {
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(
-                $"Không thể chuyển nhiệm vụ từ '{assignment.Status}' sang '{dto.Status}'. Thứ tự hợp lệ: Dispatched → Accepted → EnRoute → OnScene.");
+                LocalizationHelper.Localize("Không thể chuyển nhiệm vụ từ '{0}' sang '{1}'. Thứ tự hợp lệ: Dispatched → Accepted → EnRoute → OnScene.", assignment.Status, dto.Status));
         }
 
         var oldStatus = assignment.Status;
@@ -854,7 +855,7 @@ public class DispatchService : IDispatchService
 
         return ApiResponseDto<DispatchAssignmentResponseDto>.SuccessResult(
             assignmentDto,
-            $"Cập nhật trạng thái nhiệm vụ thành '{dto.Status}' thành công.");
+            LocalizationHelper.Localize("Cập nhật trạng thái nhiệm vụ thành '{0}' thành công.", dto.Status));
     }
 
     public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> ResolveAssignmentAsync(
@@ -871,7 +872,7 @@ public class DispatchService : IDispatchService
 
         if (!assignment.IsActive)
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult($"Nhiệm vụ đã ở trạng thái '{assignment.Status}', không thể nghiệm thu.");
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(LocalizationHelper.Localize("Nhiệm vụ đã ở trạng thái '{0}', không thể nghiệm thu.", assignment.Status));
         }
 
         var incident = assignment.Incident ?? await _incidentRepository.GetByIdAsync(assignment.IncidentId);
@@ -896,7 +897,7 @@ public class DispatchService : IDispatchService
             if (!assignment.CanTransitionTo(DispatchAssignmentStatus.Completed))
             {
                 return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(
-                    $"Nhiệm vụ đang ở trạng thái '{assignment.Status}'. Chỉ nghiệm thu được sau khi xác nhận OnScene.");
+                    LocalizationHelper.Localize("Nhiệm vụ đang ở trạng thái '{0}'. Chỉ nghiệm thu được sau khi xác nhận OnScene.", assignment.Status));
             }
         }
 
@@ -1132,7 +1133,7 @@ public class DispatchService : IDispatchService
         result.Notes = primary.Notes;
 
         return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result,
-            $"Lấy thông tin lộ trình di chuyển của {result.Units.Count} xe cứu hộ thành công.");
+            LocalizationHelper.Localize("Lấy thông tin lộ trình di chuyển của {0} xe cứu hộ thành công.", result.Units.Count));
     }
 
     /// <summary>

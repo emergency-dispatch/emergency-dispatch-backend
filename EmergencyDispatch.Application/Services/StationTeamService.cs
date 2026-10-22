@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Team;
@@ -97,7 +98,7 @@ public class StationTeamService : IStationTeamService
         var saved = await _teamRepository.GetByIdAsync(team.Id, cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.Created, AuditEntityTypes.StationTeam, team.Id, team.Name,
             $"Tạo tổ \"{team.Name}\" ({team.Members.Count} người)", newValue: Snapshot(team), cancellationToken: cancellationToken);
-        return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), $"Đã tạo tổ \"{team.Name}\".");
+        return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), LocalizationHelper.Localize("Đã tạo tổ \"{0}\".", team.Name));
     }
 
     public async Task<ApiResponseDto<StationTeamDto>> UpdateAsync(Guid stationId, Guid teamId, StationTeamInputDto dto, CancellationToken cancellationToken = default)
@@ -146,7 +147,7 @@ public class StationTeamService : IStationTeamService
         var saved = await _teamRepository.GetByIdAsync(team.Id, cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.Updated, AuditEntityTypes.StationTeam, team.Id, team.Name,
             $"Cập nhật tổ \"{team.Name}\"", before, Snapshot(saved ?? team), cancellationToken);
-        return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), $"Đã cập nhật tổ \"{team.Name}\".");
+        return ApiResponseDto<StationTeamDto>.SuccessResult(Map(saved ?? team), LocalizationHelper.Localize("Đã cập nhật tổ \"{0}\".", team.Name));
     }
 
     public async Task<ApiResponseDto<bool>> DeleteAsync(Guid stationId, Guid teamId, CancellationToken cancellationToken = default)
@@ -168,7 +169,7 @@ public class StationTeamService : IStationTeamService
         await _teamRepository.SaveChangesAsync(cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.Deleted, AuditEntityTypes.StationTeam, team.Id, team.Name,
             $"Xóa tổ \"{team.Name}\"", before, cancellationToken: cancellationToken);
-        return ApiResponseDto<bool>.SuccessResult(true, $"Đã xóa tổ \"{team.Name}\".");
+        return ApiResponseDto<bool>.SuccessResult(true, LocalizationHelper.Localize("Đã xóa tổ \"{0}\".", team.Name));
     }
 
     public async Task AssignByNameAsync(Guid staffId, Guid? stationId, string? teamName, CancellationToken cancellationToken = default)
@@ -198,7 +199,7 @@ public class StationTeamService : IStationTeamService
         }
         else if (team.Members.Count >= MaxTeamSize)
         {
-            throw new InvalidOperationException($"Tổ \"{team.Name}\" đã đủ {MaxTeamSize} người.");
+            throw new InvalidOperationException(LocalizationHelper.Localize("Tổ \"{0}\" đã đủ {1} người.", team.Name, MaxTeamSize));
         }
 
         team.Members.Add(new StationTeamMember { StaffId = staffId, CrewRole = CrewRole.Rescuer });
@@ -219,7 +220,7 @@ public class StationTeamService : IStationTeamService
         var teams = await _teamRepository.GetByStationAsync(stationId, cancellationToken);
         if (teams.Any(t => t.Id != teamId && string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
-            return ApiResponseDto<StationTeamDto>.ConflictResult($"Trạm đã có tổ tên \"{name}\".");
+            return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize("Trạm đã có tổ tên \"{0}\".", name));
         }
 
         var members = dto.Members ?? new List<StationTeamMemberInputDto>();
@@ -229,7 +230,7 @@ public class StationTeamService : IStationTeamService
         }
         if (members.Count > MaxTeamSize)
         {
-            return ApiResponseDto<StationTeamDto>.FailureResult($"Mỗi tổ tối đa {MaxTeamSize} người.");
+            return ApiResponseDto<StationTeamDto>.FailureResult(LocalizationHelper.Localize("Mỗi tổ tối đa {0} người.", MaxTeamSize));
         }
         if (members.Count(m => m.CrewRole == CrewRole.Commander) > 1)
         {
@@ -245,13 +246,13 @@ public class StationTeamService : IStationTeamService
             }
             if (staff.Status != UserStatus.Active)
             {
-                return ApiResponseDto<StationTeamDto>.FailureResult($"Tài khoản {staff.FullName} đang bị khóa.");
+                return ApiResponseDto<StationTeamDto>.FailureResult(LocalizationHelper.Localize("Tài khoản {0} đang bị khóa.", staff.FullName));
             }
 
             var otherTeam = teams.FirstOrDefault(t => t.Id != teamId && t.Members.Any(x => x.StaffId == m.StaffId));
             if (otherTeam != null)
             {
-                return ApiResponseDto<StationTeamDto>.ConflictResult($"{staff.FullName} đã thuộc {otherTeam.Name}.");
+                return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize("{0} đã thuộc {1}.", staff.FullName, otherTeam.Name));
             }
         }
 
@@ -266,7 +267,7 @@ public class StationTeamService : IStationTeamService
             var otherTeam = teams.FirstOrDefault(t => t.Id != teamId && t.RescueUnitId == dto.RescueUnitId);
             if (otherTeam != null)
             {
-                return ApiResponseDto<StationTeamDto>.ConflictResult($"Xe đã có {otherTeam.Name} phụ trách.");
+                return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize("Xe đã có {0} phụ trách.", otherTeam.Name));
             }
         }
 

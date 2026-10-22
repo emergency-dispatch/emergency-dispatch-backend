@@ -251,7 +251,7 @@ public class UserService : IUserService
     public async Task<UserResponseDto> LockUserAsync(Guid id, string reason, Guid actorUserId, UserRole actorRole)
     {
         var user = await _userRepository.GetByIdWithDetailsAsync(id)
-            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {id}");
+            ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy người dùng với Id = {0}", id));
 
         EnsureCanManageRole(actorRole, user.Role);
         if (user.Id == actorUserId)
@@ -287,7 +287,7 @@ public class UserService : IUserService
     public async Task<UserResponseDto> UnlockUserAsync(Guid id, UserRole actorRole)
     {
         var user = await _userRepository.GetByIdWithDetailsAsync(id)
-            ?? throw new KeyNotFoundException($"Không tìm thấy người dùng với Id = {id}");
+            ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy người dùng với Id = {0}", id));
 
         EnsureCanManageRole(actorRole, user.Role);
         var before = AdminSnapshot(user);
@@ -686,10 +686,10 @@ public class UserService : IUserService
     private async Task EnsureStationHasNoOtherOperatorAsync(Guid stationId, Guid? userId)
     {
         var station = await _stationRepository.GetByIdAsync(stationId)
-            ?? throw new KeyNotFoundException($"Không tìm thấy trạm cứu hộ với Id = {stationId}");
+            ?? throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy trạm cứu hộ với Id = {0}", stationId));
         if (station.HeadOperatorId.HasValue && station.HeadOperatorId != userId)
         {
-            throw new InvalidOperationException($"Trạm \"{station.Name}\" đã có Operator phụ trách. Mỗi trạm chỉ 1 Operator.");
+            throw new InvalidOperationException(LocalizationHelper.Localize("Trạm \"{0}\" đã có Operator phụ trách. Mỗi trạm chỉ 1 Operator.", station.Name));
         }
     }
 

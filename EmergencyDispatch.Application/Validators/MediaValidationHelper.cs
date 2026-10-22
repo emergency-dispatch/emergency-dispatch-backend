@@ -1,3 +1,5 @@
+using EmergencyDispatch.Application.Localization;
+
 namespace EmergencyDispatch.Application.Validators;
 
 public static class MediaValidationHelper
@@ -31,7 +33,7 @@ public static class MediaValidationHelper
         {
             if (fileLength > MaxImageSizeBytes)
             {
-                return (false, $"Kích thước hình ảnh ({fileLength / (1024 * 1024.0):F1}MB) vượt quá giới hạn cho phép (10MB).");
+                return (false, LocalizationHelper.Localize("Kích thước hình ảnh ({0:F1}MB) vượt quá giới hạn cho phép (10MB).", fileLength / (1024 * 1024.0)));
             }
             return (true, null);
         }
@@ -40,11 +42,11 @@ public static class MediaValidationHelper
         {
             if (fileLength > MaxVideoSizeBytes)
             {
-                return (false, $"Kích thước video ({fileLength / (1024 * 1024.0):F1}MB) vượt quá giới hạn cho phép (30MB).");
+                return (false, LocalizationHelper.Localize("Kích thước video ({0:F1}MB) vượt quá giới hạn cho phép (30MB).", fileLength / (1024 * 1024.0)));
             }
             return (true, null);
         }
 
-        return (false, $"Định dạng tệp '{contentType}' không được hỗ trợ. Hệ thống chỉ chấp nhận ảnh (JPEG, PNG, WEBP) hoặc video (MP4, MOV).");
+        return (false, LocalizationHelper.Localize("Định dạng tệp '{0}' không được hỗ trợ. Hệ thống chỉ chấp nhận ảnh (JPEG, PNG, WEBP) hoặc video (MP4, MOV).", contentType));
     }
 }

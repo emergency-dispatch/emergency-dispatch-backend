@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.Escalation;
@@ -103,7 +104,7 @@ public class EscalationService : IEscalationService
         {
             if (!Enum.TryParse<UserRole>(name, true, out var role) || !AllowedNotifyRoles.Contains(role))
             {
-                throw new ArgumentException($"Vai trò \"{name}\" không hợp lệ. Chỉ chấp nhận Admin, Operator, RescueStaff.");
+                throw new ArgumentException(LocalizationHelper.Localize("Vai trò \"{0}\" không hợp lệ. Chỉ chấp nhận Admin, Operator, RescueStaff.", name));
             }
             if (!roles.Contains(role)) roles.Add(role);
         }

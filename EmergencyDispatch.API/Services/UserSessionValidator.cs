@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.Security.Claims;
 using EmergencyDispatch.API.Hubs;
 using EmergencyDispatch.API.Realtime;
@@ -130,7 +131,7 @@ public class UserSessionHubFilter : IHubFilter
             if (reason != null)
             {
                 invocationContext.Context.Abort();
-                throw new HubException(reason);
+                throw new HubException(LocalizationHelper.Localize(reason));
             }
         }
 

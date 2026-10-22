@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 using EmergencyDispatch.Application.DTOs.Media;
@@ -111,7 +112,7 @@ public class CloudinaryMediaService : IMediaUploadService
             return new MediaUploadResultDto
             {
                 IsSuccess = false,
-                ErrorMessage = $"Lỗi upload Cloudinary: {ex.Message}",
+                ErrorMessage = LocalizationHelper.Localize("Lỗi upload Cloudinary: {0}", ex.Message),
                 MediaType = mediaType,
                 MimeType = contentType
             };

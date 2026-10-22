@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.Security.Cryptography;
 using BCrypt.Net;
 using EmergencyDispatch.Application.DTOs.Auth;
@@ -198,7 +199,7 @@ public class AuthService : IAuthService
         {
             var minutesLeft = Math.Max(1, (int)Math.Ceiling((user.LockoutEndUtc.Value - now).TotalMinutes));
             throw new UnauthorizedAccessException(
-                $"Tài khoản tạm thời bị khóa do đăng nhập sai {MaxFailedLoginAttempts} lần liên tiếp. Vui lòng thử lại sau {minutesLeft} phút hoặc đặt lại mật khẩu.");
+                LocalizationHelper.Localize("Tài khoản tạm thời bị khóa do đăng nhập sai {0} lần liên tiếp. Vui lòng thử lại sau {1} phút hoặc đặt lại mật khẩu.", MaxFailedLoginAttempts, minutesLeft));
         }
 
         if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
@@ -213,7 +214,7 @@ public class AuthService : IAuthService
             await _userRepository.UpdateAsync(user);
 
             throw new UnauthorizedAccessException(user.LockoutEndUtc > now
-                ? $"Tài khoản tạm thời bị khóa {LockoutDuration.TotalMinutes:F0} phút do đăng nhập sai {MaxFailedLoginAttempts} lần liên tiếp."
+                ? LocalizationHelper.Localize("Tài khoản tạm thời bị khóa {0:F0} phút do đăng nhập sai {1} lần liên tiếp.", LockoutDuration.TotalMinutes, MaxFailedLoginAttempts)
                 : "Email hoặc mật khẩu không chính xác.");
         }
 
@@ -221,7 +222,7 @@ public class AuthService : IAuthService
         {
             throw new UnauthorizedAccessException(string.IsNullOrWhiteSpace(user.LockReason)
                 ? "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên."
-                : $"Tài khoản của bạn đã bị khóa. Lý do: {user.LockReason}");
+                : LocalizationHelper.Localize("Tài khoản của bạn đã bị khóa. Lý do: {0}", user.LockReason));
         }
 
         if (user.FailedLoginCount > 0 || user.LockoutEndUtc.HasValue)
@@ -265,7 +266,7 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            throw new UnauthorizedAccessException($"Xác thực Google thất bại: {ex.Message}");
+            throw new UnauthorizedAccessException(LocalizationHelper.Localize("Xác thực Google thất bại: {0}", ex.Message));
         }
 
         var user = await _userRepository.GetByGoogleIdAsync(payload.Subject)

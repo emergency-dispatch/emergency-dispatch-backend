@@ -274,7 +274,7 @@ builder.Services.AddAuthentication(options =>
         {
             if (context.AuthenticateFailure != null && !string.IsNullOrEmpty(context.AuthenticateFailure.Message))
             {
-                context.Response.Headers["X-Auth-Error"] = Uri.EscapeDataString(context.AuthenticateFailure.Message);
+                context.Response.Headers["X-Auth-Error"] = Uri.EscapeDataString(LocalizationHelper.Localize(context.AuthenticateFailure.Message));
             }
             return Task.CompletedTask;
         }
