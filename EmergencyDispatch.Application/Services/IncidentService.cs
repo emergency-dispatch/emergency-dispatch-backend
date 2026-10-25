@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Ai;
@@ -6,7 +5,6 @@ using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Incident;
 using EmergencyDispatch.Application.DTOs.Notification;
 using EmergencyDispatch.Application.DTOs.Security;
-using EmergencyDispatch.Application.DTOs.User;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
@@ -89,7 +87,6 @@ public class IncidentService : IIncidentService
             : $"Sự cố tại {dto.LocationAddress}";
 
         User? reportingUser = null;
-        string? smsDispatchLog = null;
 
         if (userId.HasValue)
         {
@@ -103,25 +100,6 @@ public class IncidentService : IIncidentService
                 if (string.IsNullOrWhiteSpace(dto.ReporterPhone))
                 {
                     dto.ReporterPhone = reportingUser.PhoneNumber;
-                }
-
-                // Tự động kích hoạt thông báo gửi SMS tới người thân ICE nếu bật tính năng
-                if (reportingUser.AutoSendSmsOnSos && reportingUser.IceContacts.Any())
-                {
-                    var primaryIce = reportingUser.IceContacts.FirstOrDefault(c => c.IsPrimary) 
-                                     ?? reportingUser.IceContacts.First();
-                    var template = string.IsNullOrWhiteSpace(reportingUser.SmsTemplate)
-                        ? LocalizationHelper.Localize("CẤP CỨU: Tôi vừa bấm SOS tại tọa độ {lat},{lng}. Cần hỗ trợ khẩn cấp!")
-                        : reportingUser.SmsTemplate;
-
-                    var smsContent = template
-                        .Replace("{GPS_COORDS}", FormattableString.Invariant($"{dto.Latitude:F4},{dto.Longitude:F4}"))
-                        .Replace("{lat}", dto.Latitude.ToString("F4", CultureInfo.InvariantCulture))
-                        .Replace("{lng}", dto.Longitude.ToString("F4", CultureInfo.InvariantCulture));
-
-                    smsDispatchLog = LocalizationHelper.Localize("[SMS SOS PREPARED - NOT SENT]: Đã chuẩn bị nội dung cấp cứu cho người thân [{0} ({1}) - SĐT: {2}]: \"{3}\"",
-                        primaryIce.Name, primaryIce.Relationship, primaryIce.PhoneNumber, smsContent);
-                    _logger.LogInformation("{Log}", smsDispatchLog);
                 }
             }
         }
@@ -258,7 +236,7 @@ public class IncidentService : IIncidentService
 
         // 7. Map kết quả trả về + đẩy realtime tới Operator
         // Operator nhận bản đã che số (BR-32); người báo nhận bản đầy đủ của chính mình
-        await _realtimeNotifier.IncidentCreatedAsync(MapToResponseDto(incident, null, smsDispatchLog), cancellationToken);
+        await _realtimeNotifier.IncidentCreatedAsync(MapToResponseDto(incident), cancellationToken);
 
         if (incident.IsOutOfServiceArea)
         {
@@ -285,7 +263,7 @@ public class IncidentService : IIncidentService
                 HighPriority = true
             }, cancellationToken);
         }
-        var responseDto = MapToResponseDto(incident, null, smsDispatchLog, revealPhone: true);
+        var responseDto = MapToResponseDto(incident, revealPhone: true);
 
         // Return the secret only to the creator, after publishing the realtime event.
         if (!userId.HasValue) responseDto.GuestCancellationToken = _guestTokens.Create(incident.Id);
@@ -1214,7 +1192,6 @@ public class IncidentService : IIncidentService
     private static IncidentResponseDto MapToResponseDto(
         Incident incident,
         AiClassificationResultDto? directAiResult = null,
-        string? emergencySmsLog = null,
         bool revealPhone = false)
     {
         string? Phone(string? raw) => revealPhone ? raw : PhoneMasking.Mask(raw);
@@ -1239,7 +1216,7 @@ public class IncidentService : IIncidentService
             };
         }
 
-        // Map hồ sơ y tế chuyên sâu & danh bạ ICE nếu sự cố gắn với tài khoản người dùng
+        // Map hồ sơ y tế chuyên sâu & người liên hệ khẩn cấp nếu sự cố gắn với tài khoản người dùng
         IncidentReporterMedicalDto? medicalProfile = null;
         if (incident.ReportedByUser != null)
         {
@@ -1257,17 +1234,9 @@ public class IncidentService : IIncidentService
                 PreferredLanguage = incident.ReportedByUser.PreferredLanguage,
                 DependentsNote = incident.ReportedByUser.DependentsNote,
                 HouseholdMembersCount = incident.ReportedByUser.HouseholdMembersCount ?? 1,
-                IceContacts = incident.ReportedByUser.IceContacts?.Select(c => new IceContactDto
-                {
-                    Id = c.Id,
-                    UserId = c.UserId,
-                    Name = c.Name,
-                    PhoneNumber = Phone(c.PhoneNumber) ?? string.Empty,
-                    Relationship = c.Relationship,
-                    IsPrimary = c.IsPrimary,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt
-                }).ToList() ?? new()
+                EmergencyContactName = incident.ReportedByUser.EmergencyContactName,
+                EmergencyContactPhone = Phone(incident.ReportedByUser.EmergencyContactPhone),
+                EmergencyContactRelationship = incident.ReportedByUser.EmergencyContactRelationship
             };
         }
 
@@ -1318,8 +1287,7 @@ public class IncidentService : IIncidentService
                 MimeType = m.MimeType
             }).ToList(),
             AiClassification = aiDto,
-            ReporterMedicalProfile = medicalProfile,
-            EmergencySmsDispatchLog = emergencySmsLog
+            ReporterMedicalProfile = medicalProfile
         };
     }
 }

@@ -62,19 +62,6 @@ public class UpdateProfileDto
     [JsonIgnore]
     public bool HasHouseholdMembersCount { get; private set; }
 
-    // Cấu hình gửi SMS khẩn cấp
-    public bool? AutoSendSmsOnSos { get; set; }
-
-    [MaxLength(500, ErrorMessage = "Mẫu tin nhắn SMS tối đa 500 ký tự")]
-    public string? SmsTemplate
-    {
-        get => _smsTemplate;
-        set { _smsTemplate = value; HasSmsTemplate = true; }
-    }
-    private string? _smsTemplate;
-    [JsonIgnore]
-    public bool HasSmsTemplate { get; private set; }
-
     // Người liên hệ khẩn cấp chính (Backward compatibility)
     public string? EmergencyContactName { get; set; }
     public string? EmergencyContactPhone { get; set; }

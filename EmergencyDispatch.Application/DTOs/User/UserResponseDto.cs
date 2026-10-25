@@ -33,17 +33,10 @@ public class UserResponseDto
     public string? DependentsNote { get; set; }
     public int? HouseholdMembersCount { get; set; }
 
-    // Cấu hình gửi SMS khẩn cấp
-    public bool AutoSendSmsOnSos { get; set; }
-    public string? SmsTemplate { get; set; }
-
     // Người liên hệ khẩn cấp chính
     public string? EmergencyContactName { get; set; }
     public string? EmergencyContactPhone { get; set; }
     public string? EmergencyContactRelationship { get; set; }
-
-    // Danh bạ người thân khẩn cấp (ICE)
-    public List<IceContactDto> IceContacts { get; set; } = new();
 
     // Trạng thái tài khoản & Trạm
     public bool IsEmailVerified { get; set; }

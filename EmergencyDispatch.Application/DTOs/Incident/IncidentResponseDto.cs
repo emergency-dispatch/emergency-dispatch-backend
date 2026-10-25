@@ -67,12 +67,8 @@ public class IncidentResponseDto
     public AiClassificationResultDto? AiClassification { get; set; }
 
     /// <summary>
-    /// Hồ sơ y tế, thông tin cứu hộ căn hộ và danh bạ ICE của người báo (nếu có tài khoản)
+    /// Hồ sơ y tế, thông tin cứu hộ căn hộ và người liên hệ khẩn cấp của người báo (nếu có tài khoản)
     /// </summary>
     public IncidentReporterMedicalDto? ReporterMedicalProfile { get; set; }
 
-    /// <summary>
-    /// Log thông báo SMS khẩn cấp đã được kích hoạt gửi tới người thân ICE (nếu bật AutoSendSmsOnSos)
-    /// </summary>
-    public string? EmergencySmsDispatchLog { get; set; }
 }
