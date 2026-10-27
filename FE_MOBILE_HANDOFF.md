@@ -877,3 +877,24 @@ Khi đổi ngôn ngữ trong app, FE cần **kết nối lại SignalR** với `
 | `ReceiveNotificationRead` | Chuông thông báo (mọi thiết bị) | Cập nhật badge bằng `unreadCount`; `all = true` → đánh dấu đã đọc toàn bộ danh sách đang hiển thị |
 
 Với các sự kiện trên, có thể **giảm hoặc bỏ polling** (`DispatchContext.tsx` `POLL_MS = 20000`, `useDispatchRoutes.ts` `REFRESH_MS = 30000`). Nên giữ một lần poll dự phòng khoảng 60–120s, phòng khi mất kết nối SignalR.
+
+
+---
+
+## 14. Cập nhật 26/10/2026: mobile chưa nối các luồng nghiệp vụ (rà soát Report7)
+
+> Chi tiết đối chiếu tài liệu với code: `D:\SEP490\REVIEW_documentTotal.md`, mục D.
+
+Report7 mô tả mobile gửi SOS, lấy GPS, có bản đồ, realtime và push, nhưng `emergency-dispatch-mobile` hiện mới gọi API `auth`, `user`, `media`. Backend đã có đủ API cho các luồng dưới đây.
+
+| Việc mobile cần làm | API / sự kiện backend có sẵn |
+|---|---|
+| Gửi SOS: upload ảnh rồi gửi sự cố (ảnh không bắt buộc) | `POST /api/media/upload` → `POST /api/incidents` (cho phép khách chưa đăng nhập; bị chặn 3 phút nếu vừa gửi) |
+| Lấy GPS thật (thêm `expo-location`), bỏ tọa độ cứng `10.7712` | Gửi kèm `latitude`, `longitude` trong `POST /api/incidents` |
+| Citizen theo dõi xe đang tới | `/hubs/tracking` → `ReceiveRescueUnitLocation`; `/hubs/incidents` → `ReceiveIncidentUpdate` |
+| Staff nhận lệnh, cập nhật trạng thái `Accepted → EnRoute → OnScene → Completed`, gửi báo cáo hoàn tất (≥ 1 ảnh) | Các endpoint `/api/dispatch/...` (API_DOCUMENTATION.md) + `ReceiveAssignmentStatus` |
+| Staff gửi GPS định kỳ 5–10 s khi đang `EnRoute` | REST cập nhật vị trí xe hoặc hub `/hubs/tracking` |
+| Đăng ký token FCM | `PUT /api/users/fcm-token` (backend cần cấu hình `Firebase:CredentialPath` thì mới gửi push thật) |
+| Bản đồ (Safety Map / Tactical Map) | Chưa có thư viện bản đồ. Chọn một (react-native-maps hoặc WebView + Leaflet) rồi sửa lại tài liệu (hiện đang ghi Mapbox) |
+
+Nếu nhóm quyết định để luồng citizen chạy trên **web/PWA** thay vì mobile, cần ghi rõ điều đó trong Report7 (mục phạm vi) để không bị hỏi.
