@@ -42,11 +42,12 @@ builder.Services.AddSignalR(options =>
         options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
-// 2. CORS (Cho phép Frontend và Mobile gọi API)
+// 2. CORS (Cho phép Frontend gọi API) — danh sách origin đọc từ "Cors:AllowedOrigins", xem CorsOriginPolicy
+var corsOriginPolicy = new EmergencyDispatch.API.Services.CorsOriginPolicy(builder.Configuration, builder.Environment);
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
-        policy.SetIsOriginAllowed(_ => true)
+    options.AddPolicy("Frontend", policy =>
+        policy.SetIsOriginAllowed(corsOriginPolicy.IsAllowed)
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials()
@@ -222,7 +223,12 @@ builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
 // 9. Cấu hình JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["Key"] ?? "EmergencyDispatchSuperSecretKeyForJwtAuthentication2026!#$*&@";
+// Không có key mặc định: key viết cứng trong repo ai cũng đọc được và tự ký token được
+var secretKey = jwtSettings["Key"];
+if (string.IsNullOrWhiteSpace(secretKey) || Encoding.UTF8.GetByteCount(secretKey) < 32)
+{
+    throw new InvalidOperationException("JwtSettings:Key chưa được cấu hình hoặc ngắn hơn 32 byte (HMAC-SHA256 cần tối thiểu 256 bit).");
+}
 
 builder.Services.AddAuthentication(options =>
 {
@@ -325,7 +331,19 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Pipeline Middleware
-app.UseCors("AllowAll");
+if (!corsOriginPolicy.HasExplicitOrigins)
+{
+    if (corsOriginPolicy.AllowsLocalNetwork)
+    {
+        app.Logger.LogWarning("Chưa cấu hình Cors:AllowedOrigins — đang cho phép localhost và IP mạng LAN (chỉ dùng khi phát triển).");
+    }
+    else
+    {
+        app.Logger.LogWarning("Chưa cấu hình Cors:AllowedOrigins — mọi request từ trình duyệt khác origin sẽ bị chặn.");
+    }
+}
+
+app.UseCors("Frontend");
 
 // Đặt RequestLocalization trước Authentication & Authorization để mọi middleware đều nhận đúng ngôn ngữ
 app.UseRequestLocalization(localizationOptions);

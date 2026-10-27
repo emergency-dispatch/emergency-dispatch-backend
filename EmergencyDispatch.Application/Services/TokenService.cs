@@ -24,7 +24,7 @@ public class TokenService : ITokenService
         var secretKey = jwtSettings["Key"] ?? throw new InvalidOperationException("JwtSettings:Key chưa được cấu hình.");
         var issuer = jwtSettings["Issuer"] ?? "EmergencyDispatchAPI";
         var audience = jwtSettings["Audience"] ?? "EmergencyDispatchClient";
-        var expireHours = int.TryParse(jwtSettings["ExpireHours"], out var hours) ? hours : 24;
+        var lifetime = GetAccessTokenLifetime(jwtSettings);
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -47,7 +47,7 @@ public class TokenService : ITokenService
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddHours(expireHours),
+            Expires = DateTime.UtcNow.Add(lifetime),
             Issuer = issuer,
             Audience = audience,
             SigningCredentials = credentials
@@ -97,5 +97,24 @@ public class TokenService : ITokenService
         }
 
         return principal;
+    }
+
+    /// <summary>
+    /// Thời hạn access token: ưu tiên "ExpireMinutes" (mặc định 60 phút), vẫn đọc "ExpireHours" cho appsettings cũ.
+    /// Token ngắn hạn vì FE / Mobile đã tự gọi /auth/refresh khi gặp 401.
+    /// </summary>
+    private static TimeSpan GetAccessTokenLifetime(IConfigurationSection jwtSettings)
+    {
+        if (int.TryParse(jwtSettings["ExpireMinutes"], out var minutes) && minutes > 0)
+        {
+            return TimeSpan.FromMinutes(minutes);
+        }
+
+        if (int.TryParse(jwtSettings["ExpireHours"], out var hours) && hours > 0)
+        {
+            return TimeSpan.FromHours(hours);
+        }
+
+        return TimeSpan.FromMinutes(60);
     }
 }

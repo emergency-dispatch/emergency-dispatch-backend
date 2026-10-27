@@ -38,6 +38,22 @@ dotnet build
 dotnet run --project EmergencyDispatch.API
 ```
 
+### Cấu hình bắt buộc trong `appsettings.json` (file không commit, mỗi người tự giữ)
+```json
+"JwtSettings": {
+  "Key": "<chuỗi bí mật ≥ 32 ký tự>",
+  "Issuer": "EmergencyDispatchAPI",
+  "Audience": "EmergencyDispatchClient",
+  "ExpireMinutes": 60
+},
+"Cors": {
+  "AllowedOrigins": [ "https://<domain-web-khi-deploy>" ]
+}
+```
+- Thiếu `JwtSettings:Key` hoặc key ngắn hơn 32 byte → API **không khởi động** (không còn key mặc định trong code).
+- `ExpireHours` cũ vẫn đọc được, nhưng nên đổi sang `ExpireMinutes`.
+- Bỏ trống `Cors:AllowedOrigins` khi chạy local: môi trường Development tự cho phép localhost và IP mạng LAN. Khi deploy **bắt buộc** điền domain web, nếu không trình duyệt sẽ bị chặn.
+
 ### Migration
 ```bash
 dotnet ef migrations add <TenMigration> --project EmergencyDispatch.Infrastructure --startup-project EmergencyDispatch.API

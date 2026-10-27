@@ -15,7 +15,8 @@
 * **Base URL (HTTPS)**: `https://localhost:7000`
 * **Swagger UI (Giao diện test trực quan)**: `http://localhost:5000/swagger`
 * **Android Emulator**: dùng `http://10.0.2.2:5000` thay cho `localhost`.
-* **CORS**: Đã cấu hình `AllowAll` (Hỗ trợ gọi từ Web `http://localhost:5173`, `http://localhost:3000` hoặc Mobile Expo không bị chặn).
+* **CORS**: Chỉ origin trong `Cors:AllowedOrigins` (appsettings) được gọi API. Chưa cấu hình + môi trường Development → cho phép `localhost` / `127.0.0.1` (mọi cổng) và IP mạng LAN (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`). App mobile native không gửi `Origin` nên không bị ảnh hưởng.
+* **Access token** sống **60 phút** (`JwtSettings:ExpireMinutes`). Hết hạn → API trả 401, client gọi `POST /api/auth/refresh` (refresh token sống 7 ngày). Lưu ý: `expiresAt` trong response đăng nhập là hạn của **refresh token**, không phải access token.
 
 ### Chuẩn định dạng Response chung (`ApiResponseDto<T>`)
 Mọi API trả về đều tuân thủ cấu trúc JSON đồng nhất:

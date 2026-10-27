@@ -18,6 +18,7 @@ public class UpdateProfileDto
     // Thông tin nhân thân mở rộng
     public DateTime? DateOfBirth { get; set; }
     public Gender? Gender { get; set; }
+    [RegularExpression(@"^\s*\d{12}\s*$", ErrorMessage = "Số CCCD phải gồm đúng 12 chữ số.")]
     public string? CitizenIdNumber { get; set; }
     public string? Address { get; set; }
 

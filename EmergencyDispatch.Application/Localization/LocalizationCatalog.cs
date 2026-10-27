@@ -137,6 +137,7 @@ public static partial class LocalizationCatalog
         { "Địa chỉ hiện trường là bắt buộc.", "Incident location address is required." },
         { "Địa chỉ không được vượt quá 500 ký tự.", "Address must not exceed 500 characters." },
         { "Số điện thoại liên hệ không đúng định dạng Việt Nam.", "Contact phone number must be a valid Vietnamese phone number." },
+        { "Số CCCD phải gồm đúng 12 chữ số.", "Citizen ID number must contain exactly 12 digits." },
         { "Không được đính kèm quá 5 tệp tin phương tiện cho một sự cố.", "An incident cannot have more than 5 media attachments." },
         { "Tiêu đề không được vượt quá 250 ký tự", "Title must not exceed 250 characters" },
         { "Mô tả không được vượt quá 2000 ký tự", "Description must not exceed 2000 characters" },

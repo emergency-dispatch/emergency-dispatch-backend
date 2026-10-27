@@ -898,3 +898,15 @@ Report7 mô tả mobile gửi SOS, lấy GPS, có bản đồ, realtime và push
 | Bản đồ (Safety Map / Tactical Map) | Chưa có thư viện bản đồ. Chọn một (react-native-maps hoặc WebView + Leaflet) rồi sửa lại tài liệu (hiện đang ghi Mapbox) |
 
 Nếu nhóm quyết định để luồng citizen chạy trên **web/PWA** thay vì mobile, cần ghi rõ điều đó trong Report7 (mục phạm vi) để không bị hỏi.
+
+
+---
+
+## 15. Cập nhật 27/10/2026: siết bảo mật và validation (backend, không đổi API)
+
+| Thay đổi | Ảnh hưởng tới FE / Mobile | Cần làm |
+|---|---|---|
+| **Access token còn 60 phút** (trước đây 24 giờ) | Token hết hạn thường xuyên hơn. Web (`apiClient.ts`) và mobile (`api/client.ts`) đã tự gọi `/auth/refresh` khi gặp 401 nên vẫn chạy | **SignalR**: dùng `accessTokenFactory` đọc token mới nhất từ storage (không truyền chuỗi token cố định), để khi kết nối lại sau 60 phút vẫn dùng token đã refresh. `expiresAt` trong response đăng nhập là hạn **refresh token** (7 ngày), đừng dùng nó để đoán hạn access token |
+| **CORS theo danh sách origin** | Local: `localhost` / `127.0.0.1` mọi cổng và IP LAN vẫn gọi được. Origin lạ bị chặn | Khi deploy web, báo backend domain để thêm vào `Cors:AllowedOrigins` |
+| **CCCD phải đúng 12 chữ số** (`PUT /api/users/me`, `citizenIdNumber`) | Gửi sai → 400, `errors.CitizenIdNumber` = "Số CCCD phải gồm đúng 12 chữ số." (theo `Accept-Language`). Chuỗi rỗng vẫn hợp lệ | Thêm kiểm tra 12 số ở form hồ sơ (web + mobile) để báo lỗi trước khi gửi |
+| **SĐT người báo SOS** (`reporterPhone`): sửa regex, ký tự `\|` không còn lọt qua | Không đổi với số hợp lệ `0` / `+84` + đầu số 3, 5, 7, 8, 9 + 8 số | Không cần làm gì |

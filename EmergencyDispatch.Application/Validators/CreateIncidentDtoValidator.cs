@@ -25,7 +25,7 @@ public class CreateIncidentDtoValidator : AbstractValidator<CreateIncidentDto>
         When(x => !string.IsNullOrEmpty(x.ReporterPhone), () =>
         {
             RuleFor(x => x.ReporterPhone)
-                .Matches(@"^(0|\+84)[3|5|7|8|9][0-9]{8}$")
+                .Matches(@"^(0|\+84)[35789][0-9]{8}$")
                 .WithMessage("Số điện thoại liên hệ không đúng định dạng Việt Nam.");
         });
 
