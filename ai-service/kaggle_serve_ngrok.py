@@ -42,6 +42,8 @@ PACKAGES = [
 
 print("📦 [1/6] Cài thư viện...")
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", *PACKAGES], check=True)
+# Kaggle cài sẵn torchao 0.10 nhưng PEFT 0.21 đòi >= 0.16 khi gói có mặt → gỡ đi (model không dùng torchao)
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", "torchao"], check=False)
 
 print("🔑 [2/6] Đọc Kaggle Secrets...")
 from kaggle_secrets import UserSecretsClient  # noqa: E402
@@ -51,8 +53,11 @@ _secrets = UserSecretsClient()
 
 def get_secret(name):
     try:
-        return (_secrets.get_secret(name) or "").strip()
-    except Exception:
+        value = (_secrets.get_secret(name) or "").strip()
+        print(f"   {name}: {'đã đọc' if value else 'RỖNG'}")
+        return value
+    except Exception as e:  # in lý do (không in giá trị) để biết secret chưa attach hay bị chặn
+        print(f"   {name}: không đọc được ({type(e).__name__}: {str(e)[:200]})")
         return ""
 
 
@@ -67,7 +72,8 @@ if not API_KEY:
 
 print("📂 [3/6] Tìm ai_service.py và lora_adapter trong /kaggle/input...")
 service_files = glob.glob("/kaggle/input/**/ai_service.py", recursive=True)
-adapter_cfgs = glob.glob("/kaggle/input/**/lora_adapter/adapter_config.json", recursive=True)
+# Kaggle tự giải nén lora_adapter.zip; tên thư mục sau giải nén có thể khác nên tìm theo file
+adapter_cfgs = glob.glob("/kaggle/input/**/adapter_config.json", recursive=True)
 if not service_files or not adapter_cfgs:
     raise SystemExit("❌ Không thấy ai_service.py hoặc lora_adapter/adapter_config.json. Kiểm tra dataset đã Add Input chưa.")
 adapter_dir = os.path.dirname(adapter_cfgs[0])
@@ -115,8 +121,24 @@ print("🌐 [5/6] Mở tunnel ngrok...")
 from pyngrok import conf, ngrok  # noqa: E402
 
 conf.get_default().auth_token = NGROK_AUTHTOKEN
-tunnel = ngrok.connect(PORT, "http", **({"domain": NGROK_DOMAIN} if NGROK_DOMAIN else {}))
+
+
+def open_tunnel():
+    # Agent ngrok mới dùng "url", bản cũ dùng "domain"/"hostname" → thử lần lượt.
+    # Tài khoản free không chỉ định gì vẫn tự dùng dev domain cố định của tài khoản.
+    if NGROK_DOMAIN:
+        for opts in ({"url": f"https://{NGROK_DOMAIN}"}, {"domain": NGROK_DOMAIN}, {"hostname": NGROK_DOMAIN}):
+            try:
+                return ngrok.connect(PORT, "http", **opts)
+            except Exception as e:
+                print(f"   tunnel với {list(opts)[0]} lỗi: {str(e)[:160]}")
+    return ngrok.connect(PORT, "http")
+
+
+tunnel = open_tunnel()
 public_url = tunnel.public_url.replace("http://", "https://")
+if NGROK_DOMAIN and NGROK_DOMAIN not in public_url:
+    print(f"   ⚠️ URL nhận được ({public_url}) khác NGROK_DOMAIN — sửa LocalServiceUrl của backend theo URL này.")
 
 print("🧪 [6/6] Kiểm tra: gọi không có khóa phải bị từ chối (401)...")
 try:
