@@ -6,7 +6,7 @@ namespace EmergencyDispatch.Infrastructure.Data;
 
 public static class DbInitializer
 {
-    public static async Task SeedAsync(ApplicationDbContext context)
+    public static async Task SeedAsync(ApplicationDbContext context, bool seedDemoAdmin = false)
     {
         // 0. Đảm bảo schema đồng bộ cho các cột và bảng mới (phòng trường hợp migration chưa apply trên cloud database)
         try
@@ -306,34 +306,28 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // 4. Đảm bảo tài khoản admin@gmail.com luôn tồn tại với mật khẩu 123123 và quyền Admin
-        var targetAdminEmail = "admin@gmail.com";
-        var targetAdmin = await context.Users.FirstOrDefaultAsync(u => u.Email == targetAdminEmail);
-        if (targetAdmin == null)
+        // 4. Tài khoản Admin demo cho FE test: chỉ khi chạy Development và chỉ tạo khi chưa có.
+        // KHÔNG đặt lại mật khẩu / mở khóa / khôi phục nếu đã tồn tại — trước đây mỗi lần khởi động đều reset
+        // về mật khẩu 123123 nên Admin không thể vô hiệu hóa tài khoản này (backdoor).
+        if (seedDemoAdmin)
         {
-            targetAdmin = new User
+            const string demoAdminEmail = "admin@gmail.com";
+            if (!await context.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == demoAdminEmail))
             {
-                Id = Guid.NewGuid(),
-                FullName = "Administrator",
-                Email = targetAdminEmail,
-                PhoneNumber = "0987654321",
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("123123"),
-                Role = UserRole.Admin,
-                Status = UserStatus.Active,
-                IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow
-            };
-            await context.Users.AddAsync(targetAdmin);
+                await context.Users.AddAsync(new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Administrator",
+                    Email = demoAdminEmail,
+                    PhoneNumber = "0987654321",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("123123"),
+                    Role = UserRole.Admin,
+                    Status = UserStatus.Active,
+                    IsEmailVerified = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+                await context.SaveChangesAsync();
+            }
         }
-        else
-        {
-            targetAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("123123");
-            targetAdmin.Role = UserRole.Admin;
-            targetAdmin.Status = UserStatus.Active;
-            targetAdmin.IsEmailVerified = true;
-            targetAdmin.IsDeleted = false;
-            targetAdmin.UpdatedAt = DateTime.UtcNow;
-        }
-        await context.SaveChangesAsync();
     }
 }

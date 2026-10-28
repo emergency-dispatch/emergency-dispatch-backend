@@ -1,6 +1,8 @@
 using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Application.Validators;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EmergencyDispatch.API.Controllers;
@@ -10,13 +12,17 @@ namespace EmergencyDispatch.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+// Gọi AI tốn chi phí OpenRouter / GPU và AI service tự tải URL được truyền vào → chỉ nhân sự điều phối được dùng
+[Authorize(Roles = "Operator,Admin")]
 public class AiController : ControllerBase
 {
     private readonly IAiClassificationService _aiClassificationService;
+    private readonly IConfiguration _configuration;
 
-    public AiController(IAiClassificationService aiClassificationService)
+    public AiController(IAiClassificationService aiClassificationService, IConfiguration configuration)
     {
         _aiClassificationService = aiClassificationService;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -37,6 +43,11 @@ public class AiController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.MediaUrl))
         {
             return BadRequest(ApiResponseDto<AiClassificationResultDto>.FailureResult("MediaUrl không được để trống."));
+        }
+
+        if (!MediaUrlPolicy.IsTrusted(request.MediaUrl, _configuration))
+        {
+            return BadRequest(ApiResponseDto<AiClassificationResultDto>.FailureResult("Ảnh / video phải được tải lên qua hệ thống (POST /api/media/upload)."));
         }
 
         var result = await _aiClassificationService.AnalyzeAsync(request.MediaUrl, request.AdditionalContext, cancellationToken);

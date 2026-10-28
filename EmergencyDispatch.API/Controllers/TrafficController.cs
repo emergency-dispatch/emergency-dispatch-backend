@@ -4,6 +4,7 @@ using EmergencyDispatch.Application.DTOs.Traffic;
 using EmergencyDispatch.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EmergencyDispatch.API.Controllers;
 
@@ -30,6 +31,7 @@ public class TrafficController : ControllerBase
     /// </remarks>
     [HttpPost("report")]
     [AllowAnonymous]
+    [EnableRateLimiting("traffic-report")]
     [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ReportHotspot(

@@ -3,6 +3,7 @@ using EmergencyDispatch.Application.DTOs.Media;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Application.Validators;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EmergencyDispatch.API.Controllers;
 
@@ -27,6 +28,7 @@ public class MediaController : ControllerBase
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>URL bảo mật và PublicId từ Cloudinary</returns>
     [HttpPost("upload")]
+    [EnableRateLimiting("upload")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ApiResponseDto<MediaUploadResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<MediaUploadResultDto>), StatusCodes.Status400BadRequest)]

@@ -1,11 +1,12 @@
 using EmergencyDispatch.Application.DTOs.Incident;
 using FluentValidation;
+using Microsoft.Extensions.Configuration;
 
 namespace EmergencyDispatch.Application.Validators;
 
 public class CreateIncidentDtoValidator : AbstractValidator<CreateIncidentDto>
 {
-    public CreateIncidentDtoValidator()
+    public CreateIncidentDtoValidator(IConfiguration configuration)
     {
         RuleFor(x => x.Latitude)
             .InclusiveBetween(-90.0, 90.0)
@@ -32,5 +33,9 @@ public class CreateIncidentDtoValidator : AbstractValidator<CreateIncidentDto>
         RuleFor(x => x.MediaUrls)
             .Must(urls => urls == null || urls.Count <= 5)
             .WithMessage("Không được đính kèm quá 5 tệp tin phương tiện cho một sự cố.");
+
+        RuleForEach(x => x.MediaUrls)
+            .Must(url => MediaUrlPolicy.IsTrusted(url, configuration))
+            .WithMessage("Ảnh / video phải được tải lên qua hệ thống (POST /api/media/upload).");
     }
 }

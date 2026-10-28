@@ -96,9 +96,16 @@ public class DispatchController : ControllerBase
     public async Task<IActionResult> GetAssignmentById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _dispatchService.GetAssignmentByIdAsync(id, cancellationToken);
-        if (!result.Success)
+        if (!result.Success || result.Data == null)
         {
             return NotFound(result);
+        }
+
+        // Cùng quy tắc với assignments/incident/{id}: chỉ người báo, Operator/Staff liên quan và Admin
+        if (!await _incidentService.CanAccessIncidentAsync(result.Data.IncidentId, GetCurrentUserId(), cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn không có quyền xem lượt điều phối này."));
         }
 
         return Ok(result);

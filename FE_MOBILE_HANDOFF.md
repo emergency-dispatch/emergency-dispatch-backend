@@ -927,3 +927,17 @@ Backend nay kiểm tra phiên bản dữ liệu (`xmin`) trên **sự cố** và
 | Operator xác minh sự cố khi AI **đang chạy** (17–33 s) | AI xong sẽ **ghi đè** mức độ Operator đã chọn và đưa trạng thái về `AiProcessed` | Kết quả AI chỉ được lưu để tham khảo, **không** đổi mức độ / trạng thái Operator đã xác minh | Không cần làm gì. Nếu từng thấy "mức độ tự nhảy lại sau khi xác minh" thì lỗi đó đã được sửa |
 
 Lỗi 409 do **khóa mềm** (Operator khác đang giữ sự cố) vẫn như cũ, cũng dùng `errorCode: "CONFLICT"`, nên có thể xử lý chung: hiện `message`, tải lại dữ liệu.
+
+
+---
+
+## 17. Cập nhật 28/10/2026: vá lỗ hổng bảo mật (rate limit, OTP, phân quyền)
+
+| Thay đổi | Ảnh hưởng | FE / Mobile cần làm |
+|---|---|---|
+| **Rate limit mới** (chi tiết: `API_DOCUMENTATION.md` mục 1): đăng ký / quên mật khẩu / gửi lại OTP **5 lần / 10 phút / IP**; nhập OTP 10 / phút; upload 30 / phút; báo kẹt xe 5 / phút | Vượt giới hạn → **429**, **body rỗng** (không có `message`) | Bắt 429 ở mọi màn hình trên và hiện thông báo tự viết, VD "Bạn thao tác quá nhanh, vui lòng thử lại sau ít phút". Nút "Gửi lại mã" nên đếm ngược ~60 s |
+| **OTP sai 5 lần → mã bị hủy** (`verify-email`, `reset-password`) | Lần sai thứ 5 trả 400 "Mã xác thực đã bị vô hiệu do nhập sai quá nhiều lần. Vui lòng yêu cầu mã mới." | Màn hình nhập OTP: khi gặp message này, xóa ô nhập và đưa người dùng về bước "Gửi lại mã" / "Quên mật khẩu" |
+| **`mediaUrls` (SOS) chỉ nhận URL do `POST /api/media/upload` trả về** | URL ngoài (link ảnh trên mạng, đường dẫn local) → 400 | Luôn upload trước rồi dùng đúng `data.url` trả về (web `SosModal.tsx` đang làm đúng). Mobile khi nối SOS cũng làm vậy |
+| **`POST /api/ai/analyze` chỉ cho Operator / Admin** | Citizen / khách gọi → 401 / 403 | Mobile: xóa `Endpoints.AI.ANALYZE` (hiện không dùng). Citizen không cần gọi AI trực tiếp: gửi SOS là AI tự chạy |
+| **`GET /api/dispatch/assignments/{id}` kiểm tra quyền** | Citizen chỉ xem được lượt điều phối của sự cố mình báo; Staff chỉ xem lượt của trạm mình → khác thì **403** | Citizen theo dõi xe nên dùng `GET /api/dispatch/tracking/incident/{incidentId}` |
+| Tài khoản demo `admin@gmail.com` / `123123` | Không còn bị **reset** mỗi lần khởi động; không được tạo khi chạy Production | Đừng dùng tài khoản này cho demo / bảo vệ. Dùng `admin@emergencydispatch.com` |

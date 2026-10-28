@@ -22,19 +22,27 @@ public class AuthService : IAuthService
     private readonly ITokenService _tokenService;
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
+    private readonly IOtpAttemptLimiter _otpAttempts;
+
+    // Mục đích OTP cho bộ đếm nhập sai
+    private const string VerifyEmailPurpose = "verify-email";
+    private const string ResetPasswordPurpose = "reset-password";
+    private const string OtpInvalidatedMessage = "Mã xác thực đã bị vô hiệu do nhập sai quá nhiều lần. Vui lòng yêu cầu mã mới.";
 
     public AuthService(
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         ITokenService tokenService,
         IEmailService emailService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IOtpAttemptLimiter otpAttempts)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _tokenService = tokenService;
         _emailService = emailService;
         _configuration = configuration;
+        _otpAttempts = otpAttempts;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterRequestDto dto)
@@ -96,9 +104,21 @@ public class AuthService : IAuthService
 
         if (user.EmailVerificationToken != dto.Token.Trim() || user.EmailVerificationTokenExpiry < DateTime.UtcNow)
         {
+            // Chống dò OTP 6 số: sai 5 lần thì xóa mã, người dùng phải yêu cầu mã mới
+            if (user.EmailVerificationToken != null && _otpAttempts.RegisterFailure(VerifyEmailPurpose, email))
+            {
+                user.EmailVerificationToken = null;
+                user.EmailVerificationTokenExpiry = null;
+                user.UpdatedAt = DateTime.UtcNow;
+                await _userRepository.UpdateAsync(user);
+                _otpAttempts.Reset(VerifyEmailPurpose, email);
+                return ApiResponseDto<bool>.FailureResult(OtpInvalidatedMessage);
+            }
+
             return ApiResponseDto<bool>.FailureResult("Mã xác thực không chính xác hoặc đã hết hạn.");
         }
 
+        _otpAttempts.Reset(VerifyEmailPurpose, email);
         user.IsEmailVerified = true;
         user.EmailVerificationToken = null;
         user.EmailVerificationTokenExpiry = null;
@@ -133,6 +153,7 @@ public class AuthService : IAuthService
         user.UpdatedAt = DateTime.UtcNow;
 
         await _userRepository.UpdateAsync(user);
+        _otpAttempts.Reset(VerifyEmailPurpose, email);
         await _emailService.SendVerificationEmailAsync(user.Email, user.FullName, otp);
 
         return ApiResponseDto<bool>.SuccessResult(true, "Mã xác thực mới đã được gửi tới email của bạn.");
@@ -151,6 +172,7 @@ public class AuthService : IAuthService
             user.UpdatedAt = DateTime.UtcNow;
 
             await _userRepository.UpdateAsync(user);
+            _otpAttempts.Reset(ResetPasswordPurpose, email);
             await _emailService.SendPasswordResetEmailAsync(user.Email, user.FullName, otp);
         }
 
@@ -164,9 +186,21 @@ public class AuthService : IAuthService
 
         if (user == null || user.PasswordResetToken != dto.Token.Trim() || user.PasswordResetTokenExpiry < DateTime.UtcNow)
         {
+            // Chống dò OTP đặt lại mật khẩu (chiếm tài khoản): sai 5 lần thì xóa mã
+            if (user?.PasswordResetToken != null && _otpAttempts.RegisterFailure(ResetPasswordPurpose, email))
+            {
+                user.PasswordResetToken = null;
+                user.PasswordResetTokenExpiry = null;
+                user.UpdatedAt = DateTime.UtcNow;
+                await _userRepository.UpdateAsync(user);
+                _otpAttempts.Reset(ResetPasswordPurpose, email);
+                return ApiResponseDto<bool>.FailureResult(OtpInvalidatedMessage);
+            }
+
             return ApiResponseDto<bool>.FailureResult("Mã xác thực không hợp lệ hoặc đã hết hạn.");
         }
 
+        _otpAttempts.Reset(ResetPasswordPurpose, email);
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
         user.PasswordResetToken = null;
         user.PasswordResetTokenExpiry = null;

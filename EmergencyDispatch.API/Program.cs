@@ -177,6 +177,7 @@ builder.Services.AddHttpClient("OpenRouterClient")
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IEmailService, EmergencyDispatch.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddSingleton<IOtpAttemptLimiter, EmergencyDispatch.Infrastructure.Services.MemoryOtpAttemptLimiter>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IStationService, StationService>();
 builder.Services.AddScoped<IRescueUnitService, RescueUnitService>();
@@ -309,6 +310,27 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("login", httpContext => RateLimitPartition.GetFixedWindowLimiter(
         httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+
+    // Nhập OTP (xác thực email, đặt lại mật khẩu): 10 lần / phút / IP — cùng với giới hạn 5 lần sai mỗi mã trong AuthService
+    options.AddPolicy("otp", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+
+    // Các API gửi email (đăng ký, quên mật khẩu, gửi lại OTP): 5 lần / 10 phút / IP — chống spam làm Gmail khóa tài khoản gửi
+    options.AddPolicy("email-send", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(10), QueueLimit = 0 }));
+
+    // Báo điểm nghẽn (khách cũng gửi được): 5 lần / phút / IP. Policy riêng để không ăn vào hạn mức SOS
+    options.AddPolicy("traffic-report", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+
+    // Upload media (cho phép khách gửi SOS): 30 tệp / phút / tài khoản hoặc IP
+    options.AddPolicy("upload", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
 var app = builder.Build();
@@ -325,7 +347,7 @@ using (var scope = app.Services.CreateScope())
         {
             await context.Database.MigrateAsync();
         }
-        await DbInitializer.SeedAsync(context);
+        await DbInitializer.SeedAsync(context, seedDemoAdmin: app.Environment.IsDevelopment());
         logger.LogInformation("Database migration và seed dữ liệu hoàn tất thành công.");
     }
     catch (Exception ex)

@@ -17,6 +17,18 @@
 * **Android Emulator**: dùng `http://10.0.2.2:5000` thay cho `localhost`.
 * **CORS**: Chỉ origin trong `Cors:AllowedOrigins` (appsettings) được gọi API. Chưa cấu hình + môi trường Development → cho phép `localhost` / `127.0.0.1` (mọi cổng) và IP mạng LAN (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`). App mobile native không gửi `Origin` nên không bị ảnh hưởng.
 * **Access token** sống **60 phút** (`JwtSettings:ExpireMinutes`). Hết hạn → API trả 401, client gọi `POST /api/auth/refresh` (refresh token sống 7 ngày). Lưu ý: `expiresAt` trong response đăng nhập là hạn của **refresh token**, không phải access token.
+* **Rate limit** (vượt → **429**, body rỗng; giới hạn theo IP, riêng upload theo tài khoản nếu đã đăng nhập):
+
+  | Endpoint | Giới hạn |
+  |---|---|
+  | `POST /api/incidents` (SOS) | 5 / phút |
+  | `POST /api/auth/login` | 10 / phút |
+  | `POST /api/auth/verify-email`, `POST /api/auth/reset-password` | 10 / phút (thêm: sai OTP 5 lần → mã bị hủy, phải xin mã mới) |
+  | `POST /api/auth/register`, `forgot-password`, `resend-verification` | **5 / 10 phút** (dùng chung một bộ đếm) |
+  | `POST /api/media/upload` | 30 / phút |
+  | `POST /api/traffic/report` | 5 / phút (bộ đếm riêng, không ảnh hưởng SOS) |
+* **URL ảnh / video** gửi trong `mediaUrls` (SOS) và `POST /api/ai/analyze` phải là URL do `POST /api/media/upload` trả về (Cloudinary của hệ thống). URL khác → 400.
+* `POST /api/ai/analyze` chỉ dành cho **Operator, Admin**.
 
 ### Chuẩn định dạng Response chung (`ApiResponseDto<T>`)
 Mọi API trả về đều tuân thủ cấu trúc JSON đồng nhất:

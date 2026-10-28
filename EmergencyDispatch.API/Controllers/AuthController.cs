@@ -24,6 +24,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
+    [EnableRateLimiting("email-send")]
     [ProducesResponseType(typeof(ApiResponseDto<AuthResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Register([FromBody] RegisterRequestDto dto)
@@ -49,6 +50,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("verify-email")]
     [AllowAnonymous]
+    [EnableRateLimiting("otp")]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailDto dto)
@@ -66,6 +68,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("resend-verification")]
     [AllowAnonymous]
+    [EnableRateLimiting("email-send")]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationDto dto)
@@ -83,6 +86,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("forgot-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("email-send")]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
     {
@@ -95,6 +99,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("reset-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("otp")]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
