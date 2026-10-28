@@ -230,7 +230,18 @@ public class AiClassificationService : IAiClassificationService
                 form.Add(new StringContent(additionalContext), "citizen_note");
             }
 
-            var response = await client.PostAsync(localUrl, form, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Post, localUrl) { Content = form };
+
+            // AI service chạy trên Kaggle/Colab qua ngrok: gửi khóa bí mật (AiService:ApiKey)
+            // và bỏ trang cảnh báo của ngrok bản free (nếu không sẽ nhận về HTML thay vì JSON)
+            var serviceKey = _configuration["AiService:ApiKey"];
+            if (!string.IsNullOrWhiteSpace(serviceKey))
+            {
+                request.Headers.Add("X-AI-Service-Key", serviceKey);
+            }
+            request.Headers.Add("ngrok-skip-browser-warning", "true");
+
+            var response = await client.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);

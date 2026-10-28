@@ -54,6 +54,20 @@ dotnet run --project EmergencyDispatch.API
 - `ExpireHours` cũ vẫn đọc được, nhưng nên đổi sang `ExpireMinutes`.
 - Bỏ trống `Cors:AllowedOrigins` khi chạy local: môi trường Development tự cho phép localhost và IP mạng LAN. Khi deploy **bắt buộc** điền domain web, nếu không trình duyệt sẽ bị chặn.
 
+### AI service chạy trên Kaggle (ngrok)
+Code AI service nằm ở [ai-service/](ai-service/README.md). Chạy `ai-service/kaggle_serve_ngrok.py` trên Kaggle (hướng dẫn ở đầu file). Cell in ra đoạn cấu hình, dán vào `appsettings.json`:
+```json
+"AiService": {
+  "UseLocalModel": true,
+  "LocalServiceUrl": "https://<ten>.ngrok-free.app/api/analyze-incident",
+  "LocalTimeoutSeconds": 120,
+  "ApiKey": "<khóa in ra trong notebook>"
+}
+```
+- Backend gửi `ApiKey` qua header `X-AI-Service-Key`, kèm `ngrok-skip-browser-warning`. Bỏ trống `ApiKey` khi chạy AI service local.
+- Phiên Kaggle tự tắt sau tối đa ~12 giờ. Khi không gọi được service, backend tự chuyển sang OpenRouter, rồi tới Unclassified.
+- Không dùng secret ngrok domain tĩnh thì URL đổi mỗi lần chạy notebook: nhớ cập nhật `LocalServiceUrl`.
+
 ### Migration
 ```bash
 dotnet ef migrations add <TenMigration> --project EmergencyDispatch.Infrastructure --startup-project EmergencyDispatch.API

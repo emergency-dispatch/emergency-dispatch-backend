@@ -85,3 +85,9 @@ mono_crash.*
 ## Misc
 *.cache
 *.log
+
+## AI service (Python)
+ai-service/lora_adapter/
+ai-service/.venv/
+__pycache__/
+*.pyc
