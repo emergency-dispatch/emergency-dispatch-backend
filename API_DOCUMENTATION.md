@@ -1107,6 +1107,8 @@ async function submitSosReport(file: File, description: string, lat: number, lng
 ## 7. ENDPOINT MỚI / THAY ĐỔI THEO SRS (đợt 21/10/2026)
 
 > Chi tiết body/response và việc FE/Mobile cần đổi: `FE_MOBILE_HANDOFF.md` mục 6 và 7. Mọi lỗi nghiệp vụ có thêm `errorCode`: `CONFLICT` (409), `FORBIDDEN` (403), `NOT_FOUND` (404), `TOO_MANY_REQUESTS` (429).
+>
+> **409 do ghi đồng thời (optimistic concurrency):** `Incident` và `DispatchAssignment` có kiểm tra phiên bản dòng (cột `xmin` của PostgreSQL). Nếu dữ liệu bị người khác / worker sửa giữa lúc đọc và lúc lưu (VD hai Operator cùng xác minh / hủy, Staff bấm nghiệm thu hai lần), API trả **409**, `errorCode: "CONFLICT"`, `message` = "Sự cố vừa được người khác cập nhật. Vui lòng tải lại và thử lại." (hoặc "Nhiệm vụ vừa được cập nhật từ thiết bị khác…"). Không có dữ liệu nào bị ghi một nửa; với `POST /api/dispatch/assign`, xe đã giữ chỗ được trả về `Available`.
 
 | Phân hệ | Endpoint | Quyền | Ghi chú |
 |---|---|---|---|

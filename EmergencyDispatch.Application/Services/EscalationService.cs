@@ -16,6 +16,7 @@ namespace EmergencyDispatch.Application.Services;
 public class EscalationService : IEscalationService
 {
     private readonly IEscalationRepository _escalationRepository;
+    private readonly IIncidentRepository _incidentRepository;
     private readonly IRealtimeNotifier _realtimeNotifier;
     private readonly ISystemSettingsService _settingsService;
     private readonly INotificationService _notificationService;
@@ -28,6 +29,7 @@ public class EscalationService : IEscalationService
 
     public EscalationService(
         IEscalationRepository escalationRepository,
+        IIncidentRepository incidentRepository,
         IRealtimeNotifier realtimeNotifier,
         ISystemSettingsService settingsService,
         INotificationService notificationService,
@@ -37,6 +39,7 @@ public class EscalationService : IEscalationService
     {
         _userRepository = userRepository;
         _escalationRepository = escalationRepository;
+        _incidentRepository = incidentRepository;
         _realtimeNotifier = realtimeNotifier;
         _settingsService = settingsService;
         _notificationService = notificationService;
@@ -259,6 +262,15 @@ public class EscalationService : IEscalationService
 
             foreach (var incident in candidates)
             {
+                // Khóa + đọc lại + kiểm tra lại: Operator có thể vừa điều xe / hủy kể từ lúc lấy danh sách.
+                // Không khóa thì worker ghi Escalated đè lên Dispatched (hoặc xung đột xmin làm hỏng cả vòng quét)
+                await using var lockScope = await _incidentRepository.BeginLockedTransactionAsync(incident.Id, cancellationToken);
+                await _incidentRepository.ReloadAsync(incident, cancellationToken);
+                if (!await _escalationRepository.IsStillEscalatableAsync(incident.Id, severities, cutoffTime, cancellationToken))
+                {
+                    continue;
+                }
+
                 // Kiểm tra xem sự cố này đã được kích hoạt log với quy tắc này gần đây chưa
                 var hasRecentLog = await _escalationRepository.HasRecentEscalationLogAsync(
                     incident.Id, rule.Id, nowUtc.AddMinutes(-thresholdMinutes), cancellationToken);
@@ -310,6 +322,7 @@ public class EscalationService : IEscalationService
 
                 await _escalationRepository.AddLogAsync(escalationLog, cancellationToken);
                 await _escalationRepository.SaveChangesAsync(cancellationToken);
+                await lockScope.CommitAsync(cancellationToken);
 
                 var elapsedMinutes = Math.Round((DateTime.UtcNow - incident.CreatedAt).TotalMinutes, 1);
 

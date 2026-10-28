@@ -910,3 +910,20 @@ Nếu nhóm quyết định để luồng citizen chạy trên **web/PWA** thay 
 | **CORS theo danh sách origin** | Local: `localhost` / `127.0.0.1` mọi cổng và IP LAN vẫn gọi được. Origin lạ bị chặn | Khi deploy web, báo backend domain để thêm vào `Cors:AllowedOrigins` |
 | **CCCD phải đúng 12 chữ số** (`PUT /api/users/me`, `citizenIdNumber`) | Gửi sai → 400, `errors.CitizenIdNumber` = "Số CCCD phải gồm đúng 12 chữ số." (theo `Accept-Language`). Chuỗi rỗng vẫn hợp lệ | Thêm kiểm tra 12 số ở form hồ sơ (web + mobile) để báo lỗi trước khi gửi |
 | **SĐT người báo SOS** (`reporterPhone`): sửa regex, ký tự `\|` không còn lọt qua | Không đổi với số hợp lệ `0` / `+84` + đầu số 3, 5, 7, 8, 9 + 8 số | Không cần làm gì |
+
+
+---
+
+## 16. Cập nhật 27/10/2026: chống ghi đè khi nhiều người cùng sửa (409 CONFLICT)
+
+Backend nay kiểm tra phiên bản dữ liệu (`xmin`) trên **sự cố** và **lượt điều phối**. Không đổi body hay response khi thành công.
+
+| Tình huống | Trước đây | Bây giờ | FE / Mobile cần làm |
+|---|---|---|---|
+| Hai Operator cùng thao tác một sự cố (xác minh / hủy / điều xe / chuyển trạm) gần như cùng lúc | Người lưu sau ghi đè người lưu trước, có thể ra trạng thái sai (VD sự cố đã hủy lại thành `Dispatched`) | Người lưu sau nhận **409**, `errorCode: "CONFLICT"` | Khi nhận 409 + `CONFLICT`: hiện `message`, **tải lại chi tiết sự cố** (`GET /api/incidents/{id}`) rồi cho người dùng thao tác lại. Không tự động gửi lại request |
+| Staff bấm "Hoàn tất" (`POST /api/dispatch/assignments/{id}/resolve`) hai lần, hoặc từ hai thiết bị | Lần sau trả **500** | Lần sau trả **400** "Nhiệm vụ đã ở trạng thái 'Completed', không thể nghiệm thu." | Mobile / Staff web: khóa nút trong lúc gửi; nhận lỗi này thì tải lại `GET /api/dispatch/my-assignments` (nhiệm vụ đã xong) |
+| Hai xe của cùng một sự cố nghiệm thu gần như cùng lúc | Có thể không bên nào đóng sự cố → sự cố kẹt `InProgress` dù mọi xe đã xong | Các lần nghiệm thu cùng sự cố chạy tuần tự, xe cuối cùng luôn đóng sự cố | Không cần làm gì |
+| Đổi trạng thái nhiệm vụ (`PUT /api/dispatch/assignments/{id}/status`) đồng thời từ hai thiết bị | Người lưu sau ghi đè | Người lưu sau nhận **409** `CONFLICT` | Tải lại `GET /api/dispatch/my-assignments` |
+| Operator xác minh sự cố khi AI **đang chạy** (17–33 s) | AI xong sẽ **ghi đè** mức độ Operator đã chọn và đưa trạng thái về `AiProcessed` | Kết quả AI chỉ được lưu để tham khảo, **không** đổi mức độ / trạng thái Operator đã xác minh | Không cần làm gì. Nếu từng thấy "mức độ tự nhảy lại sau khi xác minh" thì lỗi đó đã được sửa |
+
+Lỗi 409 do **khóa mềm** (Operator khác đang giữ sự cố) vẫn như cũ, cũng dùng `errorCode: "CONFLICT"`, nên có thể xử lý chung: hiện `message`, tải lại dữ liệu.

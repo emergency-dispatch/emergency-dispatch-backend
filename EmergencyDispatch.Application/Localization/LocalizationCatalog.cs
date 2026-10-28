@@ -138,6 +138,8 @@ public static partial class LocalizationCatalog
         { "Địa chỉ không được vượt quá 500 ký tự.", "Address must not exceed 500 characters." },
         { "Số điện thoại liên hệ không đúng định dạng Việt Nam.", "Contact phone number must be a valid Vietnamese phone number." },
         { "Số CCCD phải gồm đúng 12 chữ số.", "Citizen ID number must contain exactly 12 digits." },
+        { "Sự cố vừa được người khác cập nhật. Vui lòng tải lại và thử lại.", "This incident was just updated by someone else. Please reload and try again." },
+        { "Nhiệm vụ vừa được cập nhật từ thiết bị khác. Vui lòng tải lại và thử lại.", "This assignment was just updated from another device. Please reload and try again." },
         { "Không được đính kèm quá 5 tệp tin phương tiện cho một sự cố.", "An incident cannot have more than 5 media attachments." },
         { "Tiêu đề không được vượt quá 250 ký tự", "Title must not exceed 250 characters" },
         { "Mô tả không được vượt quá 2000 ký tự", "Description must not exceed 2000 characters" },

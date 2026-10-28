@@ -23,6 +23,14 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
             .FirstOrDefaultAsync(d => d.Id == id);
     }
 
+    public async Task<Guid?> GetIncidentIdAsync(Guid assignmentId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .Where(d => d.Id == assignmentId)
+            .Select(d => (Guid?)d.IncidentId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<DispatchAssignment>> GetByIncidentIdAsync(Guid incidentId)
     {
         return await _dbSet

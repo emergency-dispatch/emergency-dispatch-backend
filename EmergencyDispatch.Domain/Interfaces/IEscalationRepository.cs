@@ -21,6 +21,12 @@ public interface IEscalationRepository
     Task<IReadOnlyList<Incident>> GetEscalatableIncidentsAsync(IReadOnlyCollection<SeverityLevel> severities, DateTime cutoffTime, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Kiểm tra lại trên DB (cùng điều kiện với GetEscalatableIncidentsAsync) — gọi sau khi đã khóa sự cố,
+    /// vì Operator có thể vừa điều xe / hủy kể từ lúc lấy danh sách
+    /// </summary>
+    Task<bool> IsStillEscalatableAsync(Guid incidentId, IReadOnlyCollection<SeverityLevel> severities, DateTime cutoffTime, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// BR-17 cấp 2: sự cố đã leo thang cấp 1, tạo trước cutoffTime (gấp đôi ngưỡng) mà vẫn chưa có đơn vị nhận, chưa leo thang cấp 2
     /// </summary>
     /// <summary>

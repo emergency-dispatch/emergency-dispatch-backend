@@ -3,6 +3,7 @@ using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
 using EmergencyDispatch.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace EmergencyDispatch.Infrastructure.Repositories;
 
@@ -183,6 +184,52 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
                 .SetProperty(i => i.LockExpiresAt, (DateTime?)null), cancellationToken);
 
         return affected == 1;
+    }
+
+    public async Task<bool> TryApplyAiResultAsync(Guid incidentId, SeverityLevel severity, IncidentEventType eventType, DateTime nowUtc, CancellationToken cancellationToken = default)
+    {
+        var affected = await _context.Incidents
+            .Where(i => i.Id == incidentId && i.Status == IncidentStatus.AiProcessing)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(i => i.Severity, severity)
+                .SetProperty(i => i.Status, IncidentStatus.AiProcessed)
+                .SetProperty(i => i.EventType, i => i.EventType == IncidentEventType.None ? eventType : i.EventType)
+                .SetProperty(i => i.UpdatedAt, nowUtc), cancellationToken);
+
+        return affected == 1;
+    }
+
+    public Task ReloadAsync(Incident incident, CancellationToken cancellationToken = default)
+        => _context.Entry(incident).ReloadAsync(cancellationToken);
+
+    public async Task<IIncidentLockScope> BeginLockedTransactionAsync(Guid incidentId, CancellationToken cancellationToken = default)
+    {
+        var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM \"Incidents\" WHERE \"Id\" = {incidentId} FOR UPDATE", cancellationToken);
+            return new IncidentLockScope(transaction);
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            throw;
+        }
+    }
+
+    private sealed class IncidentLockScope : IIncidentLockScope
+    {
+        private readonly IDbContextTransaction _transaction;
+
+        public IncidentLockScope(IDbContextTransaction transaction)
+        {
+            _transaction = transaction;
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken = default) => _transaction.CommitAsync(cancellationToken);
+
+        public ValueTask DisposeAsync() => _transaction.DisposeAsync();
     }
 
     public async Task<bool> HasRecentActiveIncidentAsync(Guid? userId, string? normalizedPhone, DateTime sinceUtc, CancellationToken cancellationToken = default)

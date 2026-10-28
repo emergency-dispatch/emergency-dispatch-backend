@@ -157,6 +157,11 @@ public class Incident : BaseEntity
     /// </summary>
     public long? ResolutionTimeMs { get; set; }
 
+    /// <summary>
+    /// Phiên bản dòng dữ liệu (cột hệ thống xmin của PostgreSQL) — chống ghi đè khi nhiều người / worker cùng sửa sự cố
+    /// </summary>
+    public uint Version { get; set; }
+
     // Navigation properties
     public ICollection<IncidentMedia> MediaItems { get; set; } = new List<IncidentMedia>();
     public AiClassification? AiClassification { get; set; }

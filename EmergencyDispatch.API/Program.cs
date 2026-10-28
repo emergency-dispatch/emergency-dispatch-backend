@@ -25,7 +25,11 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Controllers + JSON Enum serialize as string + SignalR
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+    {
+        // Xung đột đồng thời (xmin) → 409 thay vì 500
+        options.Filters.Add<ConcurrencyConflictExceptionFilter>();
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());

@@ -1,5 +1,7 @@
 using EmergencyDispatch.Domain.Entities;
+using EmergencyDispatch.Domain.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace EmergencyDispatch.Infrastructure.Data;
 
@@ -7,6 +9,59 @@ public class ApplicationDbContext : DbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
     {
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        try
+        {
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+        catch (DbUpdateException ex) when (TryGetConflictEntity(ex, out var entityName))
+        {
+            throw new ConcurrencyConflictException(entityName, ex);
+        }
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (DbUpdateException ex) when (TryGetConflictEntity(ex, out var entityName))
+        {
+            throw new ConcurrencyConflictException(entityName, ex);
+        }
+    }
+
+    /// <summary>
+    /// Các lỗi lưu do ghi đồng thời: xmin không khớp, deadlock, hoặc báo cáo nghiệm thu thứ hai cho cùng một lượt
+    /// </summary>
+    private static bool TryGetConflictEntity(DbUpdateException ex, out string entityName)
+    {
+        entityName = ex.Entries.FirstOrDefault()?.Metadata.ClrType.Name ?? "Unknown";
+
+        if (ex is DbUpdateConcurrencyException)
+        {
+            return true;
+        }
+
+        if (ex.InnerException is PostgresException pg)
+        {
+            if (pg.SqlState == PostgresErrorCodes.DeadlockDetected)
+            {
+                return true;
+            }
+
+            if (pg.SqlState == PostgresErrorCodes.UniqueViolation && pg.ConstraintName == "IX_CompletionReports_AssignmentId")
+            {
+                entityName = nameof(DispatchAssignment);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // 1. User & Auth
@@ -217,6 +272,9 @@ public class ApplicationDbContext : DbContext
                   .HasForeignKey(i => i.DuplicateOfIncidentId)
                   .OnDelete(DeleteBehavior.Restrict);
 
+            // Optimistic concurrency (BR-15): Npgsql ánh xạ uint + IsRowVersion vào cột hệ thống xmin, không tạo cột mới
+            entity.Property(i => i.Version).IsRowVersion();
+
             entity.HasQueryFilter(i => !i.IsDeleted);
         });
 
@@ -224,6 +282,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<DispatchAssignment>(entity =>
         {
             entity.HasKey(d => d.Id);
+            entity.Property(d => d.Version).IsRowVersion();
             entity.HasIndex(d => new { d.IncidentId, d.Status }).HasDatabaseName("IX_DispatchAssignments_Incident_Status");
             entity.HasIndex(d => new { d.RescueUnitId, d.Status }).HasDatabaseName("IX_DispatchAssignments_Unit_Status");
             entity.Property(d => d.Notes).HasMaxLength(1000);

@@ -313,24 +313,18 @@ public class IncidentService : IIncidentService
         };
         await _incidentRepository.AddAiClassificationAsync(aiEntity, cancellationToken);
 
-        // Chỉ cập nhật trạng thái/mức độ nếu Operator chưa can thiệp (chưa xác minh / chưa hủy)
-        var appliedToIncident = incident.Status == IncidentStatus.AiProcessing;
+        // Chỉ cập nhật trạng thái/mức độ nếu Operator chưa can thiệp (chưa xác minh / chưa hủy).
+        // Kiểm tra trên DB chứ không trên bản đọc lúc đầu: AI chạy 17–180s, trong lúc đó Operator có thể đã xác minh.
+        var appliedToIncident = await _incidentRepository.TryApplyAiResultAsync(
+            incident.Id, aiResult.SeverityLevel, aiResult.EventType, DateTime.UtcNow, cancellationToken);
+        await _incidentRepository.ReloadAsync(incident, cancellationToken);
         if (appliedToIncident)
         {
-            var oldStatus = incident.Status;
-            incident.Severity = aiResult.SeverityLevel;
-            incident.Status = IncidentStatus.AiProcessed;
-            if (incident.EventType == IncidentEventType.None)
-            {
-                incident.EventType = aiResult.EventType;
-            }
-            incident.UpdatedAt = DateTime.UtcNow;
-
             await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
             {
                 IncidentId = incident.Id,
-                OldStatus = oldStatus,
-                NewStatus = incident.Status,
+                OldStatus = IncidentStatus.AiProcessing,
+                NewStatus = IncidentStatus.AiProcessed,
                 ChangedByRole = AiWorkerRole,
                 Notes = aiResult.IsSuccess
                     ? $"AI đánh giá mức độ {aiResult.SeverityLevel}."

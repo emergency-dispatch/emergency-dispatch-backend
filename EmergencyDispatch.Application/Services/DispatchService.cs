@@ -7,6 +7,7 @@ using EmergencyDispatch.Application.DTOs.RescueUnit;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
+using EmergencyDispatch.Domain.Exceptions;
 using EmergencyDispatch.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 
@@ -420,7 +421,22 @@ public class DispatchService : IDispatchService
             })
         }, cancellationToken);
 
-        await _incidentRepository.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _incidentRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // Sự cố vừa bị hủy / đổi trạng thái bởi người khác: trả xe đã giữ chỗ về Available, không để xe kẹt ở Dispatched
+            foreach (var r in reserved)
+            {
+                await _rescueUnitRepository.ReleaseReservationAsync(r.Id, cancellationToken);
+            }
+
+            _logger.LogWarning("Điều phối sự cố {IncId} bị hủy do xung đột đồng thời; đã nhả {Count} xe.", incident.Id, reserved.Count);
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(
+                "Sự cố vừa được người khác cập nhật. Vui lòng tải lại và thử lại.");
+        }
 
         _logger.LogInformation("Operator {OpId} đã điều phối {Count} xe ({Plates}) tới sự cố {IncId} (DispatchTime={Ms}ms)",
             operatorId, units.Count, plates, incident.Id, incident.DispatchTimeMs);
@@ -864,6 +880,16 @@ public class DispatchService : IDispatchService
         Guid rescuerUserId,
         CancellationToken cancellationToken = default)
     {
+        var incidentId = await _assignmentRepository.GetIncidentIdAsync(id, cancellationToken);
+        if (incidentId == null)
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy thông tin phân công.");
+        }
+
+        // BR-14: khóa sự cố TRƯỚC khi đọc để các xe cùng sự cố nghiệm thu tuần tự —
+        // đếm đúng số xe còn lại, đóng sự cố đúng một lần, bấm nghiệm thu hai lần thì lần sau thấy Completed
+        await using var lockScope = await _incidentRepository.BeginLockedTransactionAsync(incidentId.Value, cancellationToken);
+
         var assignment = await _assignmentRepository.GetByIdWithDetailsAsync(id);
         if (assignment == null)
         {
@@ -1009,6 +1035,7 @@ public class DispatchService : IDispatchService
         }, cancellationToken);
 
         await _incidentRepository.SaveChangesAsync(cancellationToken);
+        await lockScope.CommitAsync(cancellationToken);
 
         _logger.LogInformation(
             "Nhiệm vụ {AssignmentId} nghiệm thu xong. Sự cố {IncidentId} {State} (T_Response={Ms}ms)",

@@ -6,6 +6,11 @@ namespace EmergencyDispatch.Domain.Interfaces;
 public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssignment>
 {
     Task<DispatchAssignment?> GetByIdWithDetailsAsync(Guid id);
+
+    /// <summary>
+    /// Chỉ lấy IncidentId của lượt phân công (không theo dõi entity) — dùng để khóa sự cố trước khi đọc chi tiết
+    /// </summary>
+    Task<Guid?> GetIncidentIdAsync(Guid assignmentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DispatchAssignment>> GetByIncidentIdAsync(Guid incidentId);
     Task<IReadOnlyList<DispatchAssignment>> GetByRescueUnitIdAsync(Guid rescueUnitId);
     Task<DispatchAssignment?> GetActiveAssignmentByUnitIdAsync(Guid rescueUnitId);

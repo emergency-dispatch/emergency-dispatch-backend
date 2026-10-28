@@ -55,6 +55,16 @@ public class EscalationRepository : IEscalationRepository
 
     public async Task<IReadOnlyList<Incident>> GetEscalatableIncidentsAsync(IReadOnlyCollection<SeverityLevel> severities, DateTime cutoffTime, CancellationToken cancellationToken = default)
     {
+        return await EscalatableQuery(severities, cutoffTime)
+            .Include(i => i.DispatchAssignments)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<bool> IsStillEscalatableAsync(Guid incidentId, IReadOnlyCollection<SeverityLevel> severities, DateTime cutoffTime, CancellationToken cancellationToken = default)
+        => EscalatableQuery(severities, cutoffTime).AnyAsync(i => i.Id == incidentId, cancellationToken);
+
+    private IQueryable<Incident> EscalatableQuery(IReadOnlyCollection<SeverityLevel> severities, DateTime cutoffTime)
+    {
         // Sự cố thuộc các mức độ cần quét, tạo trước cutoffTime,
         // chưa có đơn vị cứu hộ nhận (Accepted/EnRoute/OnScene) và chưa hoàn thành/hủy/đã leo thang
         var nonEscalatedStatuses = new[]
@@ -66,8 +76,7 @@ public class EscalationRepository : IEscalationRepository
             IncidentStatus.Dispatched
         };
 
-        return await _context.Incidents
-            .Include(i => i.DispatchAssignments)
+        return _context.Incidents
             .Where(i => !i.IsDeleted
                         && severities.Contains(i.Severity)
                         && i.CreatedAt <= cutoffTime
@@ -76,8 +85,7 @@ public class EscalationRepository : IEscalationRepository
                         && !i.DispatchAssignments.Any(da => da.Status == DispatchAssignmentStatus.Accepted
                                                          || da.Status == DispatchAssignmentStatus.EnRoute
                                                          || da.Status == DispatchAssignmentStatus.OnScene
-                                                         || da.Status == DispatchAssignmentStatus.Completed))
-            .ToListAsync(cancellationToken);
+                                                         || da.Status == DispatchAssignmentStatus.Completed));
     }
 
     public async Task<int> ResolveOpenLogsAsync(Guid incidentId, DateTime resolvedAtUtc, CancellationToken cancellationToken = default)

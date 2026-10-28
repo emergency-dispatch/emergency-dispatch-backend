@@ -64,6 +64,23 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     Task<bool> ReleaseLockAsync(Guid incidentId, Guid operatorId, bool force, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Ghi kết quả AI một cách nguyên tử: chỉ cập nhật khi sự cố vẫn đang AiProcessing (Operator chưa xác minh / hủy).
+    /// EventType chỉ ghi khi sự cố chưa có loại. Trả về true nếu đã áp dụng.
+    /// </summary>
+    Task<bool> TryApplyAiResultAsync(Guid incidentId, SeverityLevel severity, IncidentEventType eventType, DateTime nowUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Đọc lại giá trị mới nhất từ DB cho sự cố đang được theo dõi (sau khi cập nhật bằng ExecuteUpdate)
+    /// </summary>
+    Task ReloadAsync(Incident incident, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mở transaction và khóa dòng sự cố tới khi commit / dispose: các thao tác cùng sự cố (VD nhiều xe nghiệm thu) chạy tuần tự.
+    /// Gọi trước khi đọc dữ liệu cần kiểm tra để luôn thấy bản mới nhất.
+    /// </summary>
+    Task<IIncidentLockScope> BeginLockedTransactionAsync(Guid incidentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// BR-CIT-01: người dùng / số điện thoại đã có sự cố đang hoạt động được tạo sau thời điểm since
     /// </summary>
     Task<bool> HasRecentActiveIncidentAsync(Guid? userId, string? normalizedPhone, DateTime sinceUtc, CancellationToken cancellationToken = default);

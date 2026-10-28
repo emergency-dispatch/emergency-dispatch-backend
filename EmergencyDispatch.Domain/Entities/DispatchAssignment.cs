@@ -50,6 +50,11 @@ public class DispatchAssignment : BaseEntity
     public string? Notes { get; set; }
 
     /// <summary>
+    /// Phiên bản dòng dữ liệu (cột hệ thống xmin của PostgreSQL) — chống nghiệm thu / đổi trạng thái hai lần cùng lúc
+    /// </summary>
+    public uint Version { get; set; }
+
+    /// <summary>
     /// Thời điểm đội xe bắt đầu di chuyển (EnRoute)
     /// </summary>
     public DateTime? EnRouteAt { get; set; }
