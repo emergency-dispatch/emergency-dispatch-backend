@@ -19,10 +19,70 @@ namespace EmergencyDispatch.API.Controllers;
 public class IncidentsController : ControllerBase
 {
     private readonly IIncidentService _incidentService;
+    private readonly IDispatchService _dispatchService;
 
-    public IncidentsController(IIncidentService incidentService)
+    public IncidentsController(IIncidentService incidentService, IDispatchService dispatchService)
     {
         _incidentService = incidentService;
+        _dispatchService = dispatchService;
+    }
+
+    /// <summary>
+    /// Operator tự tạo sự cố khi biết tin từ bên ngoài (điện thoại, bộ đàm, camera, quan sát trực tiếp) mà chưa có ai báo qua app
+    /// </summary>
+    /// <remarks>
+    /// Sự cố được xác minh ngay theo loại và mức độ Operator chọn (không qua AI), thuộc trạm của Operator.
+    /// Truyền rescueUnitIds để điều xe luôn; nếu điều xe thất bại (VD xe vừa được giao nơi khác) sự cố vẫn được tạo,
+    /// response có dispatchSucceeded = false và dispatchMessage để Operator chọn xe khác qua POST /api/dispatch/assign.
+    /// </remarks>
+    [HttpPost("operator")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<OperatorIncidentResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<OperatorIncidentResultDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<OperatorIncidentResultDto>), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> CreateByOperator([FromBody] CreateOperatorIncidentDto dto, CancellationToken cancellationToken)
+    {
+        var operatorId = GetCurrentUserId();
+        var created = await _incidentService.CreateByOperatorAsync(dto, operatorId, cancellationToken);
+        if (!created.Success || created.Data == null)
+        {
+            return this.ToHttpResult(new ApiResponseDto<OperatorIncidentResultDto>
+            {
+                Success = false,
+                Message = created.Message,
+                Errors = created.Errors,
+                ErrorCode = created.ErrorCode
+            });
+        }
+
+        var result = new OperatorIncidentResultDto { Incident = created.Data };
+        var message = created.Message;
+
+        if (dto.RescueUnitIds is { Count: > 0 })
+        {
+            var dispatch = await _dispatchService.AssignUnitAsync(new EmergencyDispatch.Application.DTOs.Dispatch.AssignDispatchDto
+            {
+                IncidentId = created.Data.Id,
+                RescueUnitIds = dto.RescueUnitIds,
+                Algorithm = dto.Algorithm,
+                Notes = dto.DispatchNotes
+            }, operatorId, cancellationToken);
+
+            result.DispatchSucceeded = dispatch.Success;
+            if (dispatch.Success && dispatch.Data != null)
+            {
+                result.Assignments = dispatch.Data;
+                result.Incident.Status = IncidentStatus.Dispatched;
+                message = LocalizationHelper.Localize("Đã tạo sự cố và điều {0} xe cứu hộ.", dispatch.Data.Count);
+            }
+            else
+            {
+                result.DispatchMessage = dispatch.Message;
+                message = LocalizationHelper.Localize("Đã tạo sự cố nhưng chưa điều được xe: {0}", dispatch.Message);
+            }
+        }
+
+        return Ok(ApiResponseDto<OperatorIncidentResultDto>.Ok(result, message));
     }
 
     /// <summary>

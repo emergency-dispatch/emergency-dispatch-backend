@@ -13,6 +13,11 @@ public interface IIncidentService
     Task<ApiResponseDto<IncidentResponseDto>> CreateIncidentAsync(CreateIncidentDto dto, Guid? userId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Operator tự tạo sự cố khi biết tin từ bên ngoài (chưa có báo cáo qua app); sự cố được xác minh ngay
+    /// </summary>
+    Task<ApiResponseDto<IncidentResponseDto>> CreateByOperatorAsync(CreateOperatorIncidentDto dto, Guid operatorId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lấy chi tiết sự cố theo ID
     /// </summary>
     Task<ApiResponseDto<IncidentResponseDto>> GetIncidentByIdAsync(Guid id, Guid? viewerUserId = null, CancellationToken cancellationToken = default);

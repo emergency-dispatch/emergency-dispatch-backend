@@ -1359,8 +1359,35 @@ Mỗi dòng gồm các nhóm trường sau:
 - AI: `aiModelLatencyMs`, `aiSeverity`, `aiEventType`.
 - Xác nhận và điều phối: `confirmedSeverity`, `confirmedEventType`, `wasAiOverridden`, `algorithm`, `unitsDispatched`, `cancellationReason`.
 - Độ trễ suy ra: `tAiMs`, `tOperatorMs`, `tDispatchMs`, `tResponseMs`, `tResolutionMs`.
+- Nguồn: `source` (`CitizenApp` hoặc kênh Operator tự tạo, xem 10.10). Sự cố Operator tự tạo có `tOperatorMs = null` và **không** được tính vào `tOperator` của `telemetry-summary`. CSV thêm cột `source` ở cuối.
 
 Dùng cho RQ2 / RQ3. CSV có giờ dạng ISO-8601 UTC.
+
+### 10.10. Operator tự tạo sự cố — `POST /api/incidents/operator` (Operator, Admin)
+Dùng khi Operator biết có sự cố từ bên ngoài (điện thoại, bộ đàm, camera, nhân viên nhìn thấy) mà **chưa có ai gửi SOS qua app**.
+- Sự cố được **xác minh ngay** theo loại và mức độ Operator chọn, **không qua AI**, trạng thái `Verified`, `verifiedBy` là Operator.
+- Trạm phụ trách: Operator → **trạm của Operator** (để điều được xe ngay). Admin → trạm gần vị trí nhất như SOS.
+- Truyền `rescueUnitIds` để **điều xe luôn**. Nếu điều xe thất bại (xe vừa bị giao nơi khác…), sự cố **vẫn được tạo**, response có `dispatchSucceeded = false` và `dispatchMessage`; Operator chọn xe khác qua `POST /api/dispatch/assign`.
+
+```json
+{
+  "title": "Cháy kho hàng khu B",          // tùy chọn, mặc định "Sự cố tại <địa chỉ>"
+  "description": "…",                      // tùy chọn, ≤ 1000 ký tự
+  "latitude": 10.73, "longitude": 106.72,
+  "locationAddress": "Kho hàng khu B",     // bắt buộc
+  "source": "PhoneCall",                   // bắt buộc: PhoneCall | Radio | Cctv | FieldObservation | Other
+  "eventType": "FireExplosion",            // bắt buộc: FireExplosion | TrafficAccident
+  "severity": "Level3",                    // bắt buộc: Level1 | Level2 | Level3
+  "operatorNotes": "Bảo vệ gọi báo cháy kho, khói đen lớn",  // bắt buộc, ≥ 5 ký tự
+  "reporterName": "Bảo vệ ca đêm",         // tùy chọn (người báo tin)
+  "reporterPhone": "0912345678",           // tùy chọn, SĐT Việt Nam
+  "mediaUrls": [],                         // tùy chọn, URL từ POST /api/media/upload, tối đa 5
+  "rescueUnitIds": ["<guid>"],             // tùy chọn: điều xe luôn
+  "algorithm": "NearestAvailable",         // tùy chọn, ghi lại cho RQ2
+  "dispatchNotes": "…"                     // tùy chọn
+}
+```
+Response `data`: `{ incident: IncidentResponseDto, assignments: [...], dispatchSucceeded: null|true|false, dispatchMessage }`. `IncidentResponseDto` có thêm trường `source` (sự cố từ SOS là `CitizenApp`). Audit trail ghi `CreatedByOperator`. Realtime: `ReceiveNewIncident` như SOS, rồi `ReceiveJobAssigned` nếu có điều xe.
 
 
 ---

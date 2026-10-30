@@ -56,6 +56,11 @@ public class IncidentResponseDto
     /// </summary>
     public IncidentEventType EventType { get; set; }
 
+    /// <summary>
+    /// CitizenApp = SOS qua ứng dụng; giá trị khác = Operator tự tạo (PhoneCall, Radio, Cctv, FieldObservation, Other)
+    /// </summary>
+    public IncidentSource Source { get; set; }
+
     // Thông tin hủy (tách khỏi VerifiedAt / OperatorNotes)
     public CancellationReason? CancellationReason { get; set; }
     public DateTime? CancelledAt { get; set; }

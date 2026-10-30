@@ -73,7 +73,8 @@ public class TelemetryService : ITelemetryService
             ClosedAt = closedAt,
             CancellationReason = i.CancellationReason,
             TAiMs = Ms(i.CreatedAt, ai?.CreatedAt),
-            TOperatorMs = i.VerifiedAt.HasValue ? Ms(operatorStart, i.VerifiedAt) : null,
+            Source = i.Source,
+            TOperatorMs = i.VerifiedAt.HasValue && i.Source == IncidentSource.CitizenApp ? Ms(operatorStart, i.VerifiedAt) : null,
             TDispatchMs = Ms(i.VerifiedAt, firstDispatch),
             TResponseMs = Ms(i.CreatedAt, firstArrived),
             TResolutionMs = i.ClosedAt.HasValue ? Ms(i.CreatedAt, i.ClosedAt) : null
@@ -105,7 +106,9 @@ public class TelemetryService : ITelemetryService
                 if (ai.ProcessingDurationMs.HasValue) modelLatency.Add(ai.ProcessingDurationMs.Value);
             }
 
-            if (incident.VerifiedAt.HasValue)
+            // Sự cố do Operator tự tạo được xác minh ngay lúc tạo → T_Operator luôn ≈ 0, không phản ánh thời gian
+            // xử lý SOS nên bị loại khỏi thống kê RQ3 (T_Dispatch, T_Response, T_Resolution vẫn tính)
+            if (incident.VerifiedAt.HasValue && incident.Source == IncidentSource.CitizenApp)
             {
                 var start = ai != null && ai.CreatedAt <= incident.VerifiedAt.Value ? ai.CreatedAt : incident.CreatedAt;
                 var ms = (incident.VerifiedAt.Value - start).TotalMilliseconds;

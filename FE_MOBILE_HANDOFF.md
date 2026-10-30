@@ -941,3 +941,21 @@ Lỗi 409 do **khóa mềm** (Operator khác đang giữ sự cố) vẫn như c
 | **`POST /api/ai/analyze` chỉ cho Operator / Admin** | Citizen / khách gọi → 401 / 403 | Mobile: xóa `Endpoints.AI.ANALYZE` (hiện không dùng). Citizen không cần gọi AI trực tiếp: gửi SOS là AI tự chạy |
 | **`GET /api/dispatch/assignments/{id}` kiểm tra quyền** | Citizen chỉ xem được lượt điều phối của sự cố mình báo; Staff chỉ xem lượt của trạm mình → khác thì **403** | Citizen theo dõi xe nên dùng `GET /api/dispatch/tracking/incident/{incidentId}` |
 | Tài khoản demo `admin@gmail.com` / `123123` | Không còn bị **reset** mỗi lần khởi động; không được tạo khi chạy Production | Đừng dùng tài khoản này cho demo / bảo vệ. Dùng `admin@emergencydispatch.com` |
+
+
+---
+
+## 18. Cập nhật 30/10/2026: Operator tự tạo sự cố và điều xe
+
+Backend có API mới **`POST /api/incidents/operator`** (Operator, Admin). Chi tiết body và response: `API_DOCUMENTATION.md` mục 10.10.
+
+Dùng khi Operator biết có sự cố từ bên ngoài (điện thoại, bộ đàm, camera, nhân viên nhìn thấy) mà **chưa có ai gửi SOS qua app**. Sự cố được xác minh ngay theo loại và mức Operator chọn, không qua AI, thuộc trạm của Operator. Có thể điều xe luôn trong cùng request.
+
+| Việc FE (web console Operator) | Ghi chú |
+|---|---|
+| Thêm nút **"Tạo sự cố"** trên Live Map / hàng đợi | Mở form tạo sự cố |
+| Form gồm: vị trí (chọn trên bản đồ, điền `latitude`/`longitude` + `locationAddress`), **kênh biết tin** `source` (`PhoneCall` / `Radio` / `Cctv` / `FieldObservation` / `Other`), **loại** `eventType` (`FireExplosion` / `TrafficAccident`), **mức độ** `severity` (`Level1`–`Level3`), **nội dung tin báo** `operatorNotes` (≥ 5 ký tự, bắt buộc), người báo tin và SĐT (tùy chọn), ảnh (tùy chọn, upload trước qua `POST /api/media/upload`) | Thiếu hoặc sai trường → 400 kèm `errors[]` |
+| Bước **chọn xe** (tùy chọn) | Gợi ý xe: tạo sự cố trước rồi gọi `GET /api/dispatch/recommend?incidentId=…` như ca thường. Hoặc chọn sẵn xe và gửi `rescueUnitIds` cùng lúc tạo |
+| Xử lý response | `data.incident` là sự cố mới. `dispatchSucceeded = true` → hiện "Đã điều N xe". `false` → hiện `dispatchMessage` và mở lại bước chọn xe (sự cố **đã được tạo**, không tạo lại). `null` → không yêu cầu điều xe |
+| Hiển thị nguồn | `IncidentResponseDto` có trường mới **`source`**. Khác `CitizenApp` → gắn nhãn, VD "Operator tạo · Điện thoại", để phân biệt với SOS từ người dân |
+| Realtime | Không cần làm gì thêm: các Operator khác nhận `ReceiveNewIncident` như SOS thường, Staff nhận `ReceiveJobAssigned` nếu có điều xe |

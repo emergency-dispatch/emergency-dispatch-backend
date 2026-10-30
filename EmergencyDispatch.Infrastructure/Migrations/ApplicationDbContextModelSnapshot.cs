@@ -629,6 +629,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<int>("Severity")
                         .HasColumnType("integer");
 
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 

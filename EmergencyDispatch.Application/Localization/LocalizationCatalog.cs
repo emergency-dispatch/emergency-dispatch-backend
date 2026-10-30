@@ -141,6 +141,16 @@ public static partial class LocalizationCatalog
         { "Sự cố vừa được người khác cập nhật. Vui lòng tải lại và thử lại.", "This incident was just updated by someone else. Please reload and try again." },
         { "Nhiệm vụ vừa được cập nhật từ thiết bị khác. Vui lòng tải lại và thử lại.", "This assignment was just updated from another device. Please reload and try again." },
         { "Ảnh / video phải được tải lên qua hệ thống (POST /api/media/upload).", "Photos / videos must be uploaded through the system first (POST /api/media/upload)." },
+
+        // Operator tự tạo sự cố (chưa có báo cáo qua app)
+        { "Dữ liệu sự cố không hợp lệ.", "Invalid incident data." },
+        { "Đã tạo và xác minh sự cố. Có thể điều phối đội cứu hộ ngay.", "Incident created and verified. Rescue units can be dispatched now." },
+        { "Đã tạo sự cố và điều {0} xe cứu hộ.", "Incident created and {0} rescue unit(s) dispatched." },
+        { "Đã tạo sự cố nhưng chưa điều được xe: {0}", "Incident created, but no unit could be dispatched: {0}" },
+        { "Tiêu đề không được vượt quá 300 ký tự.", "Title must not exceed 300 characters." },
+        { "Chọn kênh biết tin: PhoneCall, Radio, Cctv, FieldObservation hoặc Other.", "Choose how the incident was learned of: PhoneCall, Radio, Cctv, FieldObservation or Other." },
+        { "Chọn loại sự cố: FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).", "Choose the incident type: FireExplosion or TrafficAccident." },
+        { "Vui lòng ghi nội dung tin báo / căn cứ đánh giá (tối thiểu 5 ký tự) vào operatorNotes.", "Please describe the report / basis for the assessment (at least 5 characters) in operatorNotes." },
         { "Mã xác thực đã bị vô hiệu do nhập sai quá nhiều lần. Vui lòng yêu cầu mã mới.", "This verification code has been invalidated after too many wrong attempts. Please request a new code." },
         { "Bạn không có quyền xem lượt điều phối này.", "You do not have permission to view this assignment." },
         { "Không được đính kèm quá 5 tệp tin phương tiện cho một sự cố.", "An incident cannot have more than 5 media attachments." },

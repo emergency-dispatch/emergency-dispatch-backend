@@ -99,6 +99,20 @@ public enum IncidentEventType
 }
 
 /// <summary>
+/// Kênh tiếp nhận sự cố. CitizenApp = người dân gửi SOS qua ứng dụng;
+/// các giá trị còn lại = Operator tự tạo sự cố khi biết tin từ bên ngoài (chưa có ai báo qua app)
+/// </summary>
+public enum IncidentSource
+{
+    CitizenApp = 0,
+    PhoneCall = 1,        // Cuộc gọi tới tổng đài / số trực
+    Radio = 2,            // Bộ đàm của lực lượng tuần tra, bảo vệ
+    Cctv = 3,             // Camera giám sát
+    FieldObservation = 4, // Nhân sự trực tiếp nhìn thấy
+    Other = 5
+}
+
+/// <summary>
 /// Lý do hủy sự cố
 /// </summary>
 public enum CancellationReason
@@ -133,5 +147,6 @@ public enum AuditAction
     PhoneRevealed = 14,
     ReporterBlocked = 15,
     TransferredStation = 16,
-    OutOfServiceArea = 17
+    OutOfServiceArea = 17,
+    CreatedByOperator = 18
 }

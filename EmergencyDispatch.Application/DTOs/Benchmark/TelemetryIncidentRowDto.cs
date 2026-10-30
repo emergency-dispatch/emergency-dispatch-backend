@@ -14,6 +14,11 @@ public class TelemetryIncidentRowDto
     public string? ResponsibleStation { get; set; }
     public bool IsOutOfServiceArea { get; set; }
 
+    /// <summary>
+    /// CitizenApp = SOS qua app; khác = Operator tự tạo (TOperatorMs = null cho các sự cố này)
+    /// </summary>
+    public IncidentSource Source { get; set; }
+
     // AI
     public bool HasAi { get; set; }
     public bool? AiSuccess { get; set; }

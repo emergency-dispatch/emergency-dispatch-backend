@@ -109,7 +109,7 @@ public class ReportFileGenerator : IReportFileGenerator
             "hasAi", "aiSuccess", "aiProcessedAt", "aiModelLatencyMs", "aiModel", "aiSeverity", "aiEventType",
             "verifiedAt", "verifiedByUserId", "confirmedSeverity", "confirmedEventType", "wasAiOverridden",
             "firstDispatchAt", "algorithm", "unitsDispatched", "firstAcceptedAt", "firstArrivedAt", "closedAt", "cancellationReason",
-            "tAiMs", "tOperatorMs", "tDispatchMs", "tResponseMs", "tResolutionMs");
+            "tAiMs", "tOperatorMs", "tDispatchMs", "tResponseMs", "tResolutionMs", "source");
 
         foreach (var r in rows)
         {
@@ -117,7 +117,7 @@ public class ReportFileGenerator : IReportFileGenerator
                 r.HasAi.ToString(), r.AiSuccess?.ToString(), T(r.AiProcessedAt), N(r.AiModelLatencyMs), r.AiModel, r.AiSeverity?.ToString(), r.AiEventType?.ToString(),
                 T(r.VerifiedAt), r.VerifiedByUserId?.ToString(), r.ConfirmedSeverity.ToString(), r.ConfirmedEventType.ToString(), r.WasAiOverridden.ToString(),
                 T(r.FirstDispatchAt), r.Algorithm, r.UnitsDispatched.ToString(CultureInfo.InvariantCulture), T(r.FirstAcceptedAt), T(r.FirstArrivedAt), T(r.ClosedAt), r.CancellationReason?.ToString(),
-                N(r.TAiMs), N(r.TOperatorMs), N(r.TDispatchMs), N(r.TResponseMs), N(r.TResolutionMs));
+                N(r.TAiMs), N(r.TOperatorMs), N(r.TDispatchMs), N(r.TResponseMs), N(r.TResolutionMs), r.Source.ToString());
         }
 
         return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();

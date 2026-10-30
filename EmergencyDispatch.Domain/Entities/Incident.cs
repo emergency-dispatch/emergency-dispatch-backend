@@ -43,6 +43,11 @@ public class Incident : BaseEntity
     public SeverityLevel Severity { get; set; } = SeverityLevel.Unclassified;
 
     /// <summary>
+    /// Kênh tiếp nhận: SOS qua app, hoặc Operator tự tạo khi biết tin từ điện thoại / bộ đàm / camera...
+    /// </summary>
+    public IncidentSource Source { get; set; } = IncidentSource.CitizenApp;
+
+    /// <summary>
     /// ID người dân gửi báo cáo (nếu đã đăng nhập, null nếu nặc danh)
     /// </summary>
     public Guid? ReportedByUserId { get; set; }

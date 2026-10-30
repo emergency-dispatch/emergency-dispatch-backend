@@ -29,6 +29,7 @@ public class IncidentService : IIncidentService
     private readonly IRealtimeNotifier _realtimeNotifier;
     private readonly INotificationService _notificationService;
     private readonly IValidator<CreateIncidentDto> _validator;
+    private readonly IValidator<CreateOperatorIncidentDto> _operatorIncidentValidator;
     private readonly ILogger<IncidentService> _logger;
     private readonly IGuestCancellationTokenService _guestTokens;
     private readonly IStationRepository _stationRepository;
@@ -47,6 +48,7 @@ public class IncidentService : IIncidentService
         IRealtimeNotifier realtimeNotifier,
         INotificationService notificationService,
         IValidator<CreateIncidentDto> validator,
+        IValidator<CreateOperatorIncidentDto> operatorIncidentValidator,
         ILogger<IncidentService> logger,
         IGuestCancellationTokenService guestTokens,
         IStationRepository stationRepository,
@@ -64,6 +66,7 @@ public class IncidentService : IIncidentService
         _realtimeNotifier = realtimeNotifier;
         _notificationService = notificationService;
         _validator = validator;
+        _operatorIncidentValidator = operatorIncidentValidator;
         _logger = logger;
         _guestTokens = guestTokens;
     }
@@ -272,6 +275,130 @@ public class IncidentService : IIncidentService
             willAnalyze
                 ? "Đã tiếp nhận SOS. AI đang phân tích mức độ nguy hiểm, kết quả sẽ được cập nhật realtime."
                 : "Đã tiếp nhận SOS. Điều phối viên sẽ đánh giá sự cố ngay.");
+    }
+
+    public async Task<ApiResponseDto<IncidentResponseDto>> CreateByOperatorAsync(
+        CreateOperatorIncidentDto dto,
+        Guid operatorId,
+        CancellationToken cancellationToken = default)
+    {
+        var validationResult = await _operatorIncidentValidator.ValidateAsync(dto, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            var errors = validationResult.Errors.Select(e => e.ErrorMessage).ToList();
+            return ApiResponseDto<IncidentResponseDto>.FailureResult(errors, "Dữ liệu sự cố không hợp lệ.");
+        }
+
+        // Operator tạo sự cố cho trạm mình để điều được xe ngay (phạm vi theo trạm); Admin gán trạm theo vị trí như SOS
+        Station? responsibleStation;
+        if (_currentUser.IsStationScoped())
+        {
+            if (!_currentUser.StationId.HasValue)
+            {
+                return ApiResponseDto<IncidentResponseDto>.ForbiddenResult(OperatorScope.NoStationMessage);
+            }
+            responsibleStation = await _stationRepository.GetByIdAsync(_currentUser.StationId.Value);
+        }
+        else
+        {
+            responsibleStation = StationAssignment.PickResponsibleStation(
+                await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
+        }
+
+        var serviceArea = await _settingsService.GetServiceAreaAsync(cancellationToken);
+        var outsideKm = StationAssignment.DistanceOutsideArea(serviceArea, dto.Latitude, dto.Longitude);
+        var now = DateTime.UtcNow;
+        var notes = dto.OperatorNotes.Trim();
+        var normalizedPhone = PhoneMasking.Normalize(dto.ReporterPhone);
+        var actorRole = _currentUser.Role?.ToString() ?? UserRole.Operator.ToString();
+
+        // Không qua AI: Operator đã đánh giá loại và mức độ. Không tính T_Operator (ResponseTimeMs) vì xác minh tức thì
+        var incident = new Incident
+        {
+            ResponsibleStationId = responsibleStation?.Id,
+            ResponsibleStation = responsibleStation,
+            IsOutOfServiceArea = outsideKm > 0,
+            DistanceOutsideAreaKm = outsideKm > 0 ? outsideKm : null,
+            Title = !string.IsNullOrWhiteSpace(dto.Title) ? dto.Title.Trim() : $"Sự cố tại {dto.LocationAddress.Trim()}",
+            Description = dto.Description?.Trim() ?? string.Empty,
+            Latitude = dto.Latitude,
+            Longitude = dto.Longitude,
+            LocationAddress = dto.LocationAddress.Trim(),
+            ReporterName = dto.ReporterName?.Trim(),
+            ReporterPhone = normalizedPhone ?? dto.ReporterPhone?.Trim(),
+            Source = dto.Source,
+            EventType = dto.EventType,
+            Severity = dto.Severity,
+            Status = IncidentStatus.Verified,
+            VerifiedByUserId = operatorId,
+            VerifiedAt = now,
+            OperatorNotes = notes,
+            CreatedAt = now
+        };
+
+        foreach (var url in dto.MediaUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+        {
+            var isVideo = url.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                          url.EndsWith(".mov", StringComparison.OrdinalIgnoreCase);
+            incident.MediaItems.Add(new IncidentMedia
+            {
+                MediaUrl = url.Trim(),
+                MediaType = isVideo ? MediaType.Video : MediaType.Photo,
+                CreatedAt = now
+            });
+        }
+
+        incident.StatusHistories.Add(new IncidentStatusHistory
+        {
+            IncidentId = incident.Id,
+            OldStatus = IncidentStatus.Pending,
+            NewStatus = IncidentStatus.Verified,
+            ChangedByUserId = operatorId,
+            ChangedByRole = actorRole,
+            Notes = $"Operator tạo sự cố từ kênh {dto.Source}: {notes}",
+            ChangedAt = now
+        });
+
+        incident.AuditTrails.Add(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = operatorId,
+            ActorRole = actorRole,
+            Action = AuditAction.CreatedByOperator,
+            Description = $"Operator tạo sự cố khi chưa có báo cáo qua ứng dụng (kênh {dto.Source}) và xác minh {dto.Severity}, {dto.EventType}",
+            NewStateJson = JsonSerializer.Serialize(new
+            {
+                status = IncidentStatus.Verified.ToString(),
+                source = dto.Source.ToString(),
+                severity = dto.Severity.ToString(),
+                eventType = dto.EventType.ToString(),
+                mediaCount = incident.MediaItems.Count
+            }),
+            Timestamp = now
+        });
+
+        if (incident.IsOutOfServiceArea)
+        {
+            incident.AuditTrails.Add(new IncidentAuditTrail
+            {
+                IncidentId = incident.Id,
+                ActorRole = "System",
+                Action = AuditAction.OutOfServiceArea,
+                Description = $"Vị trí sự cố nằm ngoài khu vực phục vụ \"{serviceArea.Name}\" {outsideKm:F1} km.",
+                Timestamp = now
+            });
+        }
+
+        await _incidentRepository.AddAsync(incident);
+
+        _logger.LogInformation("Operator {OperatorId} tạo sự cố {IncidentId} từ kênh {Source} ({Severity}, {EventType})",
+            operatorId, incident.Id, dto.Source, dto.Severity, dto.EventType);
+
+        await _realtimeNotifier.IncidentCreatedAsync(MapToResponseDto(incident), cancellationToken);
+
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(
+            MapToResponseDto(incident, revealPhone: true),
+            "Đã tạo và xác minh sự cố. Có thể điều phối đội cứu hộ ngay.");
     }
 
     public async Task ProcessAiAnalysisAsync(AiAnalysisJob job, CancellationToken cancellationToken = default)
@@ -1267,6 +1394,7 @@ public class IncidentService : IIncidentService
             EventType = incident.EventType != IncidentEventType.None
                 ? incident.EventType
                 : incident.AiClassification?.EventType ?? IncidentEventType.None,
+            Source = incident.Source,
             CancellationReason = incident.CancellationReason,
             CancelledAt = incident.CancelledAt,
             CancelledByUserId = incident.CancelledByUserId,
