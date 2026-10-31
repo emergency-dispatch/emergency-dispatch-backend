@@ -213,6 +213,7 @@ public class ApplicationDbContext : DbContext
         // ==================== 7. INCIDENT ====================
         modelBuilder.Entity<Incident>(entity =>
         {
+            entity.Property<uint>("Version").IsRowVersion();
             entity.HasKey(i => i.Id);
             entity.ToTable(t => t.HasCheckConstraint("CK_Incidents_Severity", "\"Severity\" BETWEEN 0 AND 3"));
             entity.HasIndex(i => i.Status).HasDatabaseName("IX_Incidents_Status");
@@ -330,6 +331,7 @@ public class ApplicationDbContext : DbContext
         // ==================== 10. AI CLASSIFICATION ====================
         modelBuilder.Entity<AiClassification>(entity =>
         {
+            entity.Property<uint>("Version").IsRowVersion();
             entity.HasKey(a => a.Id);
             entity.ToTable(t => t.HasCheckConstraint("CK_AiClassifications_SeverityScore", "\"SeverityScore\" BETWEEN 0 AND 3"));
             entity.HasIndex(a => a.IncidentId).IsUnique().HasDatabaseName("IX_AiClassifications_IncidentId");
@@ -340,6 +342,11 @@ public class ApplicationDbContext : DbContext
                   .WithOne(i => i.AiClassification)
                   .HasForeignKey<AiClassification>(a => a.IncidentId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.TrafficJamVerifiedByUser)
+                  .WithMany()
+                  .HasForeignKey(a => a.TrafficJamVerifiedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasQueryFilter(a => !a.IsDeleted);
         });

@@ -403,91 +403,144 @@ public class IncidentService : IIncidentService
 
     public async Task ProcessAiAnalysisAsync(AiAnalysisJob job, CancellationToken cancellationToken = default)
     {
-        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(job.IncidentId, cancellationToken);
-        if (incident == null)
-        {
-            _logger.LogWarning("AI Worker: không tìm thấy sự cố {IncidentId}, bỏ qua.", job.IncidentId);
-            return;
-        }
-
-        if (incident.AiClassification != null)
-        {
-            _logger.LogInformation("AI Worker: sự cố {IncidentId} đã có kết quả AI, bỏ qua.", job.IncidentId);
-            return;
-        }
-
         var startedAt = DateTime.UtcNow;
         var queueWaitMs = (long)(startedAt - job.EnqueuedAtUtc).TotalMilliseconds;
 
-        // Gọi AI (đã có Fallback nội bộ → không ném exception khi AI lỗi)
+        // Suy luận một lần; khi lưu bị xung đột chỉ tải và ghép lại dữ liệu, không gọi AI lại.
         var aiResult = await _aiService.AnalyzeAsync(job.MediaUrl, job.AdditionalContext, cancellationToken);
+        const int maxSaveAttempts = 2;
 
-        var aiEntity = new AiClassification
+        for (var attempt = 0; attempt < maxSaveAttempts; attempt++)
         {
-            IncidentId = incident.Id,
-            SeverityScore = aiResult.SeverityLevel,
-            EventType = aiResult.EventType,
-            IsTrafficJam = aiResult.IsTrafficJam,
-            HazardTags = aiResult.HazardTags,
-            Summary = aiResult.Summary,
-            ConfidenceScore = aiResult.ConfidenceScore,
-            ModelName = aiResult.ModelName,
-            RawResponse = aiResult.RawResponse,
-            IsSuccess = aiResult.IsSuccess,
-            ErrorMessage = aiResult.ErrorMessage,
-            ProcessingDurationMs = aiResult.ProcessingDurationMs,
-            CreatedAt = DateTime.UtcNow
-        };
-        await _incidentRepository.AddAiClassificationAsync(aiEntity, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var incident = await _incidentRepository.GetIncidentWithDetailsAsync(job.IncidentId, cancellationToken);
+            if (incident == null)
+            {
+                _logger.LogWarning("AI Worker: không tìm thấy sự cố {IncidentId}, bỏ qua.", job.IncidentId);
+                return;
+            }
 
-        // Chỉ cập nhật trạng thái/mức độ nếu Operator chưa can thiệp (chưa xác minh / chưa hủy).
-        // Kiểm tra trên DB chứ không trên bản đọc lúc đầu: AI chạy 17–180s, trong lúc đó Operator có thể đã xác minh.
-        var appliedToIncident = await _incidentRepository.TryApplyAiResultAsync(
-            incident.Id, aiResult.SeverityLevel, aiResult.EventType, DateTime.UtcNow, cancellationToken);
-        await _incidentRepository.ReloadAsync(incident, cancellationToken);
-        if (appliedToIncident)
-        {
-            await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
+            if (incident.Status == IncidentStatus.Cancelled)
+            {
+                _logger.LogInformation("AI Worker: sự cố {IncidentId} đã bị hủy, bỏ qua cập nhật kết quả AI.", job.IncidentId);
+                return;
+            }
+
+            // Bản ghi thẩm định thủ công chưa có ModelName vẫn cần được bổ sung phân tích ảnh.
+            // Nếu worker khác đã lưu kết quả trong lúc chờ/retry, không tạo audit hoặc lịch sử trùng.
+            if (incident.AiClassification != null && !string.IsNullOrWhiteSpace(incident.AiClassification.ModelName))
+            {
+                _logger.LogInformation("AI Worker: sự cố {IncidentId} đã có kết quả phân tích AI ({ModelName}), bỏ qua.",
+                    job.IncidentId, incident.AiClassification.ModelName);
+                return;
+            }
+
+            var aiEntity = incident.AiClassification;
+            var operatorAlreadyReviewedJam = aiEntity?.TrafficJamVerifiedByUserId != null ||
+                aiEntity?.TrafficJamStatus is TrafficJamStatus.Confirmed or TrafficJamStatus.Dismissed;
+
+            if (aiEntity == null)
+            {
+                aiEntity = new AiClassification
+                {
+                    IncidentId = incident.Id,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _incidentRepository.AddAiClassificationAsync(aiEntity, cancellationToken);
+                incident.AiClassification = aiEntity;
+            }
+
+            // Dùng chung một đường cập nhật ở lần đầu và retry để không bỏ sót trường AI.
+            aiEntity.SeverityScore = aiResult.SeverityLevel;
+            aiEntity.EventType = aiResult.EventType;
+            aiEntity.HazardTags = aiResult.HazardTags;
+            aiEntity.Summary = aiResult.Summary;
+            aiEntity.ConfidenceScore = aiResult.ConfidenceScore;
+            aiEntity.ModelName = aiResult.ModelName;
+            aiEntity.RawResponse = aiResult.RawResponse;
+            aiEntity.IsSuccess = aiResult.IsSuccess;
+            aiEntity.ErrorMessage = aiResult.ErrorMessage;
+            aiEntity.ProcessingDurationMs = aiResult.ProcessingDurationMs;
+            aiEntity.UpdatedAt = DateTime.UtcNow;
+
+            if (!operatorAlreadyReviewedJam)
+            {
+                aiEntity.IsTrafficJam = false;
+                aiEntity.TrafficJamStatus = aiResult.TrafficJamStatus;
+                aiEntity.TrafficJamEvidence = aiResult.TrafficJamEvidence;
+            }
+
+            // Quyết định về mức độ/trạng thái của Operator luôn được giữ nguyên.
+            var appliedToIncident = incident.Status == IncidentStatus.AiProcessing;
+            if (appliedToIncident)
+            {
+                var oldStatus = incident.Status;
+                incident.Severity = aiResult.SeverityLevel;
+                incident.Status = IncidentStatus.AiProcessed;
+                if (incident.EventType == IncidentEventType.None)
+                {
+                    incident.EventType = aiResult.EventType;
+                }
+                incident.UpdatedAt = DateTime.UtcNow;
+
+                await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
+                {
+                    IncidentId = incident.Id,
+                    OldStatus = oldStatus,
+                    NewStatus = incident.Status,
+                    ChangedByRole = AiWorkerRole,
+                    Notes = aiResult.IsSuccess
+                        ? $"AI đánh giá mức độ {aiResult.SeverityLevel}."
+                        : "AI lỗi → Fallback Unclassified, cần Operator đánh giá thủ công."
+                }, cancellationToken);
+            }
+
+            // Tạo lại audit và lịch sử từ trạng thái vừa đọc trong mỗi lần thử.
+            // ClearChangeTracker sau lỗi lưu cũng loại bỏ toàn bộ nhật ký chưa commit.
+            var tAiTotalMs = (long)(DateTime.UtcNow - incident.CreatedAt).TotalMilliseconds;
+            await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
             {
                 IncidentId = incident.Id,
-                OldStatus = IncidentStatus.AiProcessing,
-                NewStatus = IncidentStatus.AiProcessed,
-                ChangedByRole = AiWorkerRole,
-                Notes = aiResult.IsSuccess
-                    ? $"AI đánh giá mức độ {aiResult.SeverityLevel}."
-                    : "AI lỗi → Fallback Unclassified, cần Operator đánh giá thủ công."
+                ActorRole = AiWorkerRole,
+                Action = AuditAction.AiAnalyzed,
+                Description = appliedToIncident
+                    ? "AI phân tích hoàn tất"
+                    : $"AI phân tích hoàn tất nhưng sự cố đã ở trạng thái {incident.Status}, lưu kết quả đối chiếu mà không ghi đè quyết định của Điều phối viên",
+                NewStateJson = JsonSerializer.Serialize(new
+                {
+                    severity = aiResult.SeverityLevel.ToString(),
+                    isSuccess = aiResult.IsSuccess,
+                    model = aiResult.ModelName,
+                    modelLatencyMs = aiResult.ProcessingDurationMs,
+                    queueWaitMs,
+                    tAiTotalMs,
+                    trafficJamStatus = aiEntity.TrafficJamStatus.ToString(),
+                    operatorReviewedJam = operatorAlreadyReviewedJam
+                })
             }, cancellationToken);
-        }
 
-        // Telemetry RQ3: T_AI (end-to-end từ lúc tạo sự cố) + độ trễ hàng đợi + độ trễ mô hình
-        var tAiTotalMs = (long)(DateTime.UtcNow - incident.CreatedAt).TotalMilliseconds;
-        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
-        {
-            IncidentId = incident.Id,
-            ActorRole = AiWorkerRole,
-            Action = AuditAction.AiAnalyzed,
-            Description = appliedToIncident
-                ? "AI phân tích hoàn tất"
-                : $"AI phân tích hoàn tất nhưng sự cố đã ở trạng thái {incident.Status}, chỉ lưu kết quả tham khảo",
-            NewStateJson = JsonSerializer.Serialize(new
+            try
             {
-                severity = aiResult.SeverityLevel.ToString(),
-                isSuccess = aiResult.IsSuccess,
-                model = aiResult.ModelName,
-                modelLatencyMs = aiResult.ProcessingDurationMs,
-                queueWaitMs,
-                tAiTotalMs
-            })
-        }, cancellationToken);
+                // Kết quả AI, audit và lịch sử trạng thái được lưu cùng một lần.
+                await _incidentRepository.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && attempt + 1 < maxSaveAttempts)
+            {
+                _logger.LogWarning(ex,
+                    "Không lưu được kết quả AI cho sự cố {IncidentId}. Xóa ChangeTracker, tải lại và thử ghép kết quả một lần nữa.",
+                    job.IncidentId);
+                _incidentRepository.ClearChangeTracker();
+                continue;
+            }
 
-        await _incidentRepository.SaveChangesAsync(cancellationToken);
-        incident.AiClassification ??= aiEntity;
+            _logger.LogInformation(
+                "AI Worker: sự cố {IncidentId} → {Severity} (success={IsSuccess}, model={ModelMs}ms, queue={QueueMs}ms, T_AI={TotalMs}ms)",
+                incident.Id, aiResult.SeverityLevel, aiResult.IsSuccess, aiResult.ProcessingDurationMs, queueWaitMs, tAiTotalMs);
 
-        _logger.LogInformation(
-            "AI Worker: sự cố {IncidentId} → {Severity} (success={IsSuccess}, model={ModelMs}ms, queue={QueueMs}ms, T_AI={TotalMs}ms)",
-            incident.Id, aiResult.SeverityLevel, aiResult.IsSuccess, aiResult.ProcessingDurationMs, queueWaitMs, tAiTotalMs);
-
-        await _realtimeNotifier.IncidentUpdatedAsync(MapToResponseDto(incident, aiResult), cancellationToken);
+            // Chỉ gửi trạng thái đã commit, bao gồm quyết định jam của Operator nếu có.
+            await _realtimeNotifier.IncidentUpdatedAsync(MapToResponseDto(incident), cancellationToken);
+            return;
+        }
     }
 
     public async Task<ApiResponseDto<IncidentResponseDto>> GetIncidentByIdAsync(
@@ -630,6 +683,48 @@ public class IncidentService : IIncidentService
             incident.Title = dto.AdjustedTitle.Trim();
         }
 
+        // Thẩm định tình trạng ùn tắc giao thông từ Operator nếu có chọn
+        if (dto.ConfirmedTrafficJamStatus.HasValue)
+        {
+            var chosenStatus = dto.ConfirmedTrafficJamStatus.Value;
+            if (chosenStatus is not (TrafficJamStatus.Confirmed or TrafficJamStatus.Dismissed))
+            {
+                return ApiResponseDto<IncidentResponseDto>.FailureResult(
+                    "Trạng thái thẩm định ùn tắc giao thông không hợp lệ. Điều phối viên chỉ có thể chọn Confirmed (3) hoặc Dismissed (4).");
+            }
+
+            var isJam = chosenStatus == TrafficJamStatus.Confirmed;
+            if (incident.AiClassification == null)
+            {
+                incident.AiClassification = new AiClassification
+                {
+                    IncidentId = incident.Id,
+                    SeverityScore = dto.ConfirmedSeverity,
+                    EventType = confirmedEventType,
+                    IsTrafficJam = isJam,
+                    TrafficJamStatus = chosenStatus,
+                    TrafficJamEvidence = isJam
+                        ? $"[Điều phối viên xác nhận] Xác nhận có ùn tắc giao thông. Ghi chú: {dto.OperatorNotes}"
+                        : $"[Điều phối viên bác bỏ] Bác bỏ ùn tắc, đường lưu thông bình thường. Ghi chú: {dto.OperatorNotes}",
+                    TrafficJamVerifiedByUserId = operatorId,
+                    TrafficJamVerifiedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _incidentRepository.AddAiClassificationAsync(incident.AiClassification, cancellationToken);
+            }
+            else
+            {
+                incident.AiClassification.TrafficJamStatus = chosenStatus;
+                incident.AiClassification.IsTrafficJam = isJam;
+                incident.AiClassification.TrafficJamVerifiedByUserId = operatorId;
+                incident.AiClassification.TrafficJamVerifiedAt = DateTime.UtcNow;
+                incident.AiClassification.TrafficJamEvidence = isJam
+                    ? $"[Điều phối viên xác nhận] Xác nhận có ùn tắc giao thông. Ghi chú: {dto.OperatorNotes}"
+                    : $"[Điều phối viên bác bỏ] Bác bỏ ùn tắc, đường lưu thông bình thường. Ghi chú: {dto.OperatorNotes}";
+                incident.AiClassification.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
         var severityOverridden = isOverride || eventTypeOverridden;
 
         await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
@@ -685,6 +780,95 @@ public class IncidentService : IIncidentService
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(
             responseDto,
             "Xác minh sự cố thành công. Sự cố sẵn sàng để điều phối đội cứu hộ.");
+    }
+
+    public async Task<ApiResponseDto<IncidentResponseDto>> UpdateTrafficJamStatusAsync(
+        Guid id,
+        UpdateTrafficJamStatusDto dto,
+        Guid operatorId,
+        CancellationToken cancellationToken = default)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
+        if (incident == null)
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Không tìm thấy sự cố cần thẩm định ùn tắc.");
+        }
+
+        var scopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
+        if (scopeError != null)
+        {
+            return ApiResponseDto<IncidentResponseDto>.ForbiddenResult(scopeError);
+        }
+
+        if (dto.Status is not (TrafficJamStatus.Confirmed or TrafficJamStatus.Dismissed))
+        {
+            return ApiResponseDto<IncidentResponseDto>.FailureResult(
+                "Trạng thái thẩm định của Điều phối viên chỉ có thể là Confirmed (3: xác nhận kẹt xe) hoặc Dismissed (4: bác bỏ kẹt xe).");
+        }
+
+        var isJam = dto.Status == TrafficJamStatus.Confirmed;
+        var now = DateTime.UtcNow;
+
+        if (incident.AiClassification == null)
+        {
+            incident.AiClassification = new AiClassification
+            {
+                IncidentId = incident.Id,
+                SeverityScore = SeverityLevel.Unclassified,
+                EventType = incident.EventType,
+                IsTrafficJam = isJam,
+                TrafficJamStatus = dto.Status,
+                TrafficJamEvidence = isJam
+                    ? $"[Điều phối viên xác nhận] Đã thẩm định và xác nhận có ùn tắc giao thông. Ghi chú: {dto.Notes}"
+                    : $"[Điều phối viên bác bỏ] Đã thẩm định và xác nhận đường lưu thông bình thường, không có ùn tắc. Ghi chú: {dto.Notes}",
+                TrafficJamVerifiedByUserId = operatorId,
+                TrafficJamVerifiedAt = now,
+                CreatedAt = now
+            };
+            await _incidentRepository.AddAiClassificationAsync(incident.AiClassification, cancellationToken);
+        }
+        else
+        {
+            incident.AiClassification.TrafficJamStatus = dto.Status;
+            incident.AiClassification.IsTrafficJam = isJam;
+            incident.AiClassification.TrafficJamVerifiedByUserId = operatorId;
+            incident.AiClassification.TrafficJamVerifiedAt = now;
+            incident.AiClassification.TrafficJamEvidence = isJam
+                ? $"[Điều phối viên xác nhận] Đã thẩm định và xác nhận có ùn tắc giao thông. Ghi chú: {dto.Notes}"
+                : $"[Điều phối viên bác bỏ] Đã thẩm định và xác nhận đường lưu thông bình thường, không có ùn tắc. Ghi chú: {dto.Notes}";
+            incident.AiClassification.UpdatedAt = now;
+        }
+
+        incident.UpdatedAt = now;
+
+        // Lưu Audit Trail cùng trong một transaction với cập nhật trạng thái
+        await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = operatorId,
+            ActorRole = UserRole.Operator.ToString(),
+            Action = AuditAction.StatusChanged,
+            Description = isJam
+                ? $"Điều phối viên XÁC NHẬN có ùn tắc giao thông tại hiện trường. Ghi chú: {dto.Notes}"
+                : $"Điều phối viên BÁC BỎ cảnh báo ùn tắc (đường lưu thông bình thường). Ghi chú: {dto.Notes}",
+            NewStateJson = JsonSerializer.Serialize(new
+            {
+                trafficJamStatus = dto.Status.ToString(),
+                isTrafficJam = isJam,
+                verifiedBy = operatorId,
+                verifiedAt = now
+            }),
+            Timestamp = now
+        }, cancellationToken);
+
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+
+        var responseDto = MapToResponseDto(incident, null, revealPhone: true);
+        await _realtimeNotifier.IncidentUpdatedAsync(responseDto, cancellationToken);
+
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(
+            responseDto,
+            isJam ? "Đã xác nhận tình trạng ùn tắc giao thông thành công." : "Đã bác bỏ cảnh báo ùn tắc giao thông thành công.");
     }
 
     public async Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(
@@ -1326,6 +1510,10 @@ public class IncidentService : IIncidentService
                 SeverityScore = (int)incident.AiClassification.SeverityScore,
                 IncidentType = AiClassificationResultDto.ToIncidentTypeLabel(incident.AiClassification.EventType),
                 IsTrafficJam = incident.AiClassification.IsTrafficJam,
+                TrafficJamStatus = incident.AiClassification.TrafficJamStatus,
+                TrafficJamEvidence = incident.AiClassification.TrafficJamEvidence,
+                TrafficJamVerifiedByUserId = incident.AiClassification.TrafficJamVerifiedByUserId,
+                TrafficJamVerifiedAt = incident.AiClassification.TrafficJamVerifiedAt,
                 HazardTags = incident.AiClassification.HazardTags,
                 Summary = incident.AiClassification.Summary,
                 ConfidenceScore = incident.AiClassification.ConfidenceScore,
@@ -1335,6 +1523,18 @@ public class IncidentService : IIncidentService
                 ErrorMessage = incident.AiClassification.ErrorMessage,
                 ProcessingDurationMs = incident.AiClassification.ProcessingDurationMs ?? 0
             };
+        }
+        else if (aiDto != null && incident.AiClassification != null)
+        {
+            // Bảo toàn thông tin xác nhận của người dùng nếu có
+            if (incident.AiClassification.TrafficJamVerifiedByUserId != null)
+            {
+                aiDto.TrafficJamStatus = incident.AiClassification.TrafficJamStatus;
+                aiDto.TrafficJamEvidence = incident.AiClassification.TrafficJamEvidence;
+                aiDto.TrafficJamVerifiedByUserId = incident.AiClassification.TrafficJamVerifiedByUserId;
+                aiDto.TrafficJamVerifiedAt = incident.AiClassification.TrafficJamVerifiedAt;
+                aiDto.IsTrafficJam = incident.AiClassification.IsTrafficJam;
+            }
         }
 
         // Map hồ sơ y tế chuyên sâu & người liên hệ khẩn cấp nếu sự cố gắn với tài khoản người dùng

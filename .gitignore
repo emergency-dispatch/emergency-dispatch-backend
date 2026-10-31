@@ -57,6 +57,8 @@ appsettings.json
 appsettings.*.json
 appsettings.Development.json
 appsettings.Local.json
+# Non-secret local YOLO startup defaults are shared with the project.
+!EmergencyDispatch.API/appsettings.Development.json
 .env
 .env.*
 *.pfx

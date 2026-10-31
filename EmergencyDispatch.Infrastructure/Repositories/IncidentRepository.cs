@@ -160,6 +160,11 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         await _context.SaveChangesAsync(cancellationToken);
     }
 
+    public void ClearChangeTracker()
+    {
+        _context.ChangeTracker.Clear();
+    }
+
     public async Task<bool> TryAcquireLockAsync(Guid incidentId, Guid operatorId, DateTime expiresAtUtc, DateTime nowUtc, CancellationToken cancellationToken = default)
     {
         var affected = await _context.Incidents

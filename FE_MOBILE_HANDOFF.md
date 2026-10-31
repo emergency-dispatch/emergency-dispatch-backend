@@ -42,6 +42,63 @@ Chỉ còn tiền tố `/api/...`. Các link sau **trả 404**:
 
 ✅ Đã kiểm tra: code Web và Mobile hiện **không gọi** link cũ nào → không cần sửa gì. Khi tích hợp các module trên thì dùng link mới.
 
+### 1.3. Mô hình Trạng thái Ùn tắc Giao thông Đa mức (TrafficJamStatus) & Thẩm định Human-in-the-loop
+
+Hệ thống AI không còn tự động khẳng định kẹt xe bằng cờ boolean `isTrafficJam = true` chỉ dựa vào đếm số lượng xe hay phép `OR`. Thay vào đó, AI chỉ đóng vai trò cung cấp bằng chứng (`Evidence-Based`). Cờ `isTrafficJam` chỉ bằng `true` **duy nhất khi Điều phối viên (Operator/Admin) đã xác minh**.
+
+#### Bảng trạng thái `TrafficJamStatus`:
+| Giá trị JSON | Số | Ý nghĩa | Hành động hiển thị UI |
+|---|---|---|---|
+| `"NoEvidence"` | 0 | Chưa phát hiện dấu hiệu ùn tắc | Không hiện cảnh báo tắc đường |
+| `"Suspected"` | 1 | Nghi ngờ ùn tắc (AI đồng thuận hoặc 1 AI phát hiện) | Badge cảnh báo màu vàng/cam "Nghi ngờ ùn tắc", kèm nút cho Operator xác nhận |
+| `"Disputed"` | 2 | Bất đồng nhận định (1 AI báo ùn tắc, 1 AI không phát hiện) | Badge cảnh báo màu tím/xanh "AI bất đồng nhận định" kèm nút thẩm định |
+| `"Confirmed"` | 3 | **Đã xác nhận kẹt xe** (Do Operator xác minh) | Badge đỏ "Ùn tắc đã xác nhận" (`isTrafficJam = true`) |
+| `"Dismissed"` | 4 | **Bác bỏ** (Do Operator kiểm tra camera/hiện trường thấy thông thoáng) | Badge xám/xanh lá "Bác bỏ ùn tắc - đường thông" |
+| `"Unverified"` | 5 | Chưa thể thẩm định (Lỗi AI hoặc thiếu nguồn đối chiếu) | Badge phụ xám "Chưa xác minh" |
+
+#### Cấu trúc trường mới trong `incident.aiClassification`:
+```ts
+export interface AiClassificationDto {
+  hazardTags: string[];
+  severityScore: number;
+  summary: string;
+  confidenceScore: number;
+  modelName: string;
+  isSuccess: boolean;
+  processingDurationMs: number;
+
+  // 🚦 Các trường mới về giao thông:
+  isTrafficJam: boolean;                 // Chỉ = true khi trafficJamStatus === 'Confirmed'
+  trafficJamStatus: 'NoEvidence' | 'Suspected' | 'Disputed' | 'Confirmed' | 'Dismissed' | 'Unverified';
+  trafficJamEvidence?: string | null;    // Bằng chứng cụ thể (ví dụ: "Cả YOLO (15 xe) và Qwen đều nhận định có ùn tắc")
+  trafficJamVerifiedByUserId?: string | null; // ID Operator đã duyệt
+  trafficJamVerifiedAt?: string | null;  // Thời gian Operator duyệt
+  jamVehicleCount?: number;              // Số lượng xe phát hiện từ YOLO
+  jamCountsByType?: Record<string, number>; // Chi tiết xe: { car: 6, motorcycle: 9, bus: 0, truck: 0 }
+}
+```
+
+#### API dành cho Operator/Admin thẩm định kẹt xe:
+1. **Endpoint thẩm định kẹt xe độc lập**: `PUT /api/incidents/{id}/traffic-jam-status`
+   - Quyền: `Operator`, `Admin`
+   - Request Body:
+     ```json
+     {
+       "status": "Confirmed", // hoặc "Dismissed" (chấp nhận cả số nguyên 3 hoặc 4)
+       "notes": "Quan sát camera giao thông thấy kẹt cứng đoạn ngã tư"
+     }
+     ```
+2. **Endpoint thẩm định chung cùng lúc với Severity**: `PUT /api/incidents/{id}/verify`
+   - Request Body bổ sung trường tùy chọn `confirmedTrafficJamStatus`:
+     ```json
+     {
+       "confirmedSeverity": "Level2",
+       "notes": "Đã điều xe cứu thương trạm 1",
+       "confirmedTrafficJamStatus": "Confirmed" // hoặc "Dismissed" (tùy chọn)
+     }
+     ```
+- ⚠️ **Cơ chế chống ghi đè khi AI hoàn thành trễ (Late AI protection)**: Nếu Operator đã thẩm định trạng thái ùn tắc, pipeline AI nền hoàn thành sau đó sẽ **tuyệt đối không ghi đè** kết quả của con người.
+
 ---
 
 ## 2. 🔴 Bắt buộc sửa

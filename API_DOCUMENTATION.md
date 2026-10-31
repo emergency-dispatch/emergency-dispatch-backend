@@ -377,7 +377,19 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
     "confidenceScore": 0.92,
     "modelName": "Qwen2.5-VL-3B-LoRA (Local GPU)",
     "isSuccess": true,
-    "processingDurationMs": 1420
+    "processingDurationMs": 1420,
+    "isTrafficJam": false,
+    "trafficJamStatus": "Suspected",
+    "trafficJamEvidence": "Cả YOLO (15 xe [car: 6, motorcycle: 9]) và Qwen đều nhận định có ùn tắc giao thông.",
+    "jamVehicleCount": 15,
+    "jamCountsByType": {
+      "car": 6,
+      "motorcycle": 9,
+      "bus": 0,
+      "truck": 0
+    },
+    "trafficJamVerifiedByUserId": null,
+    "trafficJamVerifiedAt": null
   }
   ```
 
@@ -425,19 +437,34 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
   ```
 
 #### 2.5. Điều phối viên xác minh sự cố (`PUT /api/incidents/{id}/verify`)
-* **Mô tả**: Cơ chế **Human-in-the-loop**: Operator xác nhận hoặc ghi đè (override) mức độ nghiêm trọng mà AI đã gợi ý trước khi phát lệnh điều phối xe cứu hộ.
+* **Mô tả**: Cơ chế **Human-in-the-loop**: Operator xác nhận hoặc ghi đè (override) mức độ nghiêm trọng mà AI đã gợi ý trước khi phát lệnh điều phối xe cứu hộ. Hỗ trợ xác nhận/bác bỏ trạng thái ùn tắc giao thông cùng lúc.
 * **Header**: `Authorization: Bearer <token_cua_operator>`
-* **Request Body** (`confirmedSeverity`: `Level1` / `Level2` / `Level3`):
+* **Request Body** (`confirmedSeverity`: `Level1` / `Level2` / `Level3`, `confirmedTrafficJamStatus` tùy chọn: `Confirmed` (3) hoặc `Dismissed` (4)):
   ```json
   {
     "confirmedSeverity": "Level3",
     "adjustedTitle": "Cháy lớn tại số 123 Lê Lợi, Quận 1 (Đã xác minh)",
-    "operatorNotes": "Đã liên hệ người dân qua SĐT 0909123456 xác nhận có 2 người bị kẹt tầng 2."
+    "operatorNotes": "Đã liên hệ người dân qua SĐT 0909123456 xác nhận có 2 người bị kẹt tầng 2.",
+    "confirmedTrafficJamStatus": "Confirmed"
   }
   ```
 * **Response (200 OK)**: Sự cố chuyển sang trạng thái `Verified`.
 
-#### 2.6. Hủy sự cố báo sai / báo khống (`PUT /api/incidents/{id}/cancel`)
+#### 2.6. Thẩm định trạng thái ùn tắc giao thông độc lập (`PUT /api/incidents/{id}/traffic-jam-status`)
+* **Mô tả**: Cơ chế **Human-in-the-loop** chuyên biệt cho giao thông: Operator hoặc Admin thẩm định cảnh báo ùn tắc giao thông do AI gợi ý (hoặc điều chỉnh lại nhận định), chuyển trạng thái sang `Confirmed` (Xác nhận kẹt xe) hoặc `Dismissed` (Bác bỏ / đường thông thoáng).
+* **Header**: `Authorization: Bearer <token_cua_operator>`
+* **Request Body**:
+  ```json
+  {
+    "status": "Confirmed",
+    "notes": "Quan sát camera ngã tư thấy các phương tiện đang kẹt cứng kéo dài"
+  }
+  ```
+  *(Chấp nhận `status`: `"Confirmed"` (3) hoặc `"Dismissed"` (4))*
+* **Response (200 OK)**: Trả về chi tiết sự cố với `aiClassification.trafficJamStatus` cập nhật, `aiClassification.isTrafficJam = true` (nếu Confirmed) và thông tin `trafficJamVerifiedByUserId`, `trafficJamVerifiedAt`.
+* **Cơ chế chống ghi đè khi AI hoàn thành trễ (Late AI Protection)**: Nếu Operator đã thẩm định trạng thái ùn tắc trước khi AI pipeline chạy xong, kết quả AI trả về sau sẽ **không ghi đè** trạng thái do người điều phối đã chốt.
+
+#### 2.7. Hủy sự cố báo sai / báo khống (`PUT /api/incidents/{id}/cancel`)
 * **Quyền hạn theo main hiện tại (BR-08)**: bắt buộc JWT, chỉ nhận vai trò Citizen, Operator hoặc Admin.
   * Citizen chỉ tự hủy SOS của mình trước khi có xe được điều động. Chặn tự hủy khi trạng thái là `Dispatched`/`InProgress` hoặc có phân công đang hoạt động.
   * Operator/Admin được hủy theo quyền điều phối, nhưng không được thao tác khi Operator khác đang giữ khóa mềm còn hiệu lực.

@@ -224,6 +224,29 @@ public class IncidentsController : ControllerBase
     }
 
     /// <summary>
+    /// Thẩm định trạng thái ùn tắc giao thông (FR-OP / Human-in-the-loop)
+    /// </summary>
+    /// <remarks>
+    /// Cho phép Operator hoặc Admin thẩm định và xác nhận (Confirmed = 3) hoặc bác bỏ (Dismissed = 4) cảnh báo ùn tắc giao thông tại hiện trường.
+    /// </remarks>
+    [HttpPut("{id:guid}/traffic-jam-status")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UpdateTrafficJamStatus(Guid id, [FromBody] UpdateTrafficJamStatusDto dto, CancellationToken cancellationToken)
+    {
+        var currentUserId = GetCurrentUserId();
+        if (currentUserId == Guid.Empty)
+        {
+            return Unauthorized(ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn chưa xác thực tài khoản."));
+        }
+
+        var response = await _incidentService.UpdateTrafficJamStatusAsync(id, dto, currentUserId, cancellationToken);
+        return this.ToHttpResult(response);
+    }
+
+    /// <summary>
     /// Hủy sự cố: Điều phối viên hủy báo sai, hoặc Người dân tự hủy SOS của mình trước khi xe xuất phát (BR-08)
     /// </summary>
     [HttpPut("{id:guid}/cancel")]

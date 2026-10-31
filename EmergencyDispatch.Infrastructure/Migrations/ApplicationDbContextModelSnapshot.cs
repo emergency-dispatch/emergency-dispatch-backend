@@ -72,14 +72,34 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<string>("Summary")
                         .HasColumnType("text");
 
+                    b.Property<string>("TrafficJamEvidence")
+                        .HasColumnType("text");
+
+                    b.Property<int>("TrafficJamStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TrafficJamVerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("TrafficJamVerifiedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
                     b.HasIndex("IncidentId")
                         .IsUnique()
                         .HasDatabaseName("IX_AiClassifications_IncidentId");
+
+                    b.HasIndex("TrafficJamVerifiedByUserId");
 
                     b.ToTable("AiClassifications", t =>
                         {
@@ -1530,7 +1550,14 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "TrafficJamVerifiedByUser")
+                        .WithMany()
+                        .HasForeignKey("TrafficJamVerifiedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Incident");
+
+                    b.Navigation("TrafficJamVerifiedByUser");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AssignmentStatusHistory", b =>

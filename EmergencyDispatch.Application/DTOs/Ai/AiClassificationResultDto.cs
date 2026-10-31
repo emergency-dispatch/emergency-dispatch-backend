@@ -27,10 +27,34 @@ public class AiClassificationResultDto
     public string? IncidentType { get; set; }
 
     /// <summary>
-    /// Phát hiện có ùn tắc giao thông tại hiện trường hay không
+    /// Cờ xác nhận ùn tắc giao thông chính thức (Chỉ true khi TrafficJamStatus == Confirmed)
     /// </summary>
     [JsonPropertyName("isTrafficJam")]
     public bool IsTrafficJam { get; set; }
+
+    /// <summary>
+    /// Trạng thái phân định và xác thực ùn tắc giao thông (NoEvidence, Suspected, Disputed, Confirmed, Dismissed, Unverified)
+    /// </summary>
+    [JsonPropertyName("trafficJamStatus")]
+    public TrafficJamStatus TrafficJamStatus { get; set; } = TrafficJamStatus.NoEvidence;
+
+    /// <summary>
+    /// Bằng chứng hoặc giải trình chi tiết về tình trạng giao thông từ AI / Điều phối viên
+    /// </summary>
+    [JsonPropertyName("trafficJamEvidence")]
+    public string? TrafficJamEvidence { get; set; }
+
+    /// <summary>
+    /// ID Điều phối viên (Operator) đã thẩm định và xác nhận hoặc bác bỏ kẹt xe
+    /// </summary>
+    [JsonPropertyName("trafficJamVerifiedByUserId")]
+    public Guid? TrafficJamVerifiedByUserId { get; set; }
+
+    /// <summary>
+    /// Thời điểm Điều phối viên thẩm định kẹt xe
+    /// </summary>
+    [JsonPropertyName("trafficJamVerifiedAt")]
+    public DateTime? TrafficJamVerifiedAt { get; set; }
 
     /// <summary>
     /// Nhánh sự kiện chuẩn hóa (FR-SYS-01): FireExplosion / TrafficAccident / None
@@ -110,6 +134,9 @@ public class AiClassificationResultDto
         {
             HazardTags = new List<string> { "Unclassified", "NeedsHumanReview" },
             SeverityScore = (int)SeverityLevel.Unclassified,
+            IsTrafficJam = false,
+            TrafficJamStatus = TrafficJamStatus.Unverified,
+            TrafficJamEvidence = "AI gặp lỗi trong quá trình suy luận, không thể đánh giá kẹt xe.",
             Summary = "Không thể phân loại tự động bởi AI. Sự cố đã được gắn cờ để Điều phối viên (Operator) đánh giá thủ công.",
             ConfidenceScore = 0.0,
             IsSuccess = false,

@@ -33,4 +33,9 @@ public class VerifyIncidentDto
     /// bỏ trống thì giữ loại AI đề xuất.
     /// </summary>
     public IncidentEventType? ConfirmedEventType { get; set; }
+
+    /// <summary>
+    /// Thẩm định tình trạng ùn tắc giao thông: Confirmed (3: xác nhận kẹt xe), Dismissed (4: bác bỏ kẹt xe), hoặc null (giữ nguyên nhận định hiện tại)
+    /// </summary>
+    public TrafficJamStatus? ConfirmedTrafficJamStatus { get; set; }
 }

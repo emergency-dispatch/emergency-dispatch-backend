@@ -54,6 +54,11 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Xóa toàn bộ thực thể đang được theo dõi trong ChangeTracker để tránh Identity Map trả về dữ liệu bộ nhớ cũ khi truy vấn lại
+    /// </summary>
+    void ClearChangeTracker();
+
+    /// <summary>
     /// Giữ (hoặc gia hạn) khóa mềm một cách nguyên tử: chỉ thành công khi chưa ai giữ, khóa đã hết hạn, hoặc chính Operator này đang giữ
     /// </summary>
     Task<bool> TryAcquireLockAsync(Guid incidentId, Guid operatorId, DateTime expiresAtUtc, DateTime nowUtc, CancellationToken cancellationToken = default);

@@ -38,6 +38,11 @@ public interface IIncidentService
     Task<ApiResponseDto<IncidentResponseDto>> VerifyIncidentAsync(Guid id, VerifyIncidentDto dto, Guid operatorId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Operator thẩm định và xác nhận hoặc bác bỏ trạng thái ùn tắc giao thông tại hiện trường
+    /// </summary>
+    Task<ApiResponseDto<IncidentResponseDto>> UpdateTrafficJamStatusAsync(Guid id, UpdateTrafficJamStatusDto dto, Guid operatorId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Hủy sự cố (báo sai, báo khống, trùng lặp hoặc người dân/khách vãng lai tự hủy SOS)
     /// </summary>
     Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default, string? guestCancellationToken = null, CancellationReason? reasonCode = null);

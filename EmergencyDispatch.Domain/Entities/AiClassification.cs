@@ -21,9 +21,31 @@ public class AiClassification : BaseEntity
     public IncidentEventType EventType { get; set; } = IncidentEventType.None;
 
     /// <summary>
-    /// AI phát hiện ùn tắc giao thông cản trở lối tiếp cận hiện trường
+    /// Cờ xác nhận ùn tắc giao thông chính thức.
+    /// QUY ƯỚC QUAN TRỌNG: Chỉ mang giá trị true khi TrafficJamStatus == Confirmed (đã được Điều phối viên xác nhận).
     /// </summary>
     public bool IsTrafficJam { get; set; }
+
+    /// <summary>
+    /// Trạng thái phân định và xác thực ùn tắc giao thông (NoEvidence, Suspected, Disputed, Confirmed, Dismissed, Unverified)
+    /// </summary>
+    public TrafficJamStatus TrafficJamStatus { get; set; } = TrafficJamStatus.NoEvidence;
+
+    /// <summary>
+    /// Bằng chứng hoặc giải trình chi tiết về tình trạng giao thông từ AI / Điều phối viên
+    /// </summary>
+    public string? TrafficJamEvidence { get; set; }
+
+    /// <summary>
+    /// ID Điều phối viên (Operator) đã thẩm định và xác nhận hoặc bác bỏ kẹt xe
+    /// </summary>
+    public Guid? TrafficJamVerifiedByUserId { get; set; }
+    public User? TrafficJamVerifiedByUser { get; set; }
+
+    /// <summary>
+    /// Thời điểm Điều phối viên thẩm định kẹt xe
+    /// </summary>
+    public DateTime? TrafficJamVerifiedAt { get; set; }
 
     /// <summary>
     /// Danh sách nhãn nguy cơ phát hiện được (vd: "fire", "heavy_smoke", "structural_damage")

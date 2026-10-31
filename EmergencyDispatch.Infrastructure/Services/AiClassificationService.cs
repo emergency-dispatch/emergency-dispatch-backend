@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Domain.Enums;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -46,26 +46,16 @@ public class AiClassificationService : IAiClassificationService
         var siteUrl = _configuration["OpenRouter:SiteUrl"] ?? "https://emergencydispatch.local";
         var siteName = _configuration["OpenRouter:SiteName"] ?? "Emergency Dispatch System";
 
-        // Trường hợp chưa cấu hình API Key: Cung cấp chế độ Mock phân loại thông minh để test luồng
+        // Trường hợp chưa cấu hình API Key: trả Fallback rõ ràng (KHÔNG mô phỏng kết quả giả)
+        // Kết quả giả (fire, Level 3) sẽ bị DualEngine ghép với YOLO như thật → nguy hiểm
         if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("sk-or-v1-YOUR_"))
         {
-            _logger.LogWarning("OpenRouter API Key chưa được cấu hình. Sử dụng mô phỏng phản hồi AI thông minh để kiểm thử luồng.");
-            await Task.Delay(300, cancellationToken); // Giả lập độ trễ AI
+            _logger.LogWarning("OpenRouter API Key chưa được cấu hình. Trả Fallback an toàn (Severity = 0).");
             stopwatch.Stop();
 
-            return new AiClassificationResultDto
-            {
-                IncidentType = "fire",
-                IsTrafficJam = false,
-                HazardTags = new List<string> { "fire", "heavy_smoke", "residential_area" },
-                SeverityScore = 3, // Level 3
-                Summary = "[Mô phỏng AI Qwen2.5-VL] Phát hiện đám cháy bùng phát tại khu vực nhà ở kèm khói đen đặc, nguy cơ lan rộng cao.",
-                ConfidenceScore = 0.92,
-                IsSuccess = true,
-                ModelName = $"{modelName} (Simulated)",
-                RawResponse = "{\"hazardTags\":[\"fire\",\"heavy_smoke\",\"residential_area\"],\"severityScore\":3,\"summary\":\"Phát hiện đám cháy bùng phát tại khu vực nhà ở kèm khói đen đặc.\",\"confidenceScore\":0.92}",
-                ProcessingDurationMs = stopwatch.ElapsedMilliseconds
-            };
+            return AiClassificationResultDto.CreateFallback(
+                errorMessage: "OpenRouter API Key chưa được cấu hình. Cần cài đặt API key hợp lệ trong appsettings.json → OpenRouter:ApiKey.",
+                durationMs: stopwatch.ElapsedMilliseconds);
         }
 
         string? rawResponseContent = null;
@@ -170,28 +160,102 @@ public class AiClassificationService : IAiClassificationService
 
             // Chuẩn hóa và làm sạch JSON
             var cleanJson = CleanJsonString(messageContent);
-            var parsedResult = JsonSerializer.Deserialize<AiClassificationResultDto>(cleanJson, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            using var contentDoc = JsonDocument.Parse(cleanJson);
+            var contentRoot = contentDoc.RootElement;
 
-            if (parsedResult == null)
+            // Parse and validate the same aliases; never accept prose-only JSON as a classification.
+            // Chuẩn hóa cùng một bộ tên trường và kiểm tra đủ dữ liệu trước khi ghép với YOLO.
+            if (!TryGetResponseField(contentRoot, out var incidentTypeField, "incidentType", "incident_type")
+                || incidentTypeField.ValueKind != JsonValueKind.String)
+                throw new JsonException("Qwen-VL thiếu loại sự cố hợp lệ (incidentType).");
+            var incidentType = incidentTypeField.GetString()?.Trim().ToLowerInvariant();
+            if (incidentType is not ("fire" or "accident" or "none"))
+                throw new JsonException("Qwen-VL trả loại sự cố ngoài fire/accident/none.");
+
+            if (!TryGetResponseField(contentRoot, out var severityField, "severityScore", "severity_score", "severity", "severity_level")
+                || severityField.ValueKind != JsonValueKind.Number
+                || !severityField.TryGetInt32(out var severity)
+                || severity is < 0 or > 3)
+                throw new JsonException("Qwen-VL thiếu mức độ nghiêm trọng nguyên từ 0 đến 3.");
+
+            if (!TryGetResponseField(contentRoot, out var summaryField, "summary", "description")
+                || summaryField.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(summaryField.GetString()))
+                throw new JsonException("Qwen-VL thiếu nội dung đánh giá hiện trường.");
+
+            var tags = new List<string>();
+            if (TryGetResponseField(contentRoot, out var tagsField, "hazardTags", "hazard_tags")
+                && tagsField.ValueKind != JsonValueKind.Null)
             {
-                throw new JsonException("Không thể parse dữ liệu JSON từ kết quả của AI.");
+                if (tagsField.ValueKind != JsonValueKind.Array)
+                    throw new JsonException("Qwen-VL trả hazardTags không phải danh sách.");
+                foreach (var tag in tagsField.EnumerateArray())
+                {
+                    if (tag.ValueKind != JsonValueKind.String)
+                        throw new JsonException("Qwen-VL trả hazardTags chứa phần tử không phải chuỗi.");
+                    if (!string.IsNullOrWhiteSpace(tag.GetString())) tags.Add(tag.GetString()!.Trim());
+                }
             }
+
+            double confidence = 0;
+            if (TryGetResponseField(contentRoot, out var confidenceField, "confidenceScore", "confidence_score", "confidence")
+                && confidenceField.ValueKind != JsonValueKind.Null)
+            {
+                if (confidenceField.ValueKind != JsonValueKind.Number
+                    || !confidenceField.TryGetDouble(out confidence)
+                    || !double.IsFinite(confidence) || confidence is < 0 or > 1)
+                    throw new JsonException("Qwen-VL trả độ tin cậy ngoài khoảng 0 đến 1.");
+            }
+
+            var hasTrafficJamField = TryGetResponseField(contentRoot, out var tjElem,
+                "isTrafficJam", "is_traffic_jam", "trafficJam", "traffic_jam");
+            var parsedResult = new AiClassificationResultDto
+            {
+                IncidentType = incidentType,
+                SeverityScore = severity,
+                Summary = summaryField.GetString(),
+                HazardTags = tags,
+                ConfidenceScore = confidence
+            };
 
             stopwatch.Stop();
             parsedResult.IsSuccess = true;
-            parsedResult.ModelName = modelName;
+            // A provider fallback may use a different model than the configured first choice.
+            parsedResult.ModelName = root.TryGetProperty("model", out var actualModel)
+                && actualModel.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(actualModel.GetString()) ? actualModel.GetString() : modelName;
             parsedResult.RawResponse = rawResponseContent;
             parsedResult.ProcessingDurationMs = stopwatch.ElapsedMilliseconds;
+
+            // Chuẩn hóa trạng thái ùn tắc từ Qwen-VL (AI chỉ dừng ở Suspected hoặc NoEvidence, IsTrafficJam=false chờ con người Confirmed)
+            // Nếu không có trường traffic_jam trong JSON trả về -> Trạng thái phải là Unverified!
+            if (hasTrafficJamField && (tjElem.ValueKind == JsonValueKind.True || tjElem.ValueKind == JsonValueKind.False))
+            {
+                var isJam = tjElem.GetBoolean();
+                if (isJam)
+                {
+                    parsedResult.TrafficJamStatus = TrafficJamStatus.Suspected;
+                    parsedResult.TrafficJamEvidence = "Qwen-VL nhận định có dấu hiệu cản trở hoặc ùn tắc giao thông tại hiện trường.";
+                }
+                else
+                {
+                    parsedResult.TrafficJamStatus = TrafficJamStatus.NoEvidence;
+                    parsedResult.TrafficJamEvidence = "Qwen-VL không phát hiện dấu hiệu ùn tắc trên ảnh.";
+                }
+            }
+            else
+            {
+                parsedResult.TrafficJamStatus = TrafficJamStatus.Unverified;
+                parsedResult.TrafficJamEvidence = "Qwen-VL không trả về trường đánh giá ùn tắc giao thông (thiếu dữ liệu).";
+            }
+            parsedResult.IsTrafficJam = false;
 
             return parsedResult;
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-            _logger.LogError(ex, "Lỗi khi gọi mô hình Vision-Language Qwen2.5-VL hoặc parse phản hồi. Kích hoạt cơ chế Fallback (Severity = 0 / Unclassified).");
+            _logger.LogError(ex, "Lỗi khi gọi Qwen-VL hoặc parse phản hồi. Kích hoạt cơ chế Fallback (Severity = 0 / Unclassified).");
 
             // Kích hoạt Fallback an toàn (Severity = 0)
             return AiClassificationResultDto.CreateFallback(
@@ -254,11 +318,40 @@ public class AiClassificationService : IAiClassificationService
             using var doc = JsonDocument.Parse(content);
             var root = doc.RootElement;
 
-            var incidentType = root.TryGetProperty("incident_type", out var itProp) ? itProp.GetString() : "none";
-            var severityLevel = root.TryGetProperty("severity_level", out var slProp) ? slProp.GetInt32() : 0;
-            var trafficJam = root.TryGetProperty("traffic_jam", out var tjProp) && tjProp.GetBoolean();
-            var description = root.TryGetProperty("description", out var descProp) ? descProp.GetString() : string.Empty;
-            var confidence = root.TryGetProperty("confidence", out var confProp) ? confProp.GetDouble() : 0.95;
+            // Kiểm tra nếu JSON trả về rỗng ({}) hoặc thiếu toàn bộ trường cần thiết
+            var hasIncidentType = root.TryGetProperty("incident_type", out var itProp);
+            var hasSeverity = root.TryGetProperty("severity_level", out var slProp);
+            var hasTrafficJam = root.TryGetProperty("traffic_jam", out var tjProp);
+            var hasDescription = root.TryGetProperty("description", out var descProp);
+            var hasConfidence = root.TryGetProperty("confidence", out var confProp);
+
+            if (!hasIncidentType && !hasSeverity && !hasTrafficJam && !hasDescription)
+            {
+                _logger.LogWarning("Local AI Service trả về JSON rỗng hoặc thiếu dữ liệu: {Content}. Chuyển sang fallback/cloud.", content);
+                return null;
+            }
+
+            var incidentType = hasIncidentType ? itProp.GetString() : "none";
+            var severityLevel = hasSeverity && slProp.TryGetInt32(out var slVal) ? slVal : 0;
+            var description = hasDescription ? descProp.GetString() : string.Empty;
+            // Không tự ý điền 0.95 khi thiếu trường confidence
+            var confidence = hasConfidence && confProp.TryGetDouble(out var cVal) ? cVal : 0.0;
+
+            TrafficJamStatus trafficJamStatus;
+            string trafficJamEvidence;
+            if (hasTrafficJam && (tjProp.ValueKind == JsonValueKind.True || tjProp.ValueKind == JsonValueKind.False))
+            {
+                var trafficJam = tjProp.GetBoolean();
+                trafficJamStatus = trafficJam ? TrafficJamStatus.Suspected : TrafficJamStatus.NoEvidence;
+                trafficJamEvidence = trafficJam
+                    ? "Qwen-VL Local nhận định có dấu hiệu cản trở hoặc ùn tắc giao thông."
+                    : "Qwen-VL Local không phát hiện dấu hiệu ùn tắc trên ảnh.";
+            }
+            else
+            {
+                trafficJamStatus = TrafficJamStatus.Unverified;
+                trafficJamEvidence = "Qwen-VL Local không trả về trường đánh giá ùn tắc (thiếu dữ liệu).";
+            }
 
             var tags = new List<string>();
             if (root.TryGetProperty("tags", out var tagsProp) && tagsProp.ValueKind == JsonValueKind.Array)
@@ -275,13 +368,15 @@ public class AiClassificationService : IAiClassificationService
 
             stopwatch.Stop();
             _logger.LogInformation("Phân loại AI thành công bằng Local Qwen2.5-VL LoRA: Type={Type}, Level={Level}, Jam={Jam} ({Ms}ms)",
-                incidentType, severityLevel, trafficJam, stopwatch.ElapsedMilliseconds);
+                incidentType, severityLevel, trafficJamStatus, stopwatch.ElapsedMilliseconds);
 
             return new AiClassificationResultDto
             {
                 IncidentType = incidentType,
                 SeverityScore = severityLevel,
-                IsTrafficJam = trafficJam,
+                IsTrafficJam = false, // AI không tự ý gán Confirmed
+                TrafficJamStatus = trafficJamStatus,
+                TrafficJamEvidence = trafficJamEvidence,
                 HazardTags = tags,
                 Summary = description,
                 ConfidenceScore = confidence,
@@ -297,6 +392,23 @@ public class AiClassificationService : IAiClassificationService
                 localUrl, ex is TaskCanceledException ? "quá thời gian chờ" : ex.Message);
             return null;
         }
+    }
+
+    private static bool TryGetResponseField(JsonElement root, out JsonElement value, params string[] names)
+    {
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in names)
+                if (root.TryGetProperty(name, out value)) return true;
+            foreach (var property in root.EnumerateObject())
+                if (names.Contains(property.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+        }
+        value = default;
+        return false;
     }
 
     /// <summary>

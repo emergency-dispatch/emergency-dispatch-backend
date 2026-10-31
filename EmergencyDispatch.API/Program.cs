@@ -181,7 +181,10 @@ builder.Services.AddSingleton<IOtpAttemptLimiter, EmergencyDispatch.Infrastructu
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IStationService, StationService>();
 builder.Services.AddScoped<IRescueUnitService, RescueUnitService>();
-builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
+// Dual-Engine AI Pipeline: YOLO (nhanh, local) + Qwen-VL (sâu, cloud)
+builder.Services.AddScoped<EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
+builder.Services.AddScoped<EmergencyDispatch.Infrastructure.Services.YoloClassificationService>();
+builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.DualEngineAiService>();
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
 builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
@@ -217,6 +220,7 @@ builder.Services.AddSingleton<IPushNotificationSender, EmergencyDispatch.Infrast
 
 // 8.1. Hàng đợi AI nền (Channel Bounded) & Background Worker
 builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();
+builder.Services.AddHostedService<EmergencyDispatch.API.Services.YoloProcessHostedService>();
 builder.Services.AddHostedService<AiAnalysisWorker>();
 builder.Services.AddHostedService<HotspotCleanupWorker>();
 builder.Services.AddHostedService<EscalationWorker>();
