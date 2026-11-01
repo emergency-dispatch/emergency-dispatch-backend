@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using EmergencyDispatch.Application.Localization;
 using System.Text;
 using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Ai;
@@ -53,7 +54,7 @@ public class YoloClassificationService
             client.Timeout = TimeSpan.FromSeconds(
                 _configuration.GetValue("YoloService:TimeoutSeconds", 30));
 
-            var requestBody = JsonSerializer.Serialize(new { image_url = mediaUrl });
+            var requestBody = JsonSerializer.Serialize(new { image_url = mediaUrl, language = LocalizationHelper.CurrentLanguage });
             var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
             var response = await client.PostAsync(endpoint, content, cancellationToken);
@@ -146,21 +147,23 @@ public class YoloClassificationService
                 "YOLO inference: EvaluatedAF={AfOk}, Type={Type}, JamStatus={JamStatus}, Conf={Conf}, NeedsReview={Review} ({Ms}ms)",
                 isAccidentFireEvaluated, incidentType, trafficJamStatus, incidentConfidence?.ToString("P1") ?? "N/A", needsHumanReview, stopwatch.ElapsedMilliseconds);
 
-            return new AiClassificationResultDto
+            return AiTextLocalization.Ensure(new AiClassificationResultDto
             {
                 IncidentType = incidentType,
                 IsTrafficJam = isJam,
                 TrafficJamStatus = trafficJamStatus,
-                TrafficJamEvidence = trafficJamEvidence,
+                TrafficJamEvidence = ReadText(root, "traffic_jam_evidence_vi") ?? trafficJamEvidence,
                 SeverityScore = 0, // YOLO luôn là 0 (Unclassified), thẩm định mức độ giao cho Qwen-VL hoặc Operator
                 ConfidenceScore = incidentConfidence,
                 HazardTags = hazardTags,
-                Summary = summary,
+                Summary = ReadText(root, "summary_vi") ?? summary,
+                SummaryEn = ReadText(root, "summary_en"),
+                TrafficJamEvidenceEn = ReadText(root, "traffic_jam_evidence_en"),
                 IsSuccess = true,
                 ModelName = "YOLO11n (Dual: accident-fire + jam)",
                 RawResponse = responseBody,
                 ProcessingDurationMs = stopwatch.ElapsedMilliseconds
-            };
+            });
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -172,6 +175,9 @@ public class YoloClassificationService
             return null;
         }
     }
+
+    private static string? ReadText(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     /// <summary>
     /// Kiểm tra YOLO microservice có đang hoạt động hay không

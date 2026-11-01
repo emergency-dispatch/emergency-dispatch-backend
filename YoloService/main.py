@@ -21,7 +21,8 @@ from typing import Literal, Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
@@ -83,6 +84,7 @@ class ClassifyRequest(BaseModel):
     """Request body for /api/yolo/classify"""
     image_url: Optional[str] = Field(None, description="Public URL of the image to classify")
     image_base64: Optional[str] = Field(None, description="Base64-encoded image data")
+    language: Optional[str] = Field(None, description="Response language vi/en; defaults to Accept-Language, then vi.")
     jam_roi: Optional[list[tuple[float, float]]] = Field(
         None,
         description="Optional convex road polygon for THIS image, 3-12 [x,y] points normalized to [0,1]. Applies to detection only; never inferred automatically.",
@@ -124,6 +126,8 @@ class YoloModelResult(BaseModel):
     counts_by_type: dict[str, int] = Field(default_factory=dict)
     traffic_jam_status: str = "no_evidence"  # "suspected" | "no_evidence" | "unverified"
     traffic_jam_evidence: Optional[str] = None
+    traffic_jam_evidence_vi: Optional[str] = None
+    traffic_jam_evidence_en: Optional[str] = None
     geometry_metrics: Optional[JamGeometryMetrics] = None
     inference_ms: float = 0.0
     is_available: bool = True
@@ -151,6 +155,8 @@ class ClassifyResponse(BaseModel):
     # Đánh giá ùn tắc giao thông (Mô hình trạng thái nhiều mức)
     traffic_jam_status: str = "no_evidence"  # "suspected" | "no_evidence" | "unverified"
     traffic_jam_evidence: Optional[str] = None
+    traffic_jam_evidence_vi: Optional[str] = None
+    traffic_jam_evidence_en: Optional[str] = None
     is_traffic_jam: bool = False             # Chỉ True khi đã được xác nhận, AI dừng ở mức Suspected
     jam_confidence: Optional[float] = Field(None, description="Classifier score only. Geometry heuristics return null; inspect jam_geometry instead.")
     is_jam_heuristic: bool = False           # True nếu dùng heuristic không gian thay vì classifier jam
@@ -165,6 +171,10 @@ class ClassifyResponse(BaseModel):
 
     hazard_tags: list[str] = []
     summary: str = ""
+    summary_vi: str = ""
+    summary_en: str = ""
+    error_message_vi: Optional[str] = None
+    error_message_en: Optional[str] = None
     models: list[YoloModelResult] = []
     total_inference_ms: float = 0.0
 
@@ -411,6 +421,7 @@ def run_detection_jam_inference(model, image_bytes: bytes, model_name: str, jam_
             confidence=None,
             traffic_jam_status="unverified",
             traffic_jam_evidence="Model chưa được tải hoặc lỗi khởi động.",
+            traffic_jam_evidence_en="The model is not loaded or failed to start.",
             is_available=False,
             error="Jam model not loaded",
         )
@@ -443,6 +454,7 @@ def run_detection_jam_inference(model, image_bytes: bytes, model_name: str, jam_
             confidence=None,
             traffic_jam_status=assessment["status"],
             traffic_jam_evidence=assessment["evidence"],
+            traffic_jam_evidence_en=assessment["evidence_en"],
             geometry_metrics=JamGeometryMetrics(**metrics),
             all_probabilities={"vehicle_count": float(metrics["vehicle_count"])},
             counts_by_type=assessment["counts_by_type"],
@@ -458,6 +470,7 @@ def run_detection_jam_inference(model, image_bytes: bytes, model_name: str, jam_
             confidence=None,
             traffic_jam_status="unverified",
             traffic_jam_evidence=f"Lỗi suy luận detection: {e}",
+            traffic_jam_evidence_en="Vehicle detection inference failed; see the model error for technical details.",
             inference_ms=round((time.perf_counter() - start) * 1000, 2),
             is_available=True,
             error=str(e),
@@ -508,6 +521,68 @@ def run_jam_inference(image_bytes: bytes, jam_roi=None) -> YoloModelResult:
 # ---------------------------------------------------------------------------
 # Merge Results – Phân định rõ ràng 'unverified' vs 'none'
 # ---------------------------------------------------------------------------
+def normalize_language(value) -> str:
+    if isinstance(value, str):
+        for item in value.split(","):
+            parts = item.strip().lower().split(";")
+            if any(part.strip() in ("q=0", "q=0.0") for part in parts[1:]):
+                continue
+            language = parts[0].split("-")[0]
+            if language in ("vi", "en"):
+                return language
+    return "vi"
+
+
+def with_localized_text(response: ClassifyResponse, language="vi") -> ClassifyResponse:
+    language = normalize_language(language)
+    response.summary_vi = response.summary_vi or response.summary
+    response.traffic_jam_evidence_vi = response.traffic_jam_evidence_vi or response.traffic_jam_evidence
+    for model in response.models:
+        model.traffic_jam_evidence_vi = model.traffic_jam_evidence_vi or model.traffic_jam_evidence
+        if model.traffic_jam_evidence_en is None and model.traffic_jam_evidence:
+            model.traffic_jam_evidence_en = {
+                "suspected": "Signs of congestion were identified; operator review is required.",
+                "no_evidence": "No signs of congestion were identified in the image.",
+                "unverified": "Traffic congestion could not be assessed."
+            }.get(model.traffic_jam_status, "Traffic congestion could not be assessed.")
+        model.traffic_jam_evidence = model.traffic_jam_evidence_en if language == "en" else model.traffic_jam_evidence_vi
+
+    jam = response.models[1] if len(response.models) > 1 else None
+    response.traffic_jam_evidence_en = (
+        jam.traffic_jam_evidence_en if response.is_jam_evaluated and jam else
+        "The congestion model is unavailable or inference failed."
+    )
+    if response.is_error:
+        response.error_message_vi = response.error_message_vi or response.error_message
+        response.error_message_en = "Both YOLO models are unavailable. See individual model errors for technical details."
+        response.summary_en = "[YOLO] Both models are unavailable. Use Qwen-VL or request operator review."
+    else:
+        parts = []
+        if not response.is_accident_fire_evaluated:
+            parts.append("[YOLO] The accident/fire model failed; this image has not been assessed by that model")
+        elif response.incident_type in ("fire", "accident"):
+            label = "fire" if response.incident_type == "fire" else "traffic accident"
+            parts.append(f"[YOLO] Detected {label} (confidence: {response.incident_confidence or 0:.1%})")
+        elif response.incident_type == "none":
+            parts.append("[YOLO] No accident or fire identified (reject)")
+        else:
+            parts.append("[YOLO] Unrecognized incident class; operator review is required")
+        if not response.is_jam_evaluated:
+            parts.append("The congestion model is unavailable")
+        elif response.traffic_jam_status == "suspected":
+            parts.append(response.traffic_jam_evidence_en or "Traffic congestion is suspected; verification is required")
+        elif response.traffic_jam_status == "no_evidence":
+            parts.append("No signs of traffic congestion were identified in the image")
+        else:
+            parts.append("Traffic congestion could not be assessed")
+        parts.append("Severity has not been assessed (Severity=0).")
+        response.summary_en = ". ".join(parts)
+    response.summary = response.summary_en if language == "en" else response.summary_vi
+    response.error_message = response.error_message_en if language == "en" else response.error_message_vi
+    response.traffic_jam_evidence = response.traffic_jam_evidence_en if language == "en" else response.traffic_jam_evidence_vi
+    return response
+
+
 def merge_results(af_result: YoloModelResult, jam_result: YoloModelResult) -> ClassifyResponse:
     models = [af_result, jam_result]
     total_ms = af_result.inference_ms + jam_result.inference_ms
@@ -523,7 +598,7 @@ def merge_results(af_result: YoloModelResult, jam_result: YoloModelResult) -> Cl
         if jam_result.error:
             errs.append(f"jam: {jam_result.error}")
 
-        return ClassifyResponse(
+        return with_localized_text(ClassifyResponse(
             is_error=True,
             error_message=f"Cả hai mô hình YOLO đều không khả dụng ({'; '.join(errs)})",
             is_accident_fire_evaluated=False,
@@ -536,7 +611,7 @@ def merge_results(af_result: YoloModelResult, jam_result: YoloModelResult) -> Cl
             summary="[YOLO] Lỗi: Cả hai mô hình đều không hoạt động. Chuyển sang Qwen-VL hoặc Điều phối viên.",
             models=models,
             total_inference_ms=round(total_ms, 2),
-        )
+        ))
 
     # ─── Xử lý kết quả Tai nạn / Hỏa hoạn ───
     incident_type = "unverified"
@@ -643,7 +718,7 @@ def merge_results(af_result: YoloModelResult, jam_result: YoloModelResult) -> Cl
     summary_parts.append("Mức độ nghiêm trọng (Severity) chưa thẩm định (Severity=0).")
     summary = ". ".join(summary_parts)
 
-    return ClassifyResponse(
+    return with_localized_text(ClassifyResponse(
         is_error=False,
         error_message=None,
         is_accident_fire_evaluated=af_ok,
@@ -664,7 +739,7 @@ def merge_results(af_result: YoloModelResult, jam_result: YoloModelResult) -> Cl
         summary=summary,
         models=models,
         total_inference_ms=round(total_ms, 2),
-    )
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -672,11 +747,15 @@ def merge_results(af_result: YoloModelResult, jam_result: YoloModelResult) -> Cl
 # ---------------------------------------------------------------------------
 
 @app.post("/api/yolo/classify", response_model=ClassifyResponse)
-async def classify_image(request: ClassifyRequest):
+async def classify_image(request: ClassifyRequest, accept_language: str = Header("vi", alias="Accept-Language")):
+    language = normalize_language(request.language or accept_language)
+
+    def bad_request(vi: str, en: str):
+        return JSONResponse(status_code=400, content={"detail": en if language == "en" else vi, "detail_vi": vi, "detail_en": en})
     if not request.image_url and not request.image_base64:
-        raise HTTPException(status_code=400, detail="Either image_url or image_base64 is required")
+        return bad_request("Cần cung cấp image_url hoặc image_base64.", "Either image_url or image_base64 is required.")
     if request.jam_roi is not None and jam_model_task == "classify":
-        raise HTTPException(status_code=400, detail="jam_roi requires a detection model")
+        return bad_request("jam_roi yêu cầu mô hình detection.", "jam_roi requires a detection model.")
 
     try:
         if request.image_url:
@@ -684,14 +763,14 @@ async def classify_image(request: ClassifyRequest):
         else:
             image_bytes = decode_base64_image(request.image_base64)  # type: ignore
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to load image: {e}")
+        return bad_request(f"Không đọc được ảnh: {e}", f"Failed to load image: {e}")
 
     loop = asyncio.get_event_loop()
     af_task = loop.run_in_executor(None, run_accident_fire_inference, image_bytes)
     jam_task = loop.run_in_executor(None, run_jam_inference, image_bytes, request.jam_roi)
 
     af_result, jam_result = await asyncio.gather(af_task, jam_task)
-    return merge_results(af_result, jam_result)
+    return with_localized_text(merge_results(af_result, jam_result), language)
 
 
 @app.get("/api/yolo/health", response_model=HealthResponse)

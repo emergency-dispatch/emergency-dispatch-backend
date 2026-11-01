@@ -190,7 +190,15 @@ def assess_geometry(boxes_xyxy, class_ids, image_size, roi=None, thresholds=None
         f"cụm xe gần nhau lớn nhất {largest_cluster}/{n} xe. {result}. "
         "Đây là ước lượng trên ảnh, không đo tốc độ hoặc khoảng cách thực tế."
     )
+    scope_en = "the supplied road ROI" if polygon is not None else "the full image (road ROI not specified)"
+    result_en = "Vehicles may be closely clustered; verification is required" if suspected else "Insufficient spatial evidence to flag congestion"
+    evidence_en = (
+        f"Within {scope_en}: {n} vehicles; vehicle boxes occupy {occupancy:.1%} of the assessed area; "
+        f"the largest close-vehicle cluster contains {largest_cluster}/{n} vehicles. {result_en}. "
+        "This is an image-based estimate, not a measurement of speed or real-world distance."
+    )
     return {
+        "evidence_en": evidence_en,
         "status": "suspected" if suspected else "no_evidence",
         "counts_by_type": counts,
         "metrics": metrics,

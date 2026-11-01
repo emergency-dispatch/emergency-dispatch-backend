@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using EmergencyDispatch.Application.Localization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -85,6 +86,7 @@ public class AiClassificationService : IAiClassificationService
                                "  \"hazardTags\": [\"fire\", \"smoke\", \"trapped_victims\"],\n" +
                                "  \"severityScore\": 3,\n" +
                                "  \"summary\": \"Brief concise assessment in Vietnamese.\",\n" +
+                               "  \"summaryEn\": \"Faithful English translation of summary.\",\n" +
                                "  \"confidenceScore\": 0.95\n" +
                                "}\n" +
                                "Rules:\n" +
@@ -96,7 +98,7 @@ public class AiClassificationService : IAiClassificationService
                                "- incidentType MUST be one of: \"fire\" (fire / explosion), \"accident\" (traffic accident), \"none\" (neither).\n" +
                                "- isTrafficJam: true if vehicles block the road and would delay rescue access.\n" +
                                "- hazardTags: concise lowercase English keywords.\n" +
-                               "- summary: 1-2 Vietnamese sentences.\n" +
+                               "- summary: one concise Vietnamese sentence. summaryEn: its faithful English translation; preserve all facts and uncertainty.\n" +
                                "- confidenceScore: float between 0.0 and 1.0.";
 
             var userText = string.IsNullOrWhiteSpace(additionalContext)
@@ -178,7 +180,7 @@ public class AiClassificationService : IAiClassificationService
                 || severity is < 0 or > 3)
                 throw new JsonException("Qwen-VL thiếu mức độ nghiêm trọng nguyên từ 0 đến 3.");
 
-            if (!TryGetResponseField(contentRoot, out var summaryField, "summary", "description")
+            if (!TryGetResponseField(contentRoot, out var summaryField, "summaryVi", "summary_vi", "description_vi", "summary", "description")
                 || summaryField.ValueKind != JsonValueKind.String
                 || string.IsNullOrWhiteSpace(summaryField.GetString()))
                 throw new JsonException("Qwen-VL thiếu nội dung đánh giá hiện trường.");
@@ -214,6 +216,7 @@ public class AiClassificationService : IAiClassificationService
                 IncidentType = incidentType,
                 SeverityScore = severity,
                 Summary = summaryField.GetString(),
+                SummaryEn = ReadText(contentRoot, "summaryEn", "summary_en", "description_en"),
                 HazardTags = tags,
                 ConfidenceScore = confidence
             };
@@ -250,7 +253,7 @@ public class AiClassificationService : IAiClassificationService
             }
             parsedResult.IsTrafficJam = false;
 
-            return parsedResult;
+            return AiTextLocalization.Ensure(parsedResult);
         }
         catch (Exception ex)
         {
@@ -370,7 +373,7 @@ public class AiClassificationService : IAiClassificationService
             _logger.LogInformation("Phân loại AI thành công bằng Local Qwen2.5-VL LoRA: Type={Type}, Level={Level}, Jam={Jam} ({Ms}ms)",
                 incidentType, severityLevel, trafficJamStatus, stopwatch.ElapsedMilliseconds);
 
-            return new AiClassificationResultDto
+            return AiTextLocalization.Ensure(new AiClassificationResultDto
             {
                 IncidentType = incidentType,
                 SeverityScore = severityLevel,
@@ -378,13 +381,15 @@ public class AiClassificationService : IAiClassificationService
                 TrafficJamStatus = trafficJamStatus,
                 TrafficJamEvidence = trafficJamEvidence,
                 HazardTags = tags,
-                Summary = description,
+                Summary = ReadText(root, "description_vi", "summary_vi") ?? description,
+                SummaryEn = ReadText(root, "description_en", "summary_en", "summaryEn"),
+                SummaryEnIsFallback = root.TryGetProperty("description_en_is_fallback", out var enFallback) && enFallback.ValueKind == JsonValueKind.True,
                 ConfidenceScore = confidence,
                 IsSuccess = true,
                 ModelName = "Qwen2.5-VL-3B-LoRA (Local GPU)",
                 RawResponse = content,
                 ProcessingDurationMs = stopwatch.ElapsedMilliseconds
-            };
+            });
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -392,6 +397,12 @@ public class AiClassificationService : IAiClassificationService
                 localUrl, ex is TaskCanceledException ? "quá thời gian chờ" : ex.Message);
             return null;
         }
+    }
+
+    private static string? ReadText(JsonElement root, params string[] names)
+    {
+        return TryGetResponseField(root, out var value, names) && value.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(value.GetString()) ? value.GetString() : null;
     }
 
     private static bool TryGetResponseField(JsonElement root, out JsonElement value, params string[] names)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Enums;
@@ -153,10 +154,12 @@ public class DualEngineAiService : IAiClassificationService
             _logger.LogInformation("Qwen-VL unavailable → Chỉ có YOLO. Không tự tiện gán Level 1; đặt Severity=0 (Unclassified) và yêu cầu Operator thẩm định.");
 
             var (singleJamStatus, singleJamEv, _) = ResolveTrafficJamConsensus(yolo, null);
+            var (_, singleJamEvEn, _) = ResolveTrafficJamConsensus(yolo, null, "en");
             yolo!.SeverityScore = 0;
             yolo.IsTrafficJam = false; // AI chỉ dừng ở mức Suspected/Unverified, không tự ý gán Confirmed
             yolo.TrafficJamStatus = singleJamStatus;
             yolo.TrafficJamEvidence = singleJamEv;
+            yolo.TrafficJamEvidenceEn = singleJamEvEn;
 
             if (!yolo.HazardTags.Contains("NeedsHumanReview"))
                 yolo.HazardTags.Add("NeedsHumanReview");
@@ -170,7 +173,7 @@ public class DualEngineAiService : IAiClassificationService
 
             yolo.ModelName = $"YOLO Only (Qwen-VL unavailable) | {yolo.ModelName}";
             yolo.ProcessingDurationMs = totalMs;
-            return yolo;
+            return AiTextLocalization.Ensure(yolo);
         }
 
         // ─── Case 3: Chỉ Qwen-VL thành công ───
@@ -178,9 +181,11 @@ public class DualEngineAiService : IAiClassificationService
         {
             _logger.LogInformation("YOLO unavailable → Sử dụng kết quả Qwen-VL duy nhất");
             var (singleJamStatus, singleJamEv, _) = ResolveTrafficJamConsensus(null, qwen);
+            var (_, singleJamEvEn, _) = ResolveTrafficJamConsensus(null, qwen, "en");
             qwen.IsTrafficJam = false; // AI không tự ý gán Confirmed
             qwen.TrafficJamStatus = singleJamStatus;
             qwen.TrafficJamEvidence = singleJamEv;
+            qwen.TrafficJamEvidenceEn = singleJamEvEn;
 
             if (singleJamStatus == TrafficJamStatus.Suspected && !qwen.HazardTags.Contains("SuspectedTrafficJam"))
                 qwen.HazardTags.Add("SuspectedTrafficJam");
@@ -189,7 +194,7 @@ public class DualEngineAiService : IAiClassificationService
 
             qwen.ModelName = $"Qwen-VL Only (YOLO unavailable) | {qwen.ModelName}";
             qwen.ProcessingDurationMs = totalMs;
-            return qwen;
+            return AiTextLocalization.Ensure(qwen);
         }
 
         // ─── Case 4: CẢ HAI thành công → Consensus ───
@@ -215,6 +220,7 @@ public class DualEngineAiService : IAiClassificationService
 
         // Phân định kẹt xe theo ma trận 9 trường hợp (không dùng phép OR thô sơ)
         var (jamStatus, jamEvidence, jamNeedsReview) = ResolveTrafficJamConsensus(yolo, qwen);
+        var (_, jamEvidenceEn, _) = ResolveTrafficJamConsensus(yolo, qwen, "en");
 
         // ── Kiểm tra nếu YOLO bị lỗi phần Tai nạn/Hỏa hoạn (chỉ chạy được Jam) ──
         var yoloAfEvaluated = yoloType != "unverified" && !yolo.HazardTags.Contains("YoloAccidentFireUnverified");
@@ -238,8 +244,11 @@ public class DualEngineAiService : IAiClassificationService
                 IsTrafficJam = false, // AI chỉ dừng ở mức Suspected/Disputed, chỉ True khi con người Confirmed
                 TrafficJamStatus = jamStatus,
                 TrafficJamEvidence = jamEvidence,
+                TrafficJamEvidenceEn = jamEvidenceEn,
                 HazardTags = jamTags.ToList(),
-                Summary = $"[Dual-Engine | YOLO Jam + Qwen-VL Full]\n• Qwen-VL: {qwen.Summary}\n• YOLO: {yolo.Summary}\n• Tình trạng giao thông: {jamEvidence}",
+                Summary = $"[Dual-Engine | YOLO Jam + Qwen-VL Full]\n• Qwen-VL: {qwen.GetSummary("vi")}\n• YOLO: {yolo.GetSummary("vi")}\n• Tình trạng giao thông: {jamEvidence}",
+                SummaryEn = $"[Dual-Engine | YOLO Jam + Qwen-VL Full]\n• Qwen-VL: {qwen.GetSummary("en")}\n• YOLO: {yolo.GetSummary("en")}\n• Traffic assessment: {jamEvidenceEn}",
+                SummaryEnIsFallback = yolo.SummaryEnIsFallback || qwen.SummaryEnIsFallback,
                 IsSuccess = qwen.IsSuccess,
                 ModelName = $"Dual-Engine (Qwen-VL + YOLO Jam only) | {qwen.ModelName}",
                 RawResponse = BuildMergedRawResponse(yolo, qwen),
@@ -252,6 +261,7 @@ public class DualEngineAiService : IAiClassificationService
         int finalSeverity;
         double finalConfidence;
         string consensusNote;
+        string consensusNoteEn;
         var needsHumanReview = false;
 
         // ── 4a: Cả hai đồng ý về loại sự cố ──
@@ -263,6 +273,7 @@ public class DualEngineAiService : IAiClassificationService
             // Weighted average confidence
             finalConfidence = (qwenConf * 0.6) + (yoloConf * 0.4);
             consensusNote = "ĐỒNG THUẬN (Severity do Qwen-VL đánh giá)";
+            consensusNoteEn = AiTextLocalization.T("en", "ĐỒNG THUẬN (Severity do Qwen-VL đánh giá)");
         }
         // ── 4b: Một engine phát hiện nguy hiểm, engine kia nói "none" ──
         else if (yoloType != "none" && qwenType == "none")
@@ -274,6 +285,7 @@ public class DualEngineAiService : IAiClassificationService
             finalSeverity = 0; // Unclassified vì chưa được Qwen xác nhận
             finalConfidence = yoloConf * 0.7; // Giảm confidence vì bất đồng
             consensusNote = "BẤT ĐỒNG (YOLO phát hiện sự cố, Qwen-VL không) → Cần Điều phối viên thẩm định (Severity=0/Unclassified)";
+            consensusNoteEn = AiTextLocalization.T("en", "BẤT ĐỒNG (YOLO phát hiện sự cố, Qwen-VL không) → Cần Điều phối viên thẩm định (Severity=0/Unclassified)");
             needsHumanReview = true;
         }
         else if (yoloType == "none" && qwenType != "none")
@@ -282,6 +294,7 @@ public class DualEngineAiService : IAiClassificationService
             finalSeverity = qwen.SeverityScore;
             finalConfidence = qwenConf * 0.85; // Qwen reasoning đáng tin hơn
             consensusNote = "Qwen-VL phát hiện sự cố, YOLO reject → Tin Qwen-VL reasoning (Severity do Qwen-VL đánh giá)";
+            consensusNoteEn = AiTextLocalization.T("en", "Qwen-VL phát hiện sự cố, YOLO reject → Tin Qwen-VL reasoning (Severity do Qwen-VL đánh giá)");
         }
         // ── 4c: Hai engine phát hiện LOẠI SỰ CỐ KHÁC NHAU ──
         // (vd: YOLO nói "fire", Qwen nói "accident")
@@ -291,7 +304,9 @@ public class DualEngineAiService : IAiClassificationService
             finalType = qwenType;
             finalSeverity = qwen.SeverityScore;
             finalConfidence = Math.Max(qwenConf, yoloConf) * 0.75; // Giảm vì bất đồng
-            consensusNote = $"BẤT ĐỒNG LOẠI SỰ CỐ (YOLO={yoloType}, Qwen={qwenType}) → Ưu tiên Qwen-VL reasoning, cần Điều phối viên thẩm định";
+            const string disagreement = "BẤT ĐỒNG LOẠI SỰ CỐ (YOLO={0}, Qwen={1}) → Ưu tiên Qwen-VL reasoning, cần Điều phối viên thẩm định";
+            consensusNote = AiTextLocalization.T("vi", disagreement, yoloType, qwenType);
+            consensusNoteEn = AiTextLocalization.T("en", disagreement, yoloType, qwenType);
             needsHumanReview = true;
         }
 
@@ -318,8 +333,8 @@ public class DualEngineAiService : IAiClassificationService
         }
 
         // ── Build summary ──
-        var yoloSummary = yolo.Summary ?? "";
-        var qwenSummary = qwen.Summary ?? "";
+        var yoloSummary = yolo.GetSummary("vi") ?? "";
+        var qwenSummary = qwen.GetSummary("vi") ?? "";
         var mergedSummary =
             $"[Dual-Engine | {consensusNote}]\n" +
             $"• YOLO ({yolo.ModelName}): {yoloSummary}\n" +
@@ -332,12 +347,15 @@ public class DualEngineAiService : IAiClassificationService
             IsTrafficJam = false, // AI không tự ý gán Confirmed
             TrafficJamStatus = jamStatus,
             TrafficJamEvidence = jamEvidence,
+            TrafficJamEvidenceEn = jamEvidenceEn,
             SeverityScore = Math.Clamp(finalSeverity, 0, 3),
             ConfidenceScore = Math.Round(finalConfidence, 4),
             HazardTags = mergedTags.ToList(),
             Summary = mergedSummary,
+            SummaryEn = $"[Dual-Engine | {consensusNoteEn}]\n• YOLO ({yolo.ModelName}): {yolo.GetSummary("en")}\n• Qwen-VL ({qwen.ModelName}): {qwen.GetSummary("en")}\n• Traffic assessment: {jamEvidenceEn}",
+            SummaryEnIsFallback = yolo.SummaryEnIsFallback || qwen.SummaryEnIsFallback,
             IsSuccess = true,
-            ModelName = $"Dual-Engine (YOLO + Qwen-VL) | Consensus: {consensusNote}",
+            ModelName = $"Dual-Engine (YOLO + Qwen-VL) | Consensus: {consensusNoteEn}",
             RawResponse = BuildMergedRawResponse(yolo, qwen),
             ProcessingDurationMs = totalMs
         };
@@ -348,7 +366,7 @@ public class DualEngineAiService : IAiClassificationService
     /// </summary>
     private static (TrafficJamStatus Status, string Evidence, bool NeedsReview) ResolveTrafficJamConsensus(
         AiClassificationResultDto? yolo,
-        AiClassificationResultDto? qwen)
+        AiClassificationResultDto? qwen, string language = "vi")
     {
         var yoloStatus = yolo?.TrafficJamStatus ?? TrafficJamStatus.Unverified;
         var qwenStatus = qwen?.TrafficJamStatus ?? TrafficJamStatus.Unverified;
@@ -362,15 +380,15 @@ public class DualEngineAiService : IAiClassificationService
         var yoloError = yoloStatus == TrafficJamStatus.Unverified || yolo == null || !yolo.IsSuccess;
         var qwenError = qwenStatus == TrafficJamStatus.Unverified || qwen == null || !qwen.IsSuccess;
 
-        var yoloEv = !string.IsNullOrWhiteSpace(yolo?.TrafficJamEvidence) ? yolo.TrafficJamEvidence : "YOLO không có chi tiết đếm xe";
-        var qwenEv = !string.IsNullOrWhiteSpace(qwen?.TrafficJamEvidence) ? qwen.TrafficJamEvidence : "Qwen-VL không có chi tiết ngữ cảnh";
+        var yoloEv = yolo?.GetTrafficJamEvidence(language) ?? AiTextLocalization.T(language, "YOLO không có chi tiết đếm xe");
+        var qwenEv = qwen?.GetTrafficJamEvidence(language) ?? AiTextLocalization.T(language, "Qwen-VL không có chi tiết ngữ cảnh");
 
         // Case 1: Cả hai AI cùng có dấu hiệu
         if (yoloHasJam && qwenHasJam)
         {
             return (
                 TrafficJamStatus.Suspected,
-                $"Nghi ngờ — Cả hai AI đồng thuận ghi nhận dấu hiệu ùn tắc. (YOLO: {yoloEv} | Qwen: {qwenEv})",
+                AiTextLocalization.T(language, "Nghi ngờ — Cả hai AI đồng thuận ghi nhận dấu hiệu ùn tắc. (YOLO: {0} | Qwen: {1})", yoloEv, qwenEv),
                 true
             );
         }
@@ -380,7 +398,7 @@ public class DualEngineAiService : IAiClassificationService
         {
             return (
                 TrafficJamStatus.Disputed,
-                $"Bất đồng — YOLO ghi nhận đông xe nhưng Qwen-VL không phát hiện ùn tắc. (YOLO: {yoloEv} | Qwen: {qwenEv})",
+                AiTextLocalization.T(language, "Bất đồng — YOLO ghi nhận đông xe nhưng Qwen-VL không phát hiện ùn tắc. (YOLO: {0} | Qwen: {1})", yoloEv, qwenEv),
                 true
             );
         }
@@ -390,7 +408,7 @@ public class DualEngineAiService : IAiClassificationService
         {
             return (
                 TrafficJamStatus.Disputed,
-                $"Bất đồng — Qwen-VL nhận định ùn tắc nhưng YOLO đếm dưới ngưỡng. (Qwen: {qwenEv} | YOLO: {yoloEv})",
+                AiTextLocalization.T(language, "Bất đồng — Qwen-VL nhận định ùn tắc nhưng YOLO đếm dưới ngưỡng. (Qwen: {0} | YOLO: {1})", qwenEv, yoloEv),
                 true
             );
         }
@@ -400,7 +418,7 @@ public class DualEngineAiService : IAiClassificationService
         {
             return (
                 TrafficJamStatus.NoEvidence,
-                "Cả hai mô hình AI đều chưa phát hiện dấu hiệu ùn tắc trên ảnh.",
+                AiTextLocalization.T(language, "Cả hai mô hình AI đều chưa phát hiện dấu hiệu ùn tắc trên ảnh."),
                 false
             );
         }
@@ -410,7 +428,7 @@ public class DualEngineAiService : IAiClassificationService
         {
             return (
                 TrafficJamStatus.Suspected,
-                $"Nghi ngờ — Chỉ YOLO ghi nhận đông xe ({yoloEv}); Qwen-VL gặp sự cố, thiếu nguồn đối chiếu.",
+                AiTextLocalization.T(language, "Nghi ngờ — Chỉ YOLO ghi nhận đông xe ({0}); Qwen-VL gặp sự cố, thiếu nguồn đối chiếu.", yoloEv),
                 true
             );
         }
@@ -420,7 +438,7 @@ public class DualEngineAiService : IAiClassificationService
         {
             return (
                 TrafficJamStatus.Suspected,
-                $"Nghi ngờ — Chỉ Qwen-VL ghi nhận ùn tắc ({qwenEv}); YOLO gặp sự cố, thiếu nguồn đối chiếu.",
+                AiTextLocalization.T(language, "Nghi ngờ — Chỉ Qwen-VL ghi nhận ùn tắc ({0}); YOLO gặp sự cố, thiếu nguồn đối chiếu.", qwenEv),
                 true
             );
         }
@@ -430,7 +448,7 @@ public class DualEngineAiService : IAiClassificationService
         {
             return (
                 TrafficJamStatus.Unverified,
-                $"Chưa xác minh — YOLO không thấy dấu hiệu ({yoloEv}) nhưng Qwen-VL gặp sự cố, thiếu nguồn độc lập đối chiếu.",
+                AiTextLocalization.T(language, "Chưa xác minh — YOLO không thấy dấu hiệu ({0}) nhưng Qwen-VL gặp sự cố, thiếu nguồn độc lập đối chiếu.", yoloEv),
                 true
             );
         }
@@ -440,7 +458,7 @@ public class DualEngineAiService : IAiClassificationService
         {
             return (
                 TrafficJamStatus.Unverified,
-                $"Chưa xác minh — Qwen-VL không thấy dấu hiệu ({qwenEv}) nhưng YOLO gặp sự cố, thiếu nguồn độc lập đối chiếu.",
+                AiTextLocalization.T(language, "Chưa xác minh — Qwen-VL không thấy dấu hiệu ({0}) nhưng YOLO gặp sự cố, thiếu nguồn độc lập đối chiếu.", qwenEv),
                 true
             );
         }
@@ -448,7 +466,7 @@ public class DualEngineAiService : IAiClassificationService
         // Case 9: Cả hai đều lỗi
         return (
             TrafficJamStatus.Unverified,
-            "Chưa thể đánh giá ùn tắc: Cả hai mô hình AI đều không khả dụng hoặc gặp lỗi.",
+            AiTextLocalization.T(language, "Chưa thể đánh giá ùn tắc: Cả hai mô hình AI đều không khả dụng hoặc gặp lỗi."),
             true
         );
     }

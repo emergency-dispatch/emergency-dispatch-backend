@@ -167,3 +167,51 @@ Không thay đổi quy tắc thẩm định con người hay tự bật YOLO tro
 
 `GET /api/yolo/health`: `healthy` khi cả hai model được tải, `degraded` khi chỉ một model sẵn sàng,
 `unhealthy` khi cả hai không sẵn sàng. `gpu_available=false` vẫn cho phép chạy CPU.
+
+## Song ngữ Việt–Anh / Vietnamese–English responses
+
+API .NET nhận `Accept-Language: vi`, `en`, `vi-VN` hoặc `en-US`; mặc định là `vi`.
+Các trường `summary`, `trafficJamEvidence`, `errorMessage` của kết quả AI chọn ngôn ngữ
+theo request. Phản hồi luôn kèm các bản tường minh:
+
+| Nội dung / Text | Tiếng Việt | English |
+|---|---|---|
+| Tóm tắt / Summary | `summaryVi` | `summaryEn` |
+| Đánh giá giao thông / Traffic evidence | `trafficJamEvidenceVi` | `trafficJamEvidenceEn` |
+| Lỗi / Error | `errorMessageVi` | `errorMessageEn` |
+
+SignalR broadcast chứa cả hai bản trong cùng payload. Client chọn `summaryVi` hoặc
+`summaryEn` theo ngôn ngữ giao diện; header của một kết nối không đổi ngôn ngữ cho những
+người nhận khác. Ghi chú do điều phối viên nhập được giữ nguyên, chỉ dịch tiền tố hệ thống.
+
+YOLO Python cũng nhận header `Accept-Language`, hoặc trường JSON `language` (ưu tiên hơn header):
+
+```json
+{
+  "image_url": "https://example.com/direct-image.jpg",
+  "language": "en"
+}
+```
+
+Response Python có `summary_vi`, `summary_en`, `traffic_jam_evidence_vi`,
+`traffic_jam_evidence_en`, `error_message_vi`, `error_message_en`; trường không có hậu tố
+được chọn theo ngôn ngữ. Nhãn, enum, hazard tags và chỉ số hình học giữ định dạng kỹ thuật.
+
+Qwen cloud được yêu cầu sinh `summary` tiếng Việt và bản dịch `summaryEn` trong cùng một
+lượt suy luận. Qwen local giữ `description` tiếng Việt và yêu cầu thêm `description_en`;
+API local cũng trả `description_vi` và chọn `description` theo `Accept-Language`.
+Service local dùng tối đa 320 token mới theo mặc định; điều chỉnh bằng `AI_MAX_NEW_TOKENS`.
+Cần cập nhật `ai-service/ai_service.py` trong dataset Kaggle nếu đang phục vụ model qua ngrok.
+
+Nếu adapter cũ chưa sinh tiếng Anh, hoặc bản ghi lịch sử không có bản dịch,
+`summaryEnIsFallback=true` (local Python: `description_en_is_fallback=true`). Khi đó tiếng Anh
+là thông báo thiếu mô tả chi tiết kèm loại/mức độ đã có, không phải bản dịch được suy đoán.
+
+Hai bản mô tả được lưu trong `AiClassifications.RawResponse` dưới `_localizedAiText`;
+đọc lại sự cố có thể đổi ngôn ngữ mà không suy luận lần nữa và không cần migration.
+Dữ liệu phản hồi mô hình gốc vẫn được giữ để kiểm tra. Thẩm định ùn tắc của người dùng
+luôn được ưu tiên khi đọc dữ liệu, kể cả khi metadata AI cũ còn tồn tại.
+
+English: AI responses expose both Vietnamese and English text. HTTP selects the primary
+text using `Accept-Language`; realtime clients select the explicit language fields.
+Missing model translations are marked as fallbacks, and human-authored notes remain verbatim.

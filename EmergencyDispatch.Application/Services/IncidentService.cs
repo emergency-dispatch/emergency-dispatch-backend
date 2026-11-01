@@ -454,12 +454,12 @@ public class IncidentService : IIncidentService
             aiEntity.SeverityScore = aiResult.SeverityLevel;
             aiEntity.EventType = aiResult.EventType;
             aiEntity.HazardTags = aiResult.HazardTags;
-            aiEntity.Summary = aiResult.Summary;
+            aiEntity.Summary = aiResult.GetSummary("vi");
             aiEntity.ConfidenceScore = aiResult.ConfidenceScore;
             aiEntity.ModelName = aiResult.ModelName;
-            aiEntity.RawResponse = aiResult.RawResponse;
+            aiEntity.RawResponse = AiTextLocalization.Capture(aiResult);
             aiEntity.IsSuccess = aiResult.IsSuccess;
-            aiEntity.ErrorMessage = aiResult.ErrorMessage;
+            aiEntity.ErrorMessage = aiResult.GetErrorMessage("vi");
             aiEntity.ProcessingDurationMs = aiResult.ProcessingDurationMs;
             aiEntity.UpdatedAt = DateTime.UtcNow;
 
@@ -467,7 +467,7 @@ public class IncidentService : IIncidentService
             {
                 aiEntity.IsTrafficJam = false;
                 aiEntity.TrafficJamStatus = aiResult.TrafficJamStatus;
-                aiEntity.TrafficJamEvidence = aiResult.TrafficJamEvidence;
+                aiEntity.TrafficJamEvidence = aiResult.GetTrafficJamEvidence("vi");
             }
 
             // Quyết định về mức độ/trạng thái của Operator luôn được giữ nguyên.
@@ -1536,6 +1536,8 @@ public class IncidentService : IIncidentService
                 aiDto.IsTrafficJam = incident.AiClassification.IsTrafficJam;
             }
         }
+
+        if (aiDto != null) AiTextLocalization.Restore(aiDto);
 
         // Map hồ sơ y tế chuyên sâu & người liên hệ khẩn cấp nếu sự cố gắn với tài khoản người dùng
         IncidentReporterMedicalDto? medicalProfile = null;

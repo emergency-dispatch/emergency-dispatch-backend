@@ -56,9 +56,18 @@ MAX_IMAGE_SIDE = int(os.environ.get("AI_MAX_IMAGE_SIDE", "384"))
 ALLOW_LOCAL_PATHS = os.environ.get("AI_ALLOW_LOCAL_PATHS", "1") == "1"
 
 
-def require_api_key(x_ai_service_key: Optional[str] = Header(None)):
+def localized_message(vi: str, en: str, language) -> str:
+    if isinstance(language, str):
+        for item in language.split(","):
+            code = item.strip().split(";")[0].lower().split("-")[0]
+            if code in ("vi", "en"):
+                return en if code == "en" else vi
+    return vi
+
+
+def require_api_key(x_ai_service_key: Optional[str] = Header(None), accept_language: str = Header("vi", alias="Accept-Language")):
     if API_KEY and not hmac.compare_digest(x_ai_service_key or "", API_KEY):
-        raise HTTPException(status_code=401, detail="Sai hoặc thiếu X-AI-Service-Key.")
+        raise HTTPException(status_code=401, detail=localized_message("Sai hoặc thiếu X-AI-Service-Key.", "Invalid or missing X-AI-Service-Key.", accept_language))
 
 TRAIN_PROMPT = (
     "Phân tích ảnh hiện trường cho hệ thống điều phối khẩn cấp SEP490. "
@@ -150,6 +159,9 @@ class AnalyzeResponse(BaseModel):
     traffic_jam: bool
     tags: List[str]
     description: str
+    description_vi: str = ""
+    description_en: str = ""
+    description_en_is_fallback: bool = False
     confidence: float
     raw_response: str
     inference_time_ms: int
@@ -201,13 +213,14 @@ def extract_json(text: str) -> dict:
 async def analyze_incident(
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
-    citizen_note: Optional[str] = Form(None)
+    citizen_note: Optional[str] = Form(None),
+    accept_language: str = Header("vi", alias="Accept-Language")
 ):
     """
     Phân tích ảnh hiện trường và bối cảnh sự cố bằng mô hình Qwen2.5-VL LoRA
     """
     if not is_model_ready:
-        raise HTTPException(status_code=503, detail="Mô hình AI đang khởi động, vui lòng thử lại sau giây lát.")
+        raise HTTPException(status_code=503, detail=localized_message("Mô hình AI đang khởi động, vui lòng thử lại sau giây lát.", "The AI model is starting. Please try again shortly.", accept_language))
 
     start_time = time.time()
     pil_image = None
@@ -221,7 +234,7 @@ async def analyze_incident(
             if ALLOW_LOCAL_PATHS and os.path.exists(clean_url):
                 pil_image = Image.open(clean_url).convert("RGB")
             elif not clean_url.lower().startswith(("http://", "https://")):
-                raise HTTPException(status_code=400, detail="image_url phải là URL http(s).")
+                raise HTTPException(status_code=400, detail=localized_message("image_url phải là URL http(s).", "image_url must be an http(s) URL.", accept_language))
             else:
                 import urllib.request
                 req = urllib.request.Request(clean_url, headers={"User-Agent": "Mozilla/5.0"})
@@ -229,17 +242,20 @@ async def analyze_incident(
                     data = resp.read()
                     pil_image = Image.open(io.BytesIO(data)).convert("RGB")
         else:
-            raise HTTPException(status_code=400, detail="Cần cung cấp file ảnh (image) hoặc đường link ảnh (image_url).")
+            raise HTTPException(status_code=400, detail=localized_message("Cần cung cấp file ảnh (image) hoặc đường link ảnh (image_url).", "Provide an image file (image) or an image URL (image_url).", accept_language))
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Không đọc được hình ảnh: {str(e)}")
+        raise HTTPException(status_code=400, detail=localized_message(f"Không đọc được hình ảnh: {e}", f"Failed to read image: {e}", accept_language))
 
     max_side = MAX_IMAGE_SIDE
     if max(pil_image.size) > max_side:
         pil_image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
 
-    prompt = TRAIN_PROMPT
+    prompt = TRAIN_PROMPT + (
+        " Giữ description bằng tiếng Việt. Bổ sung description_en là bản dịch tiếng Anh của description, "
+        "giữ nguyên sự kiện và mức độ không chắc chắn, không bổ sung chi tiết mới."
+    )
     if citizen_note:
         prompt += f" Bối cảnh người dân báo: {citizen_note}"
 
@@ -270,7 +286,7 @@ async def analyze_incident(
         with torch.no_grad():
             generated_ids = model.generate(
                 **inputs,
-                max_new_tokens=150,
+                max_new_tokens=max(64, min(1024, int(os.getenv("AI_MAX_NEW_TOKENS", "320")))),
                 do_sample=False
             )
 
@@ -293,6 +309,11 @@ async def analyze_incident(
         if not isinstance(tags, list):
             tags = [str(tags)]
         description = str(parsed.get("description", ""))
+        raw_description_en = parsed.get("description_en")
+        description_en = raw_description_en.strip() if isinstance(raw_description_en, str) else ""
+        description_en_is_fallback = not description_en
+        if description_en_is_fallback:
+            description_en = f"A detailed English description is unavailable. Incident: {incident_type}; severity: {severity_level}. Operator review may be required."
 
         is_emergency = incident_type in ["fire", "accident"] and severity_level > 0
         confidence = 0.95 if is_emergency else 0.85
@@ -303,7 +324,10 @@ async def analyze_incident(
             severity_level=severity_level,
             traffic_jam=traffic_jam,
             tags=tags,
-            description=description,
+            description=localized_message(description, description_en, accept_language),
+            description_vi=description,
+            description_en=description_en,
+            description_en_is_fallback=description_en_is_fallback,
             confidence=confidence,
             raw_response=output_text,
             inference_time_ms=inference_time_ms,
@@ -313,7 +337,7 @@ async def analyze_incident(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi suy luận AI: {str(e)}")
+        raise HTTPException(status_code=500, detail=localized_message(f"Lỗi suy luận AI: {e}", f"AI inference failed: {e}", accept_language))
     finally:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

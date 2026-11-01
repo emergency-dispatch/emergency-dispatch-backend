@@ -35,6 +35,9 @@ public static class LocalizationHelper
     /// Chuyển ngữ chuỗi văn bản theo ngôn ngữ hiện tại của request
     /// </summary>
     public static string Localize(string? text, params object[] args)
+        => LocalizeForLanguage(text, CurrentLanguage, args);
+
+    public static string LocalizeForLanguage(string? text, string language, params object[] args)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -44,7 +47,7 @@ public static class LocalizationHelper
         var trimmed = text.Trim();
         string localized = trimmed;
 
-        if (IsEnglish)
+        if (language.StartsWith("en", StringComparison.OrdinalIgnoreCase))
         {
             // Muốn tiếng Anh: nếu có trong từ điển ViToEn thì dịch sang tiếng Anh
             if (LocalizationCatalog.ViToEn.TryGetValue(trimmed, out var enVal))
@@ -81,7 +84,7 @@ public static class LocalizationHelper
         {
             try
             {
-                localized = string.Format(localized, args);
+                localized = string.Format(CultureInfo.GetCultureInfo(language.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "en-US" : "vi-VN"), localized, args);
             }
             catch
             {

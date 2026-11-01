@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using EmergencyDispatch.Domain.Enums;
+using EmergencyDispatch.Application.Localization;
 
 namespace EmergencyDispatch.Application.DTOs.Ai;
 
@@ -8,6 +9,10 @@ namespace EmergencyDispatch.Application.DTOs.Ai;
 /// </summary>
 public class AiClassificationResultDto
 {
+    private string? _trafficJamEvidence;
+    private string? _summary;
+    private string? _errorMessage;
+
     /// <summary>
     /// Danh sách các nhãn mối nguy hiểm phát hiện được (vd: "fire", "heavy_smoke", "structural_damage", "traffic_accident")
     /// </summary>
@@ -42,7 +47,15 @@ public class AiClassificationResultDto
     /// Bằng chứng hoặc giải trình chi tiết về tình trạng giao thông từ AI / Điều phối viên
     /// </summary>
     [JsonPropertyName("trafficJamEvidence")]
-    public string? TrafficJamEvidence { get; set; }
+    public string? TrafficJamEvidence
+    {
+        get => GetTrafficJamEvidence(LocalizationHelper.CurrentLanguage);
+        set { _trafficJamEvidence = value; TrafficJamEvidenceVi = null; TrafficJamEvidenceEn = null; }
+    }
+    [JsonPropertyName("trafficJamEvidenceVi")]
+    public string? TrafficJamEvidenceVi { get; set; }
+    [JsonPropertyName("trafficJamEvidenceEn")]
+    public string? TrafficJamEvidenceEn { get; set; }
 
     /// <summary>
     /// ID Điều phối viên (Operator) đã thẩm định và xác nhận hoặc bác bỏ kẹt xe
@@ -92,7 +105,17 @@ public class AiClassificationResultDto
     /// Tóm tắt nhanh nhận định của AI về hiện trường sự cố
     /// </summary>
     [JsonPropertyName("summary")]
-    public string? Summary { get; set; }
+    public string? Summary
+    {
+        get => GetSummary(LocalizationHelper.CurrentLanguage);
+        set { _summary = value; SummaryVi = null; SummaryEn = null; SummaryEnIsFallback = false; }
+    }
+    [JsonPropertyName("summaryVi")]
+    public string? SummaryVi { get; set; }
+    [JsonPropertyName("summaryEn")]
+    public string? SummaryEn { get; set; }
+    [JsonPropertyName("summaryEnIsFallback")]
+    public bool SummaryEnIsFallback { get; set; }
 
     /// <summary>
     /// Ước tính mức độ tự tin của AI (0.0 đến 1.0)
@@ -118,7 +141,23 @@ public class AiClassificationResultDto
     /// <summary>
     /// Chi tiết lỗi khi xảy ra sự cố gọi API hoặc parse dữ liệu
     /// </summary>
-    public string? ErrorMessage { get; set; }
+    public string? ErrorMessage
+    {
+        get => GetErrorMessage(LocalizationHelper.CurrentLanguage);
+        set { _errorMessage = value; ErrorMessageVi = null; ErrorMessageEn = null; }
+    }
+    [JsonPropertyName("errorMessageVi")]
+    public string? ErrorMessageVi { get; set; }
+    [JsonPropertyName("errorMessageEn")]
+    public string? ErrorMessageEn { get; set; }
+
+    public string? GetSummary(string language) => IsEnglish(language)
+        ? SummaryEn ?? _summary ?? SummaryVi : SummaryVi ?? _summary ?? SummaryEn;
+    public string? GetTrafficJamEvidence(string language) => IsEnglish(language)
+        ? TrafficJamEvidenceEn ?? _trafficJamEvidence ?? TrafficJamEvidenceVi : TrafficJamEvidenceVi ?? _trafficJamEvidence ?? TrafficJamEvidenceEn;
+    public string? GetErrorMessage(string language) => IsEnglish(language)
+        ? ErrorMessageEn ?? _errorMessage ?? ErrorMessageVi : ErrorMessageVi ?? _errorMessage ?? ErrorMessageEn;
+    private static bool IsEnglish(string language) => language.StartsWith("en", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Thời gian AI xử lý tính bằng mili-giây
@@ -130,7 +169,7 @@ public class AiClassificationResultDto
     /// </summary>
     public static AiClassificationResultDto CreateFallback(string errorMessage, string? rawResponse = null, long durationMs = 0)
     {
-        return new AiClassificationResultDto
+        return AiTextLocalization.Ensure(new AiClassificationResultDto
         {
             HazardTags = new List<string> { "Unclassified", "NeedsHumanReview" },
             SeverityScore = (int)SeverityLevel.Unclassified,
@@ -143,6 +182,6 @@ public class AiClassificationResultDto
             ErrorMessage = errorMessage,
             RawResponse = rawResponse,
             ProcessingDurationMs = durationMs
-        };
+        });
     }
 }

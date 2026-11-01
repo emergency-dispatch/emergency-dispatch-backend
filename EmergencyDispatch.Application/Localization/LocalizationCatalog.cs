@@ -185,6 +185,11 @@ public static partial class LocalizationCatalog
             ViToEn.TryAdd(kv.Key, kv.Value);
         }
 
+        foreach (var kv in AiViToEn)
+        {
+            ViToEn.TryAdd(kv.Key, kv.Value);
+        }
+
         foreach (var kv in ViToEn)
         {
             if (!EnToVi.ContainsKey(kv.Value))
