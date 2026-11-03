@@ -56,4 +56,9 @@ public class CreateIncidentDto
     /// Danh sách URL hình ảnh hoặc video hiện trường đã upload trước (tùy chọn)
     /// </summary>
     public List<string> MediaUrls { get; set; } = new();
+
+    /// <summary>
+    /// Loại sự cố người báo chọn trên app (tùy chọn): FireExplosion / TrafficAccident. Dùng để gom báo cáo trùng trước khi AI chạy
+    /// </summary>
+    public EmergencyDispatch.Domain.Enums.IncidentEventType? ReportedEventType { get; set; }
 }

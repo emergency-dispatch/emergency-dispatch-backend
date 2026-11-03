@@ -11,6 +11,18 @@ public class IncidentResponseDto
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? GuestCancellationToken { get; set; }
 
+    /// <summary>Loại sự cố người báo tự chọn (nếu có)</summary>
+    public Domain.Enums.IncidentEventType? ReportedEventType { get; set; }
+
+    /// <summary>(Sự cố gốc) Số báo cáo khác đang gom vào sự cố này: hàng đợi hiện "+N người cùng báo"</summary>
+    public int LinkedReportCount { get; set; }
+
+    /// <summary>(Báo cáo được gom) Sự cố gốc</summary>
+    public Guid? LinkedToIncidentId { get; set; }
+
+    /// <summary>(Chỉ trả cho người báo khi SOS vừa được gom) Tóm tắt sự cố gốc</summary>
+    public LinkedToIncidentDto? LinkedTo { get; set; }
+
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;

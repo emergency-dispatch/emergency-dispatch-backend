@@ -16,4 +16,10 @@ public interface IAiClassificationService
     /// <param name="cancellationToken">Cancellation Token</param>
     /// <returns>AiClassificationResultDto chứa hazard tags, severity và metadata</returns>
     Task<AiClassificationResultDto> AnalyzeAsync(string mediaUrl, string? additionalContext = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Kiểm tra nhanh loại sự cố trên ảnh bằng YOLO (vài chục ms, không dùng GPU của VLM) để đối chiếu báo cáo được gom.
+    /// null = không xác định được (YOLO tắt / lỗi / ảnh không có cháy hay tai nạn rõ ràng)
+    /// </summary>
+    Task<EmergencyDispatch.Domain.Enums.IncidentEventType?> QuickCheckEventTypeAsync(string mediaUrl, CancellationToken cancellationToken = default);
 }

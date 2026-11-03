@@ -31,6 +31,12 @@ public class AssignDispatchDto
     public bool AllowExtraUnits { get; set; }
 
     /// <summary>
+    /// (Tùy chọn) Giao xe để đáp ứng yêu cầu chi viện Backup của đội hiện trường: cho phép vượt giới hạn Level 1–2
+    /// và tự đánh dấu yêu cầu Fulfilled sau khi giao thành công
+    /// </summary>
+    public Guid? FieldRequestId { get; set; }
+
+    /// <summary>
     /// Chỉ thị điều phối từ Operator gửi tới đội xe
     /// </summary>
     [MaxLength(1000, ErrorMessage = "Ghi chú điều phối không được vượt quá 1000 ký tự.")]

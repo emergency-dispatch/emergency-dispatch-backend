@@ -1033,6 +1033,7 @@ export enum IncidentStatus {
   InProgress = "InProgress",     // Đội đang đến hoặc xử lý tại hiện trường
   Completed = "Completed",       // Đã giải quyết xong
   Cancelled = "Cancelled",       // Hủy sự cố (báo sai/trùng)
+  // Linked = 9: báo cáo tự gom vào sự cố đang xử lý gần đó (BR-07), không vào hàng đợi — xem mục 12.3
   Escalated = "Escalated",       // Bị leo thang lên cấp cao hơn
 }
 
@@ -1168,6 +1169,8 @@ async function submitSosReport(file: File, description: string, lat: number, lng
 | Users (cá nhân) | `GET/PUT /api/users/me` · `PUT /api/users/fcm-token` |
 | Users (quản trị) | `GET/POST /api/users` · `GET/PUT/DELETE /api/users/{id}` · `PUT /api/users/{id}/assign-station-team` · `GET /api/users/station/{stationId}` · `GET /api/users/my-team` |
 | Incidents | `POST /api/incidents` (= `/api/incidents/sos`) · `GET /api/incidents` · `GET /api/incidents/queue` · `GET /api/incidents/{id}` · `PUT /api/incidents/{id}/verify` · `PUT /api/incidents/{id}/cancel` |
+| Incidents (sau tiếp nhận, mục 12) | `PUT /api/incidents/{id}/severity` · `GET /api/incidents/{id}/linked-reports` · `PUT /api/incidents/{id}/unlink` · `PUT /api/incidents/{id}/confirm-duplicate` · `GET/POST /api/incidents/{id}/supplements` · `GET /api/incidents/{id}/field-requests` |
+| Field requests (mục 12.2) | `POST /api/dispatch/assignments/{id}/requests` · `GET /api/field-requests` · `PUT /api/field-requests/{id}/acknowledge` · `fulfill` · `decline` · `cancel` |
 | Media | `POST /api/media/upload` |
 | AI | `POST /api/ai/analyze` |
 | Dispatch | `GET /api/dispatch/recommend` · `GET /api/dispatch/available-units` · `POST /api/dispatch/assign` · `GET /api/dispatch/assignments/{id}` · `GET /api/dispatch/assignments/incident/{incidentId}` · `GET /api/dispatch/tracking/incident/{incidentId}` · `GET /api/dispatch/my-assignments` · `PUT /api/dispatch/assignments/{id}/status` · `POST /api/dispatch/assignments/{id}/resolve` |
@@ -1471,6 +1474,112 @@ Response `data`: `{ incident: IncidentResponseDto, assignments: [...], dispatchS
 Về `incidentId` của vị trí xe: **server tự gắn** từ lượt phân công đang chạy của xe; giá trị `incidentId` client gửi lên hub bị bỏ qua. Vì vậy Citizen / Staff đã `SubscribeIncident` trên `/hubs/tracking` luôn nhận được vị trí xe của sự cố, và client không thể đẩy vị trí vào sự cố khác.
 
 `PUT /api/rescue-units/{id}/location` nhận thêm `headingDegrees` (0–360) và `speedKmh` (0–300), đều tùy chọn.
+
+---
+
+## 12. SAU TIẾP NHẬN: ĐỔI MỨC ĐỘ, YÊU CẦU HIỆN TRƯỜNG, GOM BÁO CÁO TRÙNG, BỔ SUNG THÔNG TIN (đợt 04/11/2026)
+
+Mọi thao tác dưới đây đều ghi `IncidentAuditTrail` của sự cố (xem `GET /api/incidents/{id}/audit-trail`). `AuditAction` mới: `SeverityChanged = 19`, `FieldRequestCreated = 20`, `FieldRequestAcknowledged = 21`, `FieldRequestFulfilled = 22`, `FieldRequestDeclined = 23`, `FieldRequestCancelled = 24`, `FieldRequestEscalated = 25`, `ReportLinked = 26`, `ReportUnlinked = 27`, `DuplicateConfirmed = 28`, `SupplementAdded = 29`, `LinkedReportsRestored = 30`.
+
+### 12.1. Đổi mức độ sau khi xác minh — `PUT /api/incidents/{id}/severity` (Operator, Admin)
+
+Dùng khi tình hình hiện trường thay đổi (cháy lan, đã khống chế…). Chỉ áp dụng cho sự cố **đã xác minh** và đang xử lý (`Verified`, `Dispatched`, `InProgress`, `Escalated` có `verifiedAt`). Sự cố chưa xác minh dùng `PUT /verify`.
+
+```json
+{ "newSeverity": "Level3", "newEventType": "FireExplosion", "reason": "Cháy lan sang nhà bên" }
+```
+
+* `newSeverity`: `Level1`–`Level3`. `newEventType` tùy chọn (`FireExplosion` / `TrafficAccident`). `reason` bắt buộc ≥ 5 ký tự.
+* 400 khi lý do ngắn, mức không hợp lệ, trạng thái không cho phép, hoặc không có gì thay đổi. 403 khác trạm. 409 khi Operator khác đang giữ khóa.
+* Thành công: phát `ReceiveIncidentUpdate`; báo staff các trạm có xe đang xử lý (nâng mức → ưu tiên cao). Nếu hạ mức mà đang có nhiều hơn 1 xe, `message` nhắc có thể rút bớt xe.
+
+### 12.2. Yêu cầu từ hiện trường (Field Request)
+
+Đội cứu hộ gửi về trung tâm khi cần **chi viện thêm xe (`Backup`)** hoặc **vấn đề khác (`Other`)**.
+
+`FieldRequestType`: `Backup = 0`, `Other = 1`. `FieldRequestStatus`: `Open = 0`, `Acknowledged = 1`, `Fulfilled = 2`, `Declined = 3`, `Cancelled = 4`.
+
+| Method | Route | Quyền | Mô tả |
+|---|---|---|---|
+| POST | `/api/dispatch/assignments/{assignmentId}/requests` | RescueStaff (trạm của xe) | Gửi yêu cầu. Lượt điều phối phải `Accepted` / `EnRoute` / `OnScene` |
+| GET | `/api/field-requests` | Operator, Admin | Yêu cầu đang mở (Open / Acknowledged), cũ nhất trước. Operator thấy yêu cầu của sự cố trạm mình **và** của xe trạm mình đi hỗ trợ |
+| GET | `/api/incidents/{incidentId}/field-requests` | Operator, Admin, RescueStaff | Toàn bộ yêu cầu của sự cố (staff chỉ thấy của xe trạm mình) |
+| PUT | `/api/field-requests/{id}/acknowledge` | Operator, Admin | Đã tiếp nhận, đang xử lý |
+| PUT | `/api/field-requests/{id}/fulfill` | Operator, Admin | Đã đáp ứng. Body tùy chọn `{ "note": "..." }` (≤ 500) |
+| PUT | `/api/field-requests/{id}/decline` | Operator, Admin | Từ chối. Body `{ "note": "lý do ≥ 5 ký tự" }` |
+| PUT | `/api/field-requests/{id}/cancel` | RescueStaff (trạm của xe) | Đội tự hủy khi không cần nữa. Body tùy chọn `{ "note": "..." }` |
+
+Body tạo yêu cầu:
+
+```json
+{ "type": "Backup", "quantity": 2, "requestedUnitType": "Ambulance", "description": "Có 2 người bị bỏng" }
+{ "type": "Other", "description": "Cần cảnh sát chặn đường" }
+```
+
+* `Backup`: `quantity` 1–5, `requestedUnitType` tùy chọn (null = để Operator chọn), `description` tùy chọn. `Other`: `description` bắt buộc ≥ 5 ký tự. `description` ≤ 1000.
+* 409 nếu lượt điều phối đã có một yêu cầu **cùng loại** đang mở.
+* Giao xe theo yêu cầu Backup: gọi `POST /api/dispatch/assign` kèm **`fieldRequestId`**. Khi đó được vượt giới hạn 1 xe của Level 1–2 mà không cần `allowExtraUnits` / `notes`, và yêu cầu tự chuyển `Fulfilled` (ghi chú gồm biển số xe vừa điều). Level 3 vẫn tối đa 5 xe.
+* Quá hạn: worker leo thang (chu kỳ 30 s) kiểm tra yêu cầu `Open` / `Acknowledged` chưa xử lý quá **`escalation.fieldRequestThresholdMinutes`** (mặc định 3 phút, Admin chỉnh qua `PUT /api/settings/escalation`, > 0, bước 0.5). Đặt `escalatedAt`, ghi audit, thông báo Admin + Operator hai trạm liên quan (loại `Escalation`, ưu tiên cao), phát realtime `Escalated`. Mỗi yêu cầu chỉ báo một lần. Yêu cầu của sự cố đã đóng / lượt điều phối đã kết thúc thì tự hủy.
+* Realtime **`ReceiveFieldRequest`** (Hub `/hubs/incidents`): `{ action: Created|Acknowledged|Fulfilled|Declined|Cancelled|Escalated, request: FieldRequestDto, changedAt }`. Gửi tới nhóm trạm của xe và Operator trạm phụ trách / trạm của xe + Admin.
+
+`FieldRequestDto`: `id, incidentId, incidentTitle, incidentAddress, incidentSeverity, responsibleStationId, assignmentId, rescueUnitId, plateNumber, unitStationId, requestedByUserId, requestedByName, type, status, requestedUnitType, quantity, description, createdAt, acknowledgedByUserId, acknowledgedAt, resolvedByUserId, resolvedAt, responseNote, escalatedAt, ageMinutes`.
+
+### 12.3. Gom báo cáo trùng (BR-07)
+
+SOS mới tự **gom** vào một sự cố đang mở khi đồng thời: cách ≤ `radiusMeters`, sự cố gốc có báo cáo trong `windowMinutes` gần nhất, và **cùng loại** nếu cả hai đều biết loại (thứ tự xác định loại: Operator xác nhận → AI thành công → `reportedEventType` người báo chọn → từ khóa mô tả "cháy / khói / nổ" hoặc "tai nạn / va chạm / đâm"). Chọn sự cố gần nhất. Không gom vào một báo cáo đang gom khác.
+
+Báo cáo được gom:
+
+* `status = Linked (9)`, `linkedToIncidentId` = sự cố gốc, nhận trạm phụ trách của sự cố gốc.
+* **Không** chạy TriageVL, **không** vào hàng đợi Operator, **không** phát `ReceiveNewIncident`. Có ảnh thì chỉ kiểm tra nhanh bằng YOLO; YOLO nhận ra loại **khác** loại sự cố gốc → tự tách và chạy AI đầy đủ.
+* Response `POST /api/incidents/sos` có thêm `linkedTo` để app hiện "Sự cố này đã được báo, đội … đang xử lý" và nút **"Đây là sự cố khác"**:
+
+```json
+"linkedTo": { "incidentId": "…", "title": "…", "locationAddress": "…", "eventType": "FireExplosion", "status": "Dispatched", "distanceMeters": 50, "assignedUnitPlates": ["51B-003.14"] }
+```
+
+* Sự cố gốc có `linkedReportCount` (số báo cáo đang gom). Gốc hoàn tất → các báo cáo gom tự đóng (`Cancelled`, lý do `Duplicate`). Gốc bị hủy → các báo cáo gom quay về hàng đợi (giữ thời điểm báo gốc). Người báo tự hủy báo cáo gom → bộ đếm của gốc giảm.
+
+`CreateIncidentDto` nhận thêm **`reportedEventType`** tùy chọn (`FireExplosion` / `TrafficAccident`; giá trị khác → 400) — app nên cho người dân chọn "Cháy nổ / Tai nạn" để gom chính xác hơn.
+
+| Method | Route | Quyền | Mô tả |
+|---|---|---|---|
+| GET | `/api/incidents/{id}/linked-reports` | Operator, Admin | Báo cáo đã gom vào sự cố. Mỗi dòng: `incidentId, status, reportedAt, linkedAt, distanceMeters, description, locationAddress, latitude, longitude, reporterName, maskedReporterPhone, reportedEventType, quickCheckEventType, isOutlier, mediaUrls` |
+| PUT | `/api/incidents/{id}/unlink` | Operator / Admin trạm phụ trách, người báo (đăng nhập), hoặc khách gửi `guestCancellationToken` | Tách thành sự cố riêng → quay lại hàng đợi (có ảnh thì chạy AI). Body `{ "reason": "…", "guestCancellationToken": "…" }` đều tùy chọn |
+| PUT | `/api/incidents/{id}/confirm-duplicate` | Operator, Admin | Xác nhận đúng là trùng → đóng báo cáo (`Cancelled`, `Duplicate`), giữ `linkedToIncidentId`. Body tùy chọn `{ "note": "…" }` |
+
+`isOutlier = true` khi báo cáo cách gốc hơn 70% bán kính gom, hoặc loại người báo chọn / loại YOLO khác loại sự cố gốc → Operator nên kiểm tra và tách nếu cần.
+
+Cấu hình (Admin): `GET /api/settings/duplicate-detection` (Operator, Admin), `PUT /api/settings/duplicate-detection` (Admin):
+
+```json
+{ "enabled": true, "radiusMeters": 200, "windowMinutes": 15 }
+```
+
+`radiusMeters` 20–2000, `windowMinutes` 1–120. Tắt `enabled` → mọi SOS vào hàng đợi như trước.
+
+### 12.4. Người báo bổ sung thông tin
+
+| Method | Route | Quyền | Mô tả |
+|---|---|---|---|
+| POST | `/api/incidents/{id}/supplements` | Người báo (đăng nhập) hoặc khách gửi `guestCancellationToken` | Thêm ghi chú / ảnh mới cho SOS của mình |
+| GET | `/api/incidents/{id}/supplements` | Người xem được sự cố (người báo, Operator / Admin trạm, staff có xe) | Danh sách bổ sung của sự cố **và** của các báo cáo đã gom vào nó |
+
+```json
+{ "note": "Có người kẹt tầng 2", "mediaUrls": ["https://res.cloudinary.com/…/a.jpg"], "guestCancellationToken": "…" }
+```
+
+* Cần `note` hoặc ít nhất 1 ảnh. `note` ≤ 1000. Tối đa 5 media, phải là URL do `POST /api/media/upload` trả về.
+* Sự cố đã `Completed` / `Cancelled` → 400. Tối đa 20 lần bổ sung mỗi sự cố → 429.
+* Báo cáo đang `Linked` → thông tin chuyển tới sự cố gốc (`targetIncidentId` trong response), nơi đội đang xử lý.
+* Thành công: audit `SupplementAdded` trên sự cố nhận, realtime **`ReceiveIncidentSupplement`** (Operator trạm phụ trách + nhóm trạm có xe đang xử lý + người theo dõi), push cho staff các trạm có xe đang xử lý.
+* Rate limit riêng `incident-followup`: 10 lần / phút / tài khoản hoặc IP (dùng chung cho `unlink` và `supplements`, không ăn vào hạn mức SOS).
+
+`IncidentSupplementDto`: `id, incidentId, targetIncidentId, note, mediaUrls, reporterName, createdAt`.
+
+### 12.5. Thay đổi trên `IncidentResponseDto`
+
+Thêm `reportedEventType`, `linkedReportCount`, `linkedToIncidentId` (khi `Linked` hoặc đã đóng vì `Duplicate`), `linkedTo` (chỉ có trong response tạo SOS được gom).
 
 ---
 

@@ -41,6 +41,12 @@ public static class RealtimeContract
     /// <summary>Giao / rút / hoàn tất nhiệm vụ giải tỏa điểm nghẽn (nhân viên trạm của xe + trung tâm điều phối)</summary>
     public const string ReceiveTrafficTaskAssigned = "ReceiveTrafficTaskAssigned";
 
+    /// <summary>Yêu cầu từ hiện trường (chi viện / vấn đề khác) được tạo hoặc đổi trạng thái</summary>
+    public const string ReceiveFieldRequest = "ReceiveFieldRequest";
+
+    /// <summary>Người báo bổ sung ghi chú / ảnh cho sự cố</summary>
+    public const string ReceiveIncidentSupplement = "ReceiveIncidentSupplement";
+
     /// <summary>Cảnh báo khẩn cấp leo thang sự cố quá hạn phản hồi (gửi tới Operator và Admin kèm âm thanh báo động)</summary>
     public const string ReceiveEscalationAlert = "ReceiveEscalationAlert";
 

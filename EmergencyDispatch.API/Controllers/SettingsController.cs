@@ -74,6 +74,21 @@ public class SettingsController : ControllerBase
     public async Task<IActionResult> UpdateServiceArea([FromBody] ServiceAreaSettingsDto dto, CancellationToken cancellationToken)
         => this.ToHttpResult(await _settingsService.UpdateServiceAreaAsync(dto, GetCurrentUserId(), cancellationToken));
 
+    /// <summary>
+    /// Cấu hình tự gom báo cáo trùng (BR-07): bán kính (m), khung thời gian (phút), bật / tắt
+    /// </summary>
+    [HttpGet("duplicate-detection")]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDuplicateDetection(CancellationToken cancellationToken)
+        => Ok(ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>.Ok(await _settingsService.GetDuplicateDetectionRecordAsync(cancellationToken)));
+
+    [HttpPut("duplicate-detection")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateDuplicateDetection([FromBody] DuplicateDetectionSettingsDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _settingsService.UpdateDuplicateDetectionAsync(dto, GetCurrentUserId(), cancellationToken));
+
     [HttpGet("defaults")]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsDefaultsDto>), StatusCodes.Status200OK)]
     public IActionResult GetDefaults() => Ok(ApiResponseDto<SettingsDefaultsDto>.Ok(new SettingsDefaultsDto()));

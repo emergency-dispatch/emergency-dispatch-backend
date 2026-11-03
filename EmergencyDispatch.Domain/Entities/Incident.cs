@@ -85,11 +85,37 @@ public class Incident : BaseEntity
     public CancellationReason? CancellationReason { get; set; }
 
     /// <summary>
-    /// Khóa ngoại tự tham chiếu tới sự cố gốc nếu phát hiện trùng lặp
+    /// Khóa ngoại tự tham chiếu tới sự cố gốc: báo cáo đang được gom (Status = Linked) hoặc đã xác nhận trùng (Cancelled + Duplicate)
     /// </summary>
     public Guid? DuplicateOfIncidentId { get; set; }
     public Incident? DuplicateOfIncident { get; set; }
     public ICollection<Incident> DuplicateIncidents { get; set; } = new List<Incident>();
+
+    /// <summary>
+    /// Loại sự cố người báo tự chọn trên app (lưới chọn nhanh Cháy / Tai nạn). Dùng để gom báo cáo trùng trước khi AI chạy
+    /// </summary>
+    public IncidentEventType? ReportedEventType { get; set; }
+
+    /// <summary>
+    /// (Sự cố gốc) Số báo cáo khác đang được gom vào sự cố này
+    /// </summary>
+    public int LinkedReportCount { get; set; }
+
+    /// <summary>
+    /// (Sự cố gốc) Thời điểm có báo cáo gần nhất tại chỗ này: khung thời gian gom tính từ đây
+    /// </summary>
+    public DateTime? LatestReportAt { get; set; }
+
+    /// <summary>
+    /// (Báo cáo được gom) Thời điểm gom và khoảng cách tới sự cố gốc (mét)
+    /// </summary>
+    public DateTime? LinkedAt { get; set; }
+    public double? LinkDistanceMeters { get; set; }
+
+    /// <summary>
+    /// (Báo cáo được gom) Kết quả kiểm tra nhanh ảnh bằng YOLO: loại sự cố nhận ra được (null = chưa kiểm tra / không rõ)
+    /// </summary>
+    public IncidentEventType? QuickCheckEventType { get; set; }
 
     /// <summary>
     /// Cờ đánh dấu báo cáo bị trễ (offline sync hoặc người dân gửi muộn)
@@ -174,6 +200,8 @@ public class Incident : BaseEntity
     public ICollection<IncidentStatusHistory> StatusHistories { get; set; } = new List<IncidentStatusHistory>();
     public ICollection<IncidentAuditTrail> AuditTrails { get; set; } = new List<IncidentAuditTrail>();
     public CitizenFeedback? CitizenFeedback { get; set; }
+    public ICollection<FieldRequest> FieldRequests { get; set; } = new List<FieldRequest>();
+    public ICollection<IncidentSupplement> Supplements { get; set; } = new List<IncidentSupplement>();
 
     /// <summary>
     /// Sự cố đang bị một Operator khác giữ khóa mềm còn hiệu lực (BR-15)

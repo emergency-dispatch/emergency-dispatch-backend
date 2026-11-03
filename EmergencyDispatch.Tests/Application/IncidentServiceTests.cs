@@ -25,6 +25,7 @@ public class IncidentServiceTests
     private readonly Mock<IRealtimeNotifier> _rt = new();
     private readonly Mock<INotificationService> _notify = new();
     private readonly Mock<IGuestCancellationTokenService> _guest = new();
+    private readonly Mock<IIncidentFollowUpService> _followUp = new();
     private readonly Mock<IStationRepository> _stations = new();
     private readonly Mock<ISystemSettingsService> _settings = new();
     private readonly Mock<ICurrentUserContext> _me = new();
@@ -46,7 +47,7 @@ public class IncidentServiceTests
         _me.SetupGet(m => m.StationId).Returns(_q7.Id);
         _svc = new IncidentService(_incidents.Object, _users.Object, _blocked.Object, _ai.Object, _queue.Object, _rt.Object, _notify.Object,
             new CreateIncidentDtoValidator(cfg), new CreateOperatorIncidentDtoValidator(cfg), NullLogger<IncidentService>.Instance,
-            _guest.Object, _stations.Object, _settings.Object, _me.Object);
+            _guest.Object, _stations.Object, _settings.Object, _me.Object, _followUp.Object);
     }
 
     private static CreateIncidentDto Sos(params string[] media) => new()
@@ -561,5 +562,84 @@ public class IncidentServiceTests
         Assert.True(await _svc.CanAccessIncidentAsync(inc.Id, op.Id));
         Assert.False(await _svc.CanAccessIncidentAsync(inc.Id, opOther.Id));
         Assert.False(await _svc.CanAccessIncidentAsync(inc.Id, Guid.NewGuid()));
+    }
+
+    // =============== BR-07 hooks: linking on SOS, quick check, parent cancel ===============
+    private Incident LinkParent(double distance = 40)
+    {
+        var parent = new Incident { Title = "Cháy", Status = IncidentStatus.Dispatched, ResponsibleStationId = Guid.NewGuid(), EventType = IncidentEventType.FireExplosion };
+        _followUp.Setup(f => f.FindLinkParentAsync(It.IsAny<Incident>(), It.IsAny<CancellationToken>())).ReturnsAsync((parent, distance));
+        _followUp.Setup(f => f.OnReportLinkedAsync(It.IsAny<Incident>(), parent, distance, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LinkedToIncidentDto { IncidentId = parent.Id, AssignedUnitPlates = new() { "51B-001" } });
+        return parent;
+    }
+
+    [Fact]
+    public async Task Create_NearOpenIncident_IsLinked_SkipsTriageAndOperatorQueue()
+    {
+        Incident? saved = null;
+        _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
+        var parent = LinkParent();
+        var dto = Sos();
+        dto.ReportedEventType = IncidentEventType.FireExplosion;
+
+        var r = await _svc.CreateIncidentAsync(dto);
+
+        Assert.True(r.Success);
+        Assert.Equal(IncidentStatus.Linked, saved!.Status);
+        Assert.Equal(parent.Id, saved.DuplicateOfIncidentId);
+        Assert.Equal(parent.ResponsibleStationId, saved.ResponsibleStationId);
+        Assert.Equal(40, saved.LinkDistanceMeters);
+        Assert.Equal(IncidentEventType.FireExplosion, saved.ReportedEventType);
+        Assert.NotNull(saved.LatestReportAt);
+        Assert.Equal(parent.Id, r.Data!.LinkedTo!.IncidentId);
+        Assert.Equal(parent.Id, r.Data.LinkedToIncidentId);
+        Assert.Equal("guest-token", r.Data.GuestCancellationToken);
+        Assert.Contains("51B-001", r.Message);
+        _queue.Verify(q => q.EnqueueAsync(It.IsAny<AiAnalysisJob>(), It.IsAny<CancellationToken>()), Times.Never);
+        _rt.Verify(n => n.IncidentCreatedAsync(It.IsAny<IncidentResponseDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_LinkedWithPhoto_QueuesQuickCheckOnly()
+    {
+        LinkParent();
+        await _svc.CreateIncidentAsync(Sos("https://res.cloudinary.com/demo/image/upload/b.jpg"));
+        _queue.Verify(q => q.EnqueueAsync(It.Is<AiAnalysisJob>(j => j.QuickCheckOnly), It.IsAny<CancellationToken>()), Times.Once);
+        _queue.Verify(q => q.EnqueueAsync(It.Is<AiAnalysisJob>(j => !j.QuickCheckOnly), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAi_QuickCheckJob_DelegatesToFollowUp()
+    {
+        var job = new AiAnalysisJob(Guid.NewGuid(), "u", null, DateTime.UtcNow, QuickCheckOnly: true);
+        await _svc.ProcessAiAnalysisAsync(job);
+        _followUp.Verify(f => f.HandleQuickCheckAsync(job, It.IsAny<CancellationToken>()), Times.Once);
+        _ai.Verify(a => a.AnalyzeAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Cancel_ParentWithLinkedReports_RestoresThem()
+    {
+        var op = UserWith(UserRole.Operator);
+        op.StationId = _q7.Id;
+        var inc = Existing(IncidentStatus.Verified, i => i.LinkedReportCount = 2);
+
+        await _svc.CancelIncidentAsync(inc.Id, "Báo sai", op.Id);
+
+        _followUp.Verify(f => f.RestoreLinkedReportsAsync(inc.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cancel_LinkedReport_DecrementsParentCounter()
+    {
+        var citizen = UserWith(UserRole.Citizen);
+        var parentId = Guid.NewGuid();
+        var inc = Existing(IncidentStatus.Linked, i => { i.ReportedByUserId = citizen.Id; i.DuplicateOfIncidentId = parentId; });
+
+        await _svc.CancelIncidentAsync(inc.Id, "Báo nhầm", citizen.Id);
+
+        _incidents.Verify(i => i.AdjustLinkedReportCountAsync(parentId, -1, null, It.IsAny<CancellationToken>()), Times.Once);
+        _followUp.Verify(f => f.RestoreLinkedReportsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

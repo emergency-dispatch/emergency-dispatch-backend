@@ -19,6 +19,7 @@ public class SystemSettingsService : ISystemSettingsService
     public const string DispatchKey = "dispatch";
     public const string EscalationKey = "escalation";
     public const string ServiceAreaKey = "serviceArea";
+    public const string DuplicateDetectionKey = "duplicateDetection";
     private const double WeightSumTolerance = 0.001;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -124,6 +125,41 @@ public class SystemSettingsService : ISystemSettingsService
         return ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>.SuccessResult(areaRecord, "Đã lưu khu vực phục vụ.");
     }
 
+    public async Task<DuplicateDetectionSettingsDto> GetDuplicateDetectionAsync(CancellationToken cancellationToken = default)
+        => (await GetDuplicateDetectionRecordAsync(cancellationToken)).Values;
+
+    public Task<SettingsRecordDto<DuplicateDetectionSettingsDto>> GetDuplicateDetectionRecordAsync(CancellationToken cancellationToken = default)
+        => LoadAsync<DuplicateDetectionSettingsDto>(DuplicateDetectionKey, cancellationToken);
+
+    public async Task<ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>> UpdateDuplicateDetectionAsync(
+        DuplicateDetectionSettingsDto values,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var errors = ValidateDuplicateDetection(values);
+        if (errors.Count > 0)
+        {
+            return ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>.FailureResult(errors, "Cấu hình gom báo cáo trùng không hợp lệ.");
+        }
+
+        var before = await GetDuplicateDetectionAsync(cancellationToken);
+        await _repository.UpsertAsync(DuplicateDetectionKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
+        await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, DuplicateDetectionKey,
+            $"Cập nhật gom báo cáo trùng ({(values.Enabled ? "bật" : "tắt")}, {values.RadiusMeters} m, {values.WindowMinutes} phút)", before, values, cancellationToken);
+
+        var record = await GetDuplicateDetectionRecordAsync(cancellationToken);
+        await PublishSettingsAsync(DuplicateDetectionKey, record.UpdatedAt, record.UpdatedByName, cancellationToken);
+        return ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>.SuccessResult(record, "Đã lưu cấu hình gom báo cáo trùng.");
+    }
+
+    public static List<string> ValidateDuplicateDetection(DuplicateDetectionSettingsDto s)
+    {
+        var errors = new List<string>();
+        if (!(s.RadiusMeters >= 20 && s.RadiusMeters <= 2000)) errors.Add("Bán kính gom báo cáo trùng phải từ 20 đến 2000 m.");
+        if (!(s.WindowMinutes >= 1 && s.WindowMinutes <= 120)) errors.Add("Khung thời gian gom báo cáo trùng phải từ 1 đến 120 phút.");
+        return errors;
+    }
+
     private Task PublishSettingsAsync(string key, DateTime? updatedAt, string? updatedByName, CancellationToken cancellationToken)
         => _realtimeNotifier.SettingsChangedAsync(new EmergencyDispatch.Application.DTOs.Incident.SettingsChangedEventDto
         {
@@ -174,6 +210,7 @@ public class SystemSettingsService : ISystemSettingsService
         else if (startOk && s.NightStart == s.NightEnd) errors.Add("Giờ kết thúc khung đêm phải khác giờ bắt đầu.");
 
         if (!(s.RadiusMultiplier > 0)) errors.Add("Hệ số mở rộng bán kính phải lớn hơn 0.");
+        if (!(s.FieldRequestThresholdMinutes > 0) || !IsHalfStep(s.FieldRequestThresholdMinutes)) errors.Add("Ngưỡng chờ xử lý yêu cầu từ hiện trường phải > 0 và theo bước 0.5 phút.");
 
         var lastStep = dispatchStepsKm.Count > 0 ? dispatchStepsKm.Max() : 0;
         if (!(s.MaxRadiusKm > 0)) errors.Add("Bán kính tối đa phải lớn hơn 0.");

@@ -34,4 +34,9 @@ public class EscalationSettingsDto
     /// Bán kính tìm xe tối đa (km)
     /// </summary>
     public double MaxRadiusKm { get; set; } = 30;
+
+    /// <summary>
+    /// Ngưỡng chờ (phút) cho yêu cầu chi viện / vấn đề từ hiện trường chưa được trung tâm xử lý xong → báo lên Admin
+    /// </summary>
+    public double FieldRequestThresholdMinutes { get; set; } = 3;
 }

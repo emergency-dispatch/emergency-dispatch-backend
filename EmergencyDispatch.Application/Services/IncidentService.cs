@@ -26,6 +26,7 @@ public class IncidentService : IIncidentService
     private readonly IBlockedPhoneRepository _blockedPhoneRepository;
     private readonly IAiClassificationService _aiService;
     private readonly IAiAnalysisQueue _aiQueue;
+    private readonly IIncidentFollowUpService _followUpService;
     private readonly IRealtimeNotifier _realtimeNotifier;
     private readonly INotificationService _notificationService;
     private readonly IValidator<CreateIncidentDto> _validator;
@@ -53,8 +54,10 @@ public class IncidentService : IIncidentService
         IGuestCancellationTokenService guestTokens,
         IStationRepository stationRepository,
         ISystemSettingsService settingsService,
-        ICurrentUserContext currentUser)
+        ICurrentUserContext currentUser,
+        IIncidentFollowUpService followUpService)
     {
+        _followUpService = followUpService;
         _stationRepository = stationRepository;
         _settingsService = settingsService;
         _currentUser = currentUser;
@@ -150,8 +153,10 @@ public class IncidentService : IIncidentService
             ReportedByUser = reportingUser,
             Status = IncidentStatus.Pending,
             Severity = SeverityLevel.Unclassified,
+            ReportedEventType = dto.ReportedEventType,
             CreatedAt = DateTime.UtcNow
         };
+        incident.LatestReportAt = incident.CreatedAt;
 
         // 3. Thêm các tệp tin hình ảnh/video đính kèm
         if (dto.MediaUrls != null && dto.MediaUrls.Any())
@@ -174,10 +179,24 @@ public class IncidentService : IIncidentService
 
         // 4. Xác định ảnh hiện trường cho AI (VLM chỉ nhận ảnh, ưu tiên Photo)
         var mediaToAnalyze = incident.MediaItems.FirstOrDefault(m => m.MediaType == MediaType.Photo)?.MediaUrl;
-        var willAnalyze = !string.IsNullOrWhiteSpace(mediaToAnalyze);
+        var hasPhoto = !string.IsNullOrWhiteSpace(mediaToAnalyze);
 
-        incident.Status = willAnalyze ? IncidentStatus.AiProcessing : IncidentStatus.Pending;
+        // 4b. BR-07: gần sự cố đang mở, cùng khung thời gian, cùng loại (nếu biết) → gom vào sự cố gốc.
+        // Báo cáo gom không chạy TriageVL, không vào hàng đợi Operator; ảnh chỉ kiểm tra nhanh YOLO để tự tách nếu khác loại.
+        var link = await _followUpService.FindLinkParentAsync(incident, cancellationToken);
+        var isLinked = link.HasValue;
+        var willAnalyze = hasPhoto && !isLinked;
+
+        incident.Status = isLinked ? IncidentStatus.Linked : willAnalyze ? IncidentStatus.AiProcessing : IncidentStatus.Pending;
         incident.Severity = SeverityLevel.Unclassified;
+        if (link is { } l)
+        {
+            incident.DuplicateOfIncidentId = l.Parent.Id;
+            incident.ResponsibleStationId = l.Parent.ResponsibleStationId;
+            incident.ResponsibleStation = null;
+            incident.LinkedAt = incident.CreatedAt;
+            incident.LinkDistanceMeters = Math.Round(l.DistanceMeters, 1);
+        }
 
         var actorRole = reportingUser?.Role.ToString() ?? GuestRole;
 
@@ -188,7 +207,9 @@ public class IncidentService : IIncidentService
             NewStatus = incident.Status,
             ChangedByUserId = userId,
             ChangedByRole = actorRole,
-            Notes = willAnalyze ? "Tiếp nhận SOS, chuyển AI phân tích nền." : "Tiếp nhận SOS không kèm ảnh, chờ Operator đánh giá thủ công.",
+            Notes = isLinked
+                ? $"Tiếp nhận SOS, tự gom vào sự cố đang xử lý gần đó (cách {incident.LinkDistanceMeters:F0} m)."
+                : willAnalyze ? "Tiếp nhận SOS, chuyển AI phân tích nền." : "Tiếp nhận SOS không kèm ảnh, chờ Operator đánh giá thủ công.",
             ChangedAt = incident.CreatedAt
         });
 
@@ -203,7 +224,10 @@ public class IncidentService : IIncidentService
             {
                 status = incident.Status.ToString(),
                 mediaCount = incident.MediaItems.Count,
-                queuedForAi = willAnalyze
+                queuedForAi = willAnalyze,
+                linkedToIncidentId = incident.DuplicateOfIncidentId,
+                linkDistanceMeters = incident.LinkDistanceMeters,
+                reportedEventType = incident.ReportedEventType?.ToString()
             }),
             Timestamp = incident.CreatedAt
         });
@@ -224,6 +248,26 @@ public class IncidentService : IIncidentService
         await _incidentRepository.AddAsync(incident);
 
         // 6. Đẩy công việc AI vào hàng đợi nền (System.Threading.Channels)
+        if (isLinked)
+        {
+            if (hasPhoto)
+            {
+                await _aiQueue.EnqueueAsync(
+                    new AiAnalysisJob(incident.Id, mediaToAnalyze!, dto.Description, DateTime.UtcNow, QuickCheckOnly: true),
+                    cancellationToken);
+            }
+
+            var linkedTo = await _followUpService.OnReportLinkedAsync(incident, link!.Value.Parent, link.Value.DistanceMeters, cancellationToken);
+            var linkedDto = MapToResponseDto(incident, revealPhone: true);
+            linkedDto.LinkedTo = linkedTo;
+            if (!userId.HasValue) linkedDto.GuestCancellationToken = _guestTokens.Create(incident.Id);
+            return ApiResponseDto<IncidentResponseDto>.SuccessResult(
+                linkedDto,
+                linkedTo.AssignedUnitPlates.Count > 0
+                    ? LocalizationHelper.Localize("Đã tiếp nhận SOS. Sự cố này đã được báo và đội cứu hộ {0} đang xử lý. Nếu đây là sự cố khác, hãy chọn \"Đây là sự cố khác\".", string.Join(", ", linkedTo.AssignedUnitPlates))
+                    : "Đã tiếp nhận SOS. Sự cố này đã được báo và đang được điều phối. Nếu đây là sự cố khác, hãy chọn \"Đây là sự cố khác\".");
+        }
+
         if (willAnalyze)
         {
             await _aiQueue.EnqueueAsync(
@@ -403,6 +447,12 @@ public class IncidentService : IIncidentService
 
     public async Task ProcessAiAnalysisAsync(AiAnalysisJob job, CancellationToken cancellationToken = default)
     {
+        if (job.QuickCheckOnly)
+        {
+            await _followUpService.HandleQuickCheckAsync(job, cancellationToken);
+            return;
+        }
+
         var startedAt = DateTime.UtcNow;
         var queueWaitMs = (long)(startedAt - job.EnqueuedAtUtc).TotalMilliseconds;
 
@@ -1032,6 +1082,17 @@ public class IncidentService : IIncidentService
 
         await _incidentRepository.SaveChangesAsync(cancellationToken);
 
+        // Báo cáo đang gom bị hủy → giảm bộ đếm của sự cố gốc; sự cố gốc bị hủy → trả các báo cáo gom về hàng đợi
+        if (oldStatus == IncidentStatus.Linked && incident.DuplicateOfIncidentId is { } parentId)
+        {
+            await _incidentRepository.AdjustLinkedReportCountAsync(parentId, -1, null, cancellationToken);
+        }
+        else if (incident.LinkedReportCount > 0)
+        {
+            await _followUpService.RestoreLinkedReportsAsync(incident.Id,
+                $"Sự cố gốc #{incident.Id.ToString("N")[..8].ToUpperInvariant()} bị hủy ({code}) — trả báo cáo về hàng đợi để đánh giá riêng", cancellationToken);
+        }
+
         _logger.LogInformation("Sự cố {IncidentId} đã bị hủy ({Code}) bởi {Actor}. Thu hồi {Count} xe. Lý do: {Reason}",
             incident.Id, code, actorName, recalledUnits.Count, note);
 
@@ -1254,7 +1315,7 @@ public class IncidentService : IIncidentService
     /// Admin: mọi sự cố. Operator: sự cố trạm mình phụ trách (hoặc chưa xác định trạm), hoặc có xe trạm mình đang hỗ trợ.
     /// Citizen: sự cố mình báo. RescueStaff: chỉ khi xe trạm mình đang làm nhiệm vụ (hoặc vừa hoàn tất ≤ 30 phút).
     /// </summary>
-    private static bool CanAccess(Incident incident, User user)
+    internal static bool CanAccess(Incident incident, User user)
     {
         var now = DateTime.UtcNow;
         return user.Role switch
@@ -1494,7 +1555,7 @@ public class IncidentService : IIncidentService
             new PaginatedResultDto<AuditTrailEntryDto>(dtos, total, filter.PageIndex, pageSize));
     }
 
-    private static IncidentResponseDto MapToResponseDto(
+    internal static IncidentResponseDto MapToResponseDto(
         Incident incident,
         AiClassificationResultDto? directAiResult = null,
         bool revealPhone = false)
@@ -1596,6 +1657,10 @@ public class IncidentService : IIncidentService
             EventType = incident.EventType != IncidentEventType.None
                 ? incident.EventType
                 : incident.AiClassification?.EventType ?? IncidentEventType.None,
+            ReportedEventType = incident.ReportedEventType,
+            LinkedReportCount = incident.LinkedReportCount,
+            LinkedToIncidentId = incident.Status == IncidentStatus.Linked || incident.CancellationReason == CancellationReason.Duplicate
+                ? incident.DuplicateOfIncidentId : null,
             Source = incident.Source,
             CancellationReason = incident.CancellationReason,
             CancelledAt = incident.CancelledAt,

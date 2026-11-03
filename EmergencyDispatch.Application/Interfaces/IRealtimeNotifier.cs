@@ -39,6 +39,17 @@ public interface IRealtimeNotifier
     /// <summary>
     /// Giao / rút / hoàn tất nhiệm vụ giải tỏa điểm nghẽn: gửi tới nhân viên trạm của xe và trung tâm điều phối (ReceiveTrafficTaskAssigned)
     /// </summary>
+    /// <summary>
+    /// Yêu cầu từ hiện trường thay đổi (ReceiveFieldRequest): gửi trung tâm điều phối của sự cố + nhân viên trạm của xe gửi yêu cầu
+    /// </summary>
+    Task FieldRequestChangedAsync(EmergencyDispatch.Application.DTOs.Incident.FieldRequestEventDto change, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Người báo bổ sung thông tin (ReceiveIncidentSupplement): gửi trung tâm điều phối + các trạm có xe đang xử lý sự cố + người theo dõi sự cố
+    /// </summary>
+    Task IncidentSupplementAddedAsync(EmergencyDispatch.Application.DTOs.Incident.IncidentSupplementDto supplement, Guid? responsibleStationId,
+        IReadOnlyCollection<Guid> assignedStationIds, CancellationToken cancellationToken = default);
+
     Task TrafficTaskChangedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficTaskEventDto task, CancellationToken cancellationToken = default);
 
     /// <summary>

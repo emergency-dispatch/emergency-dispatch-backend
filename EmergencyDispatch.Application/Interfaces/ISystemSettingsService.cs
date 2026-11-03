@@ -20,4 +20,11 @@ public interface ISystemSettingsService
     Task<ServiceAreaSettingsDto> GetServiceAreaAsync(CancellationToken cancellationToken = default);
     Task<SettingsRecordDto<ServiceAreaSettingsDto>> GetServiceAreaRecordAsync(CancellationToken cancellationToken = default);
     Task<ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>> UpdateServiceAreaAsync(ServiceAreaSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cấu hình tự gom báo cáo trùng (BR-07)
+    /// </summary>
+    Task<DuplicateDetectionSettingsDto> GetDuplicateDetectionAsync(CancellationToken cancellationToken = default);
+    Task<SettingsRecordDto<DuplicateDetectionSettingsDto>> GetDuplicateDetectionRecordAsync(CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>> UpdateDuplicateDetectionAsync(DuplicateDetectionSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default);
 }

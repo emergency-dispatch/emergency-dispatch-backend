@@ -237,6 +237,47 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         public ValueTask DisposeAsync() => _transaction.DisposeAsync();
     }
 
+    public async Task<IReadOnlyList<Incident>> FindLinkCandidatesAsync(double minLat, double maxLat, double minLng, double maxLng, DateTime sinceUtc, CancellationToken cancellationToken = default)
+    {
+        var active = new[]
+        {
+            IncidentStatus.Pending, IncidentStatus.AiProcessing, IncidentStatus.AiProcessed, IncidentStatus.Verified,
+            IncidentStatus.Dispatched, IncidentStatus.InProgress, IncidentStatus.Escalated
+        };
+        return await _dbSet
+            .AsNoTracking()
+            .Include(i => i.AiClassification)
+            .Include(i => i.DispatchAssignments).ThenInclude(a => a.RescueUnit)
+            .Where(i => active.Contains(i.Status)
+                        && i.Latitude >= minLat && i.Latitude <= maxLat
+                        && i.Longitude >= minLng && i.Longitude <= maxLng
+                        && (i.LatestReportAt ?? i.CreatedAt) >= sinceUtc)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AdjustLinkedReportCountAsync(Guid parentIncidentId, int delta, DateTime? latestReportAt, CancellationToken cancellationToken = default)
+    {
+        if (latestReportAt.HasValue)
+        {
+            await _dbSet.Where(i => i.Id == parentIncidentId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(i => i.LinkedReportCount, i => i.LinkedReportCount + delta < 0 ? 0 : i.LinkedReportCount + delta)
+                    .SetProperty(i => i.LatestReportAt, latestReportAt), cancellationToken);
+            return;
+        }
+
+        await _dbSet.Where(i => i.Id == parentIncidentId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(i => i.LinkedReportCount, i => i.LinkedReportCount + delta < 0 ? 0 : i.LinkedReportCount + delta), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Incident>> GetLinkedReportsAsync(Guid parentIncidentId, CancellationToken cancellationToken = default)
+        => await _dbSet
+            .Include(i => i.MediaItems)
+            .Where(i => i.DuplicateOfIncidentId == parentIncidentId)
+            .OrderBy(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+
     public async Task<bool> HasRecentActiveIncidentAsync(Guid? userId, string? normalizedPhone, DateTime sinceUtc, CancellationToken cancellationToken = default)
     {
         if (!userId.HasValue && string.IsNullOrWhiteSpace(normalizedPhone))

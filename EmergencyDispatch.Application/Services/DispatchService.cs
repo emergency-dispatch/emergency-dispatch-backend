@@ -35,6 +35,8 @@ public class DispatchService : IDispatchService
     private readonly IRoutingService _routingService;
     private readonly ICurrentUserContext _currentUser;
     private readonly IEscalationRepository _escalationRepository;
+    private readonly IIncidentFollowUpService _followUpService;
+    private readonly IFieldRequestService _fieldRequestService;
 
     public DispatchService(
         IDispatchAssignmentRepository assignmentRepository,
@@ -47,8 +49,12 @@ public class DispatchService : IDispatchService
         ILogger<DispatchService> logger,
         IRoutingService routingService,
         ICurrentUserContext currentUser,
-        IEscalationRepository escalationRepository)
+        IEscalationRepository escalationRepository,
+        IIncidentFollowUpService followUpService,
+        IFieldRequestService fieldRequestService)
     {
+        _followUpService = followUpService;
+        _fieldRequestService = fieldRequestService;
         _escalationRepository = escalationRepository;
         _routingService = routingService;
         _currentUser = currentUser;
@@ -295,7 +301,18 @@ public class DispatchService : IDispatchService
         // BR-14: Level 3 điều tối đa 5 xe; Level 1–2 mặc định 1 xe (vượt giới hạn phải có lý do)
         var activeCount = incident.DispatchAssignments.Count(a => a.IsActive);
         var maxUnits = incident.Severity == SeverityLevel.Level3 ? MaxUnitsLevel3 : MaxUnitsDefault;
-        var overrideAllowed = dto.AllowExtraUnits && (dto.Notes?.Trim().Length ?? 0) >= 5 && incident.Severity != SeverityLevel.Level3;
+        // Giao xe theo yêu cầu chi viện (Backup) của đội hiện trường = lý do vượt giới hạn hợp lệ
+        if (dto.FieldRequestId is { } fieldRequestId)
+        {
+            var requestError = await _fieldRequestService.ValidateForDispatchAsync(fieldRequestId, incident.Id, cancellationToken);
+            if (requestError != null)
+            {
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(requestError);
+            }
+        }
+
+        var overrideAllowed = incident.Severity != SeverityLevel.Level3
+                              && (dto.FieldRequestId.HasValue || (dto.AllowExtraUnits && (dto.Notes?.Trim().Length ?? 0) >= 5));
         if (activeCount + unitIds.Count > maxUnits && !overrideAllowed)
         {
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
@@ -492,6 +509,11 @@ public class DispatchService : IDispatchService
                     HighPriority = true
                 }, cancellationToken);
             }
+        }
+
+        if (dto.FieldRequestId is { } fulfilledRequestId)
+        {
+            await _fieldRequestService.MarkFulfilledByDispatchAsync(fulfilledRequestId, units.Select(u => u.PlateNumber).ToList(), operatorId, cancellationToken);
         }
 
         if (incident.ReportedByUserId.HasValue)
@@ -1046,6 +1068,12 @@ public class DispatchService : IDispatchService
         // Bắn SignalR
         await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, cancellationToken);
         await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
+
+        // BR-07: sự cố gốc hoàn tất → đóng các báo cáo đã gom (lý do Duplicate)
+        if (incidentClosed && incident.LinkedReportCount > 0)
+        {
+            await _followUpService.CloseLinkedReportsAsync(incident.Id, rescuerUserId, cancellationToken);
+        }
 
         // FR-CIT-04: báo người dân khi toàn bộ cứu hộ hoàn tất
         if (incidentClosed && incident.ReportedByUserId.HasValue)

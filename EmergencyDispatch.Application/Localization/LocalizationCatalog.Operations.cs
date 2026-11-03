@@ -307,6 +307,64 @@ public static partial class LocalizationCatalog
         { "Kích thước hình ảnh ({0:F1}MB) vượt quá giới hạn cho phép (10MB).", "Image size ({0:F1}MB) exceeds the allowed limit (10MB)." },
         { "Kích thước video ({0:F1}MB) vượt quá giới hạn cho phép (30MB).", "Video size ({0:F1}MB) exceeds the allowed limit (30MB)." },
         { "Định dạng tệp '{0}' không được hỗ trợ. Hệ thống chỉ chấp nhận ảnh (JPEG, PNG, WEBP) hoặc video (MP4, MOV).", "File format '{0}' is not supported. Only images (JPEG, PNG, WEBP) or videos (MP4, MOV) are accepted." },
-        { "Lỗi upload Cloudinary: {0}", "Cloudinary upload error: {0}" }
+        { "Lỗi upload Cloudinary: {0}", "Cloudinary upload error: {0}" },
+
+        // ===== Yêu cầu từ hiện trường =====
+        { "Loại yêu cầu chỉ nhận Backup (chi viện thêm xe) hoặc Other (vấn đề khác).", "Request type must be Backup (more units) or Other (another issue)." },
+        { "Mô tả tối đa {0} ký tự.", "Description must not exceed {0} characters." },
+        { "Ghi chú tối đa {0} ký tự.", "Note must not exceed {0} characters." },
+        { "Yêu cầu loại Other cần mô tả tình huống (tối thiểu {0} ký tự).", "An Other request needs a description of the situation (at least {0} characters)." },
+        { "Số xe chi viện phải từ 1 đến {0}.", "The number of backup units must be between 1 and {0}." },
+        { "Loại xe yêu cầu không hợp lệ.", "Invalid requested unit type." },
+        { "Không tìm thấy lượt điều phối.", "Dispatch assignment not found." },
+        { "Chỉ nhân sự thuộc trạm của xe được gửi yêu cầu cho lượt điều phối này.", "Only staff of the unit's station can send requests for this assignment." },
+        { "Chỉ gửi yêu cầu được khi đội đã nhận nhiệm vụ và chưa hoàn tất (trạng thái hiện tại: {0}).", "Requests can only be sent after the team has accepted the job and before it is completed (current status: {0})." },
+        { "Đội đã có một yêu cầu cùng loại đang chờ xử lý. Vui lòng chờ phản hồi hoặc hủy yêu cầu cũ.", "The team already has an open request of the same type. Please wait for a response or cancel the previous request." },
+        { "Đã gửi yêu cầu về trung tâm điều phối.", "The request has been sent to the dispatch center." },
+        { "Bạn không có quyền xem yêu cầu của sự cố này.", "You are not allowed to view requests for this incident." },
+        { "Không tìm thấy yêu cầu.", "Request not found." },
+        { "Yêu cầu đã ở trạng thái {0}, không thể tiếp nhận.", "The request is already {0} and cannot be acknowledged." },
+        { "Yêu cầu đã ở trạng thái {0}, không thể cập nhật.", "The request is already {0} and cannot be updated." },
+        { "Đã tiếp nhận yêu cầu.", "Request acknowledged." },
+        { "Đã đánh dấu đáp ứng yêu cầu.", "Request marked as fulfilled." },
+        { "Vui lòng nhập lý do từ chối (tối thiểu {0} ký tự).", "Please enter the reason for declining (at least {0} characters)." },
+        { "Đã từ chối yêu cầu.", "Request declined." },
+        { "Chỉ nhân sự thuộc trạm của xe được hủy yêu cầu này.", "Only staff of the unit's station can cancel this request." },
+        { "Đã hủy yêu cầu.", "Request cancelled." },
+        { "Không tìm thấy yêu cầu chi viện của sự cố này.", "No backup request was found for this incident." },
+        { "Chỉ yêu cầu loại Backup mới được dùng để giao thêm xe.", "Only Backup requests can be used to dispatch additional units." },
+        { "Ngưỡng chờ xử lý yêu cầu từ hiện trường phải > 0 và theo bước 0.5 phút.", "The field request response threshold must be > 0 and in 0.5-minute steps." },
+
+        // ===== Đổi mức độ sau xác minh =====
+        { "Vui lòng nhập lý do thay đổi mức độ (tối thiểu {0} ký tự).", "Please enter the reason for changing the severity (at least {0} characters)." },
+        { "Mức độ mới phải từ Level 1 đến Level 3.", "The new severity must be between Level 1 and Level 3." },
+        { "Loại sự cố chỉ nhận FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).", "Incident type must be FireExplosion or TrafficAccident." },
+        { "Chỉ đổi mức độ được cho sự cố đã xác minh và đang xử lý (trạng thái hiện tại: {0}). Sự cố chưa xác minh hãy dùng chức năng xác minh.", "Severity can only be changed for verified, in-progress incidents (current status: {0}). Use verification for unverified incidents." },
+        { "Mức độ và loại sự cố không thay đổi.", "Severity and incident type are unchanged." },
+        { "Đã đổi mức độ sự cố.", "Incident severity changed." },
+        { "Đã đổi mức độ sự cố. Lưu ý: đang có {0} xe xử lý, nhiều hơn số xe chuẩn của mức này; có thể rút bớt nếu không cần.", "Incident severity changed. Note: {0} units are currently assigned, more than the standard for this level; you may withdraw some if not needed." },
+
+        // ===== Gom / tách báo cáo trùng =====
+        { "Đã tiếp nhận SOS. Sự cố này đã được báo và đội cứu hộ {0} đang xử lý. Nếu đây là sự cố khác, hãy chọn \"Đây là sự cố khác\".", "SOS received. This incident has already been reported and rescue unit {0} is handling it. If this is a different incident, choose \"This is a different incident\"." },
+        { "Đã tiếp nhận SOS. Sự cố này đã được báo và đang được điều phối. Nếu đây là sự cố khác, hãy chọn \"Đây là sự cố khác\".", "SOS received. This incident has already been reported and is being dispatched. If this is a different incident, choose \"This is a different incident\"." },
+        { "Báo cáo này không nằm trong nhóm gom nào.", "This report is not linked to any incident." },
+        { "Điều phối viên tách báo cáo", "Unlinked by the operator" },
+        { "Người báo xác nhận đây là sự cố khác", "The reporter confirmed this is a different incident" },
+        { "Đã tách báo cáo thành sự cố riêng. Điều phối viên sẽ xử lý ngay.", "The report is now a separate incident. An operator will handle it shortly." },
+        { "Đã xác nhận báo cáo trùng.", "Duplicate report confirmed." },
+        { "Chỉ người báo sự cố này mới được thực hiện thao tác.", "Only the reporter of this incident can perform this action." },
+        { "Cấu hình gom báo cáo trùng không hợp lệ.", "Invalid duplicate detection settings." },
+        { "Đã lưu cấu hình gom báo cáo trùng.", "Duplicate detection settings saved." },
+        { "Bán kính gom báo cáo trùng phải từ 20 đến 2000 m.", "The duplicate detection radius must be between 20 and 2000 m." },
+        { "Khung thời gian gom báo cáo trùng phải từ 1 đến 120 phút.", "The duplicate detection window must be between 1 and 120 minutes." },
+        { "Loại sự cố tự chọn chỉ nhận FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).", "The reported incident type must be FireExplosion or TrafficAccident." },
+
+        // ===== Người báo bổ sung thông tin =====
+        { "Vui lòng nhập nội dung hoặc đính kèm ảnh bổ sung.", "Please enter a note or attach a photo." },
+        { "Nội dung bổ sung không được vượt quá 1000 ký tự.", "The additional note must not exceed 1000 characters." },
+        { "Tối đa {0} ảnh / video, và phải được tải lên qua hệ thống (POST /api/media/upload).", "Up to {0} photos / videos, uploaded through the system (POST /api/media/upload)." },
+        { "Sự cố đã kết thúc, không thể bổ sung thông tin.", "The incident is closed; no more information can be added." },
+        { "Mỗi sự cố chỉ được bổ sung tối đa {0} lần. Nếu khẩn cấp, vui lòng gọi trực tiếp 114 / 115.", "Each incident can receive at most {0} updates. In an emergency, please call 114 / 115 directly." },
+        { "Đã gửi thông tin bổ sung tới trung tâm điều phối.", "Your additional information has been sent to the dispatch center." }
     };
 }

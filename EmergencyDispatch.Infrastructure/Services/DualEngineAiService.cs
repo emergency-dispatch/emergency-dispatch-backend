@@ -96,6 +96,23 @@ public class DualEngineAiService : IAiClassificationService
     // Safe wrappers: catch mọi exception, không để fail propagate
     // ─────────────────────────────────────────────────────────────────────
 
+    public async Task<IncidentEventType?> QuickCheckEventTypeAsync(string mediaUrl, CancellationToken cancellationToken = default)
+    {
+        if (!_configuration.GetValue("YoloService:Enabled", false))
+        {
+            return null;
+        }
+
+        var result = await SafeYoloAnalyzeAsync(mediaUrl, cancellationToken);
+        if (result == null || result.HazardTags.Contains("YoloAccidentFireUnverified"))
+        {
+            return null;
+        }
+
+        // "none" (không thấy cháy / tai nạn) coi là không xác định: không đủ căn cứ để tách báo cáo
+        return result.EventType == IncidentEventType.None ? null : result.EventType;
+    }
+
     private async Task<AiClassificationResultDto?> SafeYoloAnalyzeAsync(
         string mediaUrl, CancellationToken ct)
     {

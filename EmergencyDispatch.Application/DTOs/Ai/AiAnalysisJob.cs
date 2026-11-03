@@ -12,4 +12,5 @@ public sealed record AiAnalysisJob(
     Guid IncidentId,
     string MediaUrl,
     string? AdditionalContext,
-    DateTime EnqueuedAtUtc);
+    DateTime EnqueuedAtUtc,
+    bool QuickCheckOnly = false);

@@ -1052,3 +1052,51 @@ Vòng đời: `Active → Assigned → Resolved`, `Active → Expired` (hết TT
 | Trang Audit (admin): thêm nhãn cho 3 action mới `TrafficTaskAssigned`, `TrafficTaskUnassigned`, `TrafficResolved`, entity `TrafficHotspot` | `auditMeta.ts` + i18n vi/en `admin/monitoring.ts` | Hiện đang không có icon / nhãn cho các giá trị này |
 | Nút "Báo kẹt xe" ở cổng staff đang ghi "Chưa có API" | `StaffQuickActionPanel.tsx` | API đã có từ trước: `POST /api/traffic/report` |
 | Citizen báo kẹt xe (UC-24) | Web citizen + mobile | Chưa client nào gọi `POST /api/traffic/report` |
+
+## 21. Cập nhật 04/11/2026: đổi mức độ, yêu cầu hiện trường, gom báo cáo trùng, người báo bổ sung thông tin
+
+Chi tiết API: `API_DOCUMENTATION.md` mục 12. Backend đã xong và đã test (unit + E2E trên Postgres local). Phần dưới là việc của FE / mobile.
+
+### 21.1. Đổi mức độ sau xác minh (Operator web)
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Nút **"Đổi mức độ"** trên chi tiết sự cố đã xác minh (`Verified` / `Dispatched` / `InProgress` / `Escalated`) → chọn Level 1–3, tùy chọn đổi loại, ô lý do ≥ 5 ký tự → `PUT /api/incidents/{id}/severity` | Incident detail (Operator) | Hiện `message` trả về (có thể nhắc rút bớt xe khi hạ mức) |
+| Staff nhận push "NÂNG MỨC ĐỘ SỰ CỐ → LevelX" / "Điều chỉnh mức độ" (`StatusUpdate`) | Mobile staff, web `/staff` | Làm mới thẻ nhiệm vụ khi nhận `ReceiveIncidentUpdate` |
+
+### 21.2. Yêu cầu từ hiện trường (Backup / Other)
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Nút **"Yêu cầu chi viện"** và **"Báo vấn đề khác"** trên thẻ nhiệm vụ đang chạy (`Accepted` / `EnRoute` / `OnScene`) → `POST /api/dispatch/assignments/{assignmentId}/requests` | Mobile staff, web `/staff` | Backup: số xe 1–5, loại xe (tùy chọn), mô tả (tùy chọn). Other: mô tả bắt buộc ≥ 5 ký tự. 409 → đã có yêu cầu cùng loại đang chờ |
+| Hiện trạng thái yêu cầu của đội (`GET /api/incidents/{id}/field-requests`) + nút **"Hủy yêu cầu"** (`PUT /api/field-requests/{id}/cancel`) | Mobile staff, web `/staff` | Cập nhật theo `ReceiveFieldRequest` |
+| Panel **"Yêu cầu từ hiện trường"** (`GET /api/field-requests`, cũ nhất trước, hiện `ageMinutes`, tô đỏ khi có `escalatedAt`) | Web Operator (dashboard / Live Map) | Lắng nghe `ReceiveFieldRequest` để thêm / cập nhật / bỏ dòng |
+| Nút trên mỗi yêu cầu: **Tiếp nhận** (`acknowledge`), **Giao thêm xe** (mở màn chọn xe, gọi `POST /api/dispatch/assign` kèm `fieldRequestId` — yêu cầu tự Fulfilled), **Đã đáp ứng** (`fulfill`, ghi chú tùy chọn), **Từ chối** (`decline`, lý do ≥ 5) | Web Operator | Gợi ý loại xe = `requestedUnitType`, số xe = `quantity` |
+| Push mới cho Operator ("YÊU CẦU CHI VIỆN TỪ HIỆN TRƯỜNG", `data.fieldRequestId`) và cho staff khi được phản hồi | Web + mobile | Chạm vào → mở yêu cầu |
+| Admin: ô cấu hình **"Ngưỡng chờ yêu cầu hiện trường (phút)"** = `fieldRequestThresholdMinutes` trong form `PUT /api/settings/escalation` (> 0, bước 0.5, mặc định 3) | Web Admin — Settings | Quá ngưỡng → Admin nhận push `Escalation` "YÊU CẦU HIỆN TRƯỜNG QUÁ HẠN" |
+
+### 21.3. Gom báo cáo trùng (BR-07)
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Form SOS: thêm lựa chọn **"Loại sự cố: Cháy nổ / Tai nạn / Không rõ"** → gửi `reportedEventType` (`FireExplosion` / `TrafficAccident` / bỏ trống) | Mobile citizen + web citizen | Giúp gom đúng và tách đúng |
+| Sau khi gửi SOS, nếu response có `linkedTo`: hiện màn **"Sự cố này đã được báo"** (tiêu đề, địa chỉ, khoảng cách, biển số các xe đang tới) + nút **"Đây là sự cố khác"** → `PUT /api/incidents/{id}/unlink` (khách gửi kèm `guestCancellationToken`) | Mobile citizen + web citizen | Vẫn cho người dân bổ sung thông tin (21.4) và theo dõi sự cố gốc qua `linkedTo.incidentId` |
+| Hiển thị trạng thái mới **`Linked`** (9) ở lịch sử báo cáo / chi tiết | Citizen, Operator, Admin | Gợi ý nhãn vi "Đã gộp vào sự cố đang xử lý" / en "Linked to an ongoing incident". Báo cáo `Cancelled` + `cancellationReason = Duplicate` hiện link tới `linkedToIncidentId` |
+| Chi tiết sự cố gốc: badge **"+N người cùng báo"** (`linkedReportCount`) và tab **"Báo cáo đã gom"** (`GET /api/incidents/{id}/linked-reports`) với nút **Tách** (`unlink`) / **Xác nhận trùng** (`confirm-duplicate`) | Web Operator | Dòng có `isOutlier = true` tô vàng "Cần kiểm tra"; hiện `quickCheckEventType` (YOLO) và ảnh |
+| Báo cáo được tách hoặc được trả về khi gốc bị hủy sẽ phát `ReceiveNewIncident` như SOS mới | Web Operator | Không cần xử lý riêng |
+| Admin: form **"Gom báo cáo trùng"** (`GET/PUT /api/settings/duplicate-detection`: bật / tắt, bán kính 20–2000 m, khung thời gian 1–120 phút) | Web Admin — Settings | Mặc định bật, 200 m, 15 phút |
+
+Lưu ý triển khai: kiểm tra nhanh ảnh của báo cáo gom dùng YOLO (`YoloService:Enabled = true`). YOLO tắt thì báo cáo có ảnh vẫn được gom theo vị trí / thời gian / loại, chỉ không có lớp tự tách bằng ảnh.
+
+### 21.4. Người báo bổ sung thông tin
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Nút **"Bổ sung thông tin"** trên màn theo dõi SOS (kể cả khi `Linked`) → ô ghi chú + chọn tối đa 5 ảnh (upload qua `POST /api/media/upload` trước) → `POST /api/incidents/{id}/supplements` | Mobile citizen + web citizen | Khách gửi kèm `guestCancellationToken`. Ẩn nút khi sự cố `Completed` / `Cancelled`. 429 → đã đủ 20 lần |
+| Mục **"Thông tin bổ sung từ người báo"** (`GET /api/incidents/{id}/supplements`) + lắng nghe `ReceiveIncidentSupplement` | Web Operator (chi tiết sự cố), mobile staff + web `/staff` (thẻ nhiệm vụ) | Staff đang xử lý nhận push ưu tiên cao "Người báo bổ sung thông tin hiện trường" |
+
+### 21.5. Audit + i18n
+
+* Trang audit trail sự cố: thêm nhãn / icon cho `AuditAction` 19–30 (`SeverityChanged`, `FieldRequestCreated`, `FieldRequestAcknowledged`, `FieldRequestFulfilled`, `FieldRequestDeclined`, `FieldRequestCancelled`, `FieldRequestEscalated`, `ReportLinked`, `ReportUnlinked`, `DuplicateConfirmed`, `SupplementAdded`, `LinkedReportsRestored`).
+* Enum mới cho TypeScript: `FieldRequestType { Backup, Other }`, `FieldRequestStatus { Open, Acknowledged, Fulfilled, Declined, Cancelled }`, `IncidentStatus.Linked`.
+* Sự kiện SignalR mới trên `/hubs/incidents`: `ReceiveFieldRequest`, `ReceiveIncidentSupplement`.

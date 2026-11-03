@@ -88,6 +88,23 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     /// <summary>
     /// BR-CIT-01: người dùng / số điện thoại đã có sự cố đang hoạt động được tạo sau thời điểm since
     /// </summary>
+    /// <summary>
+    /// Sự cố gốc ứng viên để gom báo cáo trùng: đang hoạt động (không phải Linked), có báo cáo gần nhất từ sinceUtc,
+    /// nằm trong khung tọa độ (lọc khoảng cách chính xác ở tầng Application)
+    /// </summary>
+    Task<IReadOnlyList<Incident>> FindLinkCandidatesAsync(double minLat, double maxLat, double minLng, double maxLng, DateTime sinceUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Các báo cáo đang gom (Linked) hoặc đã xác nhận trùng vào một sự cố gốc
+    /// </summary>
+    Task<IReadOnlyList<Incident>> GetLinkedReportsAsync(Guid parentIncidentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tăng / giảm số báo cáo gom vào sự cố gốc (atomic, không qua xmin để SOS mới không bị lỗi xung đột);
+    /// latestReportAt khác null → cập nhật mốc báo cáo gần nhất
+    /// </summary>
+    Task AdjustLinkedReportCountAsync(Guid parentIncidentId, int delta, DateTime? latestReportAt, CancellationToken cancellationToken = default);
+
     Task<bool> HasRecentActiveIncidentAsync(Guid? userId, string? normalizedPhone, DateTime sinceUtc, CancellationToken cancellationToken = default);
 
     /// <summary>

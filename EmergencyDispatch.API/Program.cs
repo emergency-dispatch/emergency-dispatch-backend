@@ -152,6 +152,8 @@ builder.Services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
 builder.Services.AddScoped<IStationTeamRepository, StationTeamRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<ISystemAuditLogRepository, SystemAuditLogRepository>();
+builder.Services.AddScoped<IFieldRequestRepository, FieldRequestRepository>();
+builder.Services.AddScoped<IIncidentSupplementRepository, IncidentSupplementRepository>();
 
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();
@@ -187,6 +189,8 @@ builder.Services.AddScoped<EmergencyDispatch.Infrastructure.Services.YoloClassif
 builder.Services.AddScoped<IAiClassificationService, EmergencyDispatch.Infrastructure.Services.DualEngineAiService>();
 builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure.Services.CloudinaryMediaService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
+builder.Services.AddScoped<IIncidentFollowUpService, IncidentFollowUpService>();
+builder.Services.AddScoped<IFieldRequestService, FieldRequestService>();
 builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();
 builder.Services.AddScoped<ITrafficService, TrafficService>();
@@ -329,6 +333,13 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("traffic-report", httpContext => RateLimitPartition.GetFixedWindowLimiter(
         httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+
+    // Sau khi gửi SOS (khách cũng dùng được): bổ sung thông tin / "Đây là sự cố khác" — 10 lần / phút / tài khoản hoặc IP,
+    // policy riêng để không ăn vào hạn mức SOS
+    options.AddPolicy("incident-followup", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 
     // Upload media (cho phép khách gửi SOS): 30 tệp / phút / tài khoản hoặc IP
     options.AddPolicy("upload", httpContext => RateLimitPartition.GetFixedWindowLimiter(

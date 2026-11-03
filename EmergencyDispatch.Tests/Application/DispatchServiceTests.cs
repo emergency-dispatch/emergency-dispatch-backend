@@ -24,6 +24,8 @@ public class DispatchServiceTests
     private readonly Mock<IRoutingService> _routing = new();
     private readonly Mock<ICurrentUserContext> _me = new();
     private readonly Mock<IEscalationRepository> _esc = new();
+    private readonly Mock<IIncidentFollowUpService> _followUp = new();
+    private readonly Mock<IFieldRequestService> _fieldRequests = new();
     private readonly Mock<IIncidentLockScope> _lock = new();
     private readonly List<RescueUnit> _fleet = new();
     private readonly List<DispatchAssignment> _active = new();
@@ -50,7 +52,7 @@ public class DispatchServiceTests
         _me.SetupGet(m => m.Role).Returns(UserRole.Operator);
         _me.SetupGet(m => m.StationId).Returns(_stationA);
         _svc = new DispatchService(_assign.Object, _units.Object, _incidents.Object, _users.Object, _rt.Object, _settings.Object,
-            _notify.Object, NullLogger<DispatchService>.Instance, _routing.Object, _me.Object, _esc.Object);
+            _notify.Object, NullLogger<DispatchService>.Instance, _routing.Object, _me.Object, _esc.Object, _followUp.Object, _fieldRequests.Object);
     }
 
     private RescueUnit Unit(RescueUnitType type, double kmNorth, RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null)
@@ -515,5 +517,54 @@ public class DispatchServiceTests
     public async Task Resolve_UnknownAssignment_Fails()
     {
         Assert.False((await _svc.ResolveAssignmentAsync(Guid.NewGuid(), Report("https://x/a.jpg"), Guid.NewGuid())).Success);
+    }
+
+    // ===================== Field requests / linked reports hooks =====================
+    [Fact]
+    public async Task Assign_WithBackupFieldRequest_AllowsExtraUnitAndMarksFulfilled()
+    {
+        var inc = Incident(tweak: i => i.DispatchAssignments.Add(new DispatchAssignment { Status = DispatchAssignmentStatus.OnScene, RescueUnitId = Guid.NewGuid() }));
+        var extra = Unit(RescueUnitType.Ambulance, 2);
+        var requestId = Guid.NewGuid();
+        _fieldRequests.Setup(f => f.ValidateForDispatchAsync(requestId, inc.Id, It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = extra.Id, FieldRequestId = requestId }, _operatorId);
+
+        Assert.True(r.Success);
+        _fieldRequests.Verify(f => f.MarkFulfilledByDispatchAsync(requestId, It.Is<IReadOnlyCollection<string>>(p => p.Contains(extra.PlateNumber)), _operatorId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Assign_WithInvalidFieldRequest_IsRejected()
+    {
+        var inc = Incident();
+        var u = Unit(RescueUnitType.Ambulance, 2);
+        var requestId = Guid.NewGuid();
+        _fieldRequests.Setup(f => f.ValidateForDispatchAsync(requestId, inc.Id, It.IsAny<CancellationToken>())).ReturnsAsync("Yêu cầu đã đóng");
+
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = u.Id, FieldRequestId = requestId }, _operatorId);
+
+        Assert.False(r.Success);
+        Assert.Empty(inc.DispatchAssignments);
+        _fieldRequests.Verify(f => f.MarkFulfilledByDispatchAsync(It.IsAny<Guid>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Resolve_ClosingIncidentWithLinkedReports_ClosesThem()
+    {
+        var (a, inc, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        inc.LinkedReportCount = 2;
+
+        await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id);
+
+        _followUp.Verify(f => f.CloseLinkedReportsAsync(inc.Id, staff.Id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Resolve_NoLinkedReports_DoesNotCallFollowUp()
+    {
+        var (a, _, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id);
+        _followUp.Verify(f => f.CloseLinkedReportsAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

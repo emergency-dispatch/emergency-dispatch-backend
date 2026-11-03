@@ -40,7 +40,7 @@ public class IncidentServiceOperatorToolsTests
         _me.SetupGet(m => m.StationId).Returns(_q7.Id);
         _svc = new IncidentService(_incidents.Object, _users.Object, _blocked.Object, Mock.Of<IAiClassificationService>(), Mock.Of<IAiAnalysisQueue>(),
             _rt.Object, Mock.Of<INotificationService>(), new CreateIncidentDtoValidator(cfg), new CreateOperatorIncidentDtoValidator(cfg),
-            NullLogger<IncidentService>.Instance, Mock.Of<IGuestCancellationTokenService>(), _stations.Object, _settings.Object, _me.Object);
+            NullLogger<IncidentService>.Instance, Mock.Of<IGuestCancellationTokenService>(), _stations.Object, _settings.Object, _me.Object, Mock.Of<IIncidentFollowUpService>());
     }
 
     private User Actor(UserRole role, Guid? station = null)

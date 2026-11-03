@@ -30,6 +30,10 @@ public class CreateIncidentDtoValidator : AbstractValidator<CreateIncidentDto>
                 .WithMessage("Số điện thoại liên hệ không đúng định dạng Việt Nam.");
         });
 
+        RuleFor(x => x.ReportedEventType)
+            .Must(t => t is null or Domain.Enums.IncidentEventType.FireExplosion or Domain.Enums.IncidentEventType.TrafficAccident)
+            .WithMessage("Loại sự cố tự chọn chỉ nhận FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).");
+
         RuleFor(x => x.MediaUrls)
             .Must(urls => urls == null || urls.Count <= 5)
             .WithMessage("Không được đính kèm quá 5 tệp tin phương tiện cho một sự cố.");

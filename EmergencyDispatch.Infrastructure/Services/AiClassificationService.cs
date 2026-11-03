@@ -271,6 +271,12 @@ public class AiClassificationService : IAiClassificationService
     /// <summary>
     /// Gọi microservice AI cục bộ (Qwen2.5-VL-3B LoRA Adapter trên GPU nội bộ)
     /// </summary>
+    /// <summary>
+    /// Engine VLM không có bước kiểm tra nhanh (YOLO nằm ở DualEngineAiService)
+    /// </summary>
+    public Task<IncidentEventType?> QuickCheckEventTypeAsync(string mediaUrl, CancellationToken cancellationToken = default)
+        => Task.FromResult<IncidentEventType?>(null);
+
     private async Task<AiClassificationResultDto?> TryAnalyzeLocalAsync(
         string mediaUrl,
         string? additionalContext,

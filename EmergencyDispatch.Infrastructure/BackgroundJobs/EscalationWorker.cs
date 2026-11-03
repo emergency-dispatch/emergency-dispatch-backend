@@ -68,6 +68,10 @@ public sealed class EscalationWorker : BackgroundService
             {
                 _logger.LogWarning("🚨 [Escalation Engine] Đã tự động kích hoạt leo thang {Count} sự cố khẩn cấp quá hạn!", escalatedCount);
             }
+
+            // Yêu cầu từ hiện trường quá ngưỡng chưa xử lý → báo Admin (ngưỡng: settings escalation.fieldRequestThresholdMinutes)
+            var fieldRequestService = scope.ServiceProvider.GetRequiredService<IFieldRequestService>();
+            await fieldRequestService.ProcessOverdueAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

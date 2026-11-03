@@ -48,7 +48,13 @@ public enum IncidentStatus
     /// <summary>
     /// Sự cố nghiêm trọng bị leo thang lên cấp cao hơn
     /// </summary>
-    Escalated = 8
+    Escalated = 8,
+
+    /// <summary>
+    /// Báo cáo được tự gom vào một sự cố gốc (cùng chỗ, cùng lúc, cùng loại): không nằm trong hàng đợi, không chạy AI đầy đủ,
+    /// không tự leo thang. Tách ra → quay lại Pending (giữ thời điểm báo gốc); Operator xác nhận trùng → Cancelled (Duplicate)
+    /// </summary>
+    Linked = 9
 }
 
 /// <summary>
@@ -148,5 +154,17 @@ public enum AuditAction
     ReporterBlocked = 15,
     TransferredStation = 16,
     OutOfServiceArea = 17,
-    CreatedByOperator = 18
+    CreatedByOperator = 18,
+    SeverityChanged = 19,          // Operator đổi mức độ / loại sau khi đã xác minh
+    FieldRequestCreated = 20,      // Đội hiện trường gửi yêu cầu (chi viện / khác)
+    FieldRequestAcknowledged = 21,
+    FieldRequestFulfilled = 22,
+    FieldRequestDeclined = 23,
+    FieldRequestCancelled = 24,
+    FieldRequestEscalated = 25,
+    ReportLinked = 26,             // Báo cáo được tự gom vào sự cố gốc (cùng chỗ, cùng lúc)
+    ReportUnlinked = 27,           // Tách báo cáo khỏi sự cố gốc
+    DuplicateConfirmed = 28,       // Operator xác nhận báo cáo trùng
+    SupplementAdded = 29,          // Người báo bổ sung ghi chú / ảnh
+    LinkedReportsRestored = 30     // Sự cố gốc bị hủy → các báo cáo đã gom quay lại hàng đợi
 }

@@ -102,6 +102,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<SystemAuditLog> SystemAuditLogs => Set<SystemAuditLog>();
     public DbSet<StationTeam> StationTeams => Set<StationTeam>();
     public DbSet<StationTeamMember> StationTeamMembers => Set<StationTeamMember>();
+    public DbSet<FieldRequest> FieldRequests => Set<FieldRequest>();
+    public DbSet<IncidentSupplement> IncidentSupplements => Set<IncidentSupplement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -544,6 +546,29 @@ public class ApplicationDbContext : DbContext
         });
 
         // ==================== 22. TRAFFIC HOTSPOT ====================
+        modelBuilder.Entity<FieldRequest>(entity =>
+        {
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Description).HasMaxLength(1000);
+            entity.Property(r => r.ResponseNote).HasMaxLength(500);
+            entity.HasIndex(r => new { r.Status, r.CreatedAt }).HasDatabaseName("IX_FieldRequests_Status_Created");
+            entity.HasIndex(r => r.IncidentId).HasDatabaseName("IX_FieldRequests_IncidentId");
+            entity.HasOne(r => r.Incident).WithMany(i => i.FieldRequests).HasForeignKey(r => r.IncidentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.Assignment).WithMany().HasForeignKey(r => r.AssignmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.RescueUnit).WithMany().HasForeignKey(r => r.RescueUnitId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.RequestedByUser).WithMany().HasForeignKey(r => r.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(r => !r.IsDeleted);
+        });
+
+        modelBuilder.Entity<IncidentSupplement>(entity =>
+        {
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.Note).HasMaxLength(1000);
+            entity.HasIndex(s => s.IncidentId).HasDatabaseName("IX_IncidentSupplements_IncidentId");
+            entity.HasOne(s => s.Incident).WithMany(i => i.Supplements).HasForeignKey(s => s.IncidentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasQueryFilter(s => !s.IsDeleted);
+        });
+
         modelBuilder.Entity<TrafficHotspot>(entity =>
         {
             entity.HasKey(t => t.Id);

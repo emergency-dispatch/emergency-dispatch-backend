@@ -20,11 +20,13 @@ public class IncidentsController : ControllerBase
 {
     private readonly IIncidentService _incidentService;
     private readonly IDispatchService _dispatchService;
+    private readonly IIncidentFollowUpService _followUpService;
 
-    public IncidentsController(IIncidentService incidentService, IDispatchService dispatchService)
+    public IncidentsController(IIncidentService incidentService, IDispatchService dispatchService, IIncidentFollowUpService followUpService)
     {
         _incidentService = incidentService;
         _dispatchService = dispatchService;
+        _followUpService = followUpService;
     }
 
     /// <summary>
@@ -328,6 +330,79 @@ public class IncidentsController : ControllerBase
     {
         var response = await _incidentService.BlockReporterAsync(id, dto, GetCurrentUserId(), cancellationToken);
         return this.ToHttpResult(response);
+    }
+
+    // ============================== Sau tiếp nhận: mức độ, gom / tách báo cáo, bổ sung thông tin ==============================
+
+    /// <summary>
+    /// Operator / Admin đổi mức độ (và tùy chọn loại) của sự cố ĐÃ xác minh khi tình hình hiện trường thay đổi. Bắt buộc lý do ≥ 5 ký tự, ghi audit SeverityChanged
+    /// </summary>
+    [HttpPut("{id:guid}/severity")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ChangeSeverity(Guid id, [FromBody] ChangeSeverityDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _followUpService.ChangeSeverityAsync(id, dto, GetCurrentUserId(), cancellationToken));
+
+    /// <summary>
+    /// BR-07: các báo cáo đã tự gom vào sự cố này (kèm cờ isOutlier để Operator kiểm tra)
+    /// </summary>
+    [HttpGet("{id:guid}/linked-reports")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<List<LinkedReportDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLinkedReports(Guid id, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _followUpService.GetLinkedReportsAsync(id, cancellationToken));
+
+    /// <summary>
+    /// Tách báo cáo khỏi sự cố gốc ("Đây là sự cố khác"): Operator / Admin, người báo (tài khoản), hoặc khách gửi guestCancellationToken
+    /// </summary>
+    /// <remarks>Báo cáo quay lại hàng đợi với thời điểm báo gốc; có ảnh thì chạy AI đầy đủ.</remarks>
+    [HttpPut("{id:guid}/unlink")]
+    [AllowAnonymous]
+    [EnableRateLimiting("incident-followup")]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Unlink(Guid id, [FromBody] UnlinkIncidentDto? dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _followUpService.UnlinkAsync(id, dto ?? new UnlinkIncidentDto(), GetOptionalUserId(), cancellationToken));
+
+    /// <summary>
+    /// Operator xác nhận báo cáo đã gom đúng là trùng: đóng báo cáo (Cancelled, lý do Duplicate), giữ liên kết tới sự cố gốc
+    /// </summary>
+    [HttpPut("{id:guid}/confirm-duplicate")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ConfirmDuplicate(Guid id, [FromBody] ConfirmDuplicateDto? dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _followUpService.ConfirmDuplicateAsync(id, dto?.Note, GetCurrentUserId(), cancellationToken));
+
+    /// <summary>
+    /// Người báo bổ sung ghi chú / ảnh cho SOS của mình (khách gửi guestCancellationToken). Báo cáo đã gom → thông tin chuyển tới sự cố gốc
+    /// </summary>
+    [HttpPost("{id:guid}/supplements")]
+    [AllowAnonymous]
+    [EnableRateLimiting("incident-followup")]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentSupplementDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentSupplementDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentSupplementDto>), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> AddSupplement(Guid id, [FromBody] AddSupplementDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _followUpService.AddSupplementAsync(id, dto, GetOptionalUserId(), cancellationToken));
+
+    /// <summary>
+    /// Thông tin bổ sung của sự cố (kể cả từ các báo cáo đã gom vào nó)
+    /// </summary>
+    [HttpGet("{id:guid}/supplements")]
+    [Authorize(Roles = "Citizen,Operator,Admin,RescueStaff")]
+    [ProducesResponseType(typeof(ApiResponseDto<List<IncidentSupplementDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSupplements(Guid id, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _followUpService.GetSupplementsAsync(id, GetOptionalUserId(), cancellationToken));
+
+    private Guid? GetOptionalUserId()
+    {
+        var id = GetCurrentUserId();
+        return id == Guid.Empty ? null : id;
     }
 
     private Guid GetCurrentUserId()

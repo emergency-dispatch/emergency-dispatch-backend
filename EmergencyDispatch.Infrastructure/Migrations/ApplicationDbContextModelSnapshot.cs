@@ -548,6 +548,84 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.FieldRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("AcknowledgedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AcknowledgedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("EscalatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("IncidentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RequestedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("RequestedUnitType")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RescueUnitId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ResolvedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResponseNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignmentId");
+
+                    b.HasIndex("IncidentId")
+                        .HasDatabaseName("IX_FieldRequests_IncidentId");
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("RescueUnitId");
+
+                    b.HasIndex("Status", "CreatedAt")
+                        .HasDatabaseName("IX_FieldRequests_Status_Created");
+
+                    b.ToTable("FieldRequests");
+                });
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Incident", b =>
                 {
                     b.Property<Guid>("Id")
@@ -600,8 +678,20 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<bool>("IsOutOfServiceArea")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("LatestReportAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<double>("Latitude")
                         .HasColumnType("double precision");
+
+                    b.Property<double?>("LinkDistanceMeters")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime?>("LinkedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LinkedReportCount")
+                        .HasColumnType("integer");
 
                     b.Property<string>("LocationAddress")
                         .IsRequired()
@@ -623,8 +713,14 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<DateTime?>("OriginalReportTimestamp")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("QuickCheckEventType")
+                        .HasColumnType("integer");
+
                     b.Property<Guid?>("ReportedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<int?>("ReportedEventType")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ReporterName")
                         .HasMaxLength(200)
@@ -875,6 +971,43 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasDatabaseName("IX_IncidentStatusHistory_IncidentId");
 
                     b.ToTable("IncidentStatusHistories");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentSupplement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("IncidentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.PrimitiveCollection<List<string>>("MediaUrls")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid?>("ReporterUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IncidentId")
+                        .HasDatabaseName("IX_IncidentSupplements_IncidentId");
+
+                    b.ToTable("IncidentSupplements");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Notification", b =>
@@ -1728,6 +1861,41 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Incident");
                 });
 
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.FieldRequest", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.DispatchAssignment", "Assignment")
+                        .WithMany()
+                        .HasForeignKey("AssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
+                        .WithMany("FieldRequests")
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.User", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.RescueUnit", "RescueUnit")
+                        .WithMany()
+                        .HasForeignKey("RescueUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Assignment");
+
+                    b.Navigation("Incident");
+
+                    b.Navigation("RequestedByUser");
+
+                    b.Navigation("RescueUnit");
+                });
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Incident", b =>
                 {
                     b.HasOne("EmergencyDispatch.Domain.Entities.User", "CancelledByUser")
@@ -1823,6 +1991,17 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("ChangedByUser");
+
+                    b.Navigation("Incident");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentSupplement", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
+                        .WithMany("Supplements")
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Incident");
                 });
@@ -1992,9 +2171,13 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Navigation("DuplicateIncidents");
 
+                    b.Navigation("FieldRequests");
+
                     b.Navigation("MediaItems");
 
                     b.Navigation("StatusHistories");
+
+                    b.Navigation("Supplements");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.RescueUnit", b =>

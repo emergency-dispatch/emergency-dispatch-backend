@@ -130,6 +130,36 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
         => SafeAsync(() => _incidentHub.Clients.Groups(RealtimeContract.OperatorsGroup, RealtimeContract.RescuersGroup)
             .SendAsync(RealtimeContract.ReceiveTrafficHotspot, hotspot, cancellationToken), "điểm nghẽn", hotspot.Id);
 
+    public Task FieldRequestChangedAsync(FieldRequestEventDto change, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
+        {
+            var request = change.Request;
+            if (request.UnitStationId != Guid.Empty)
+            {
+                await _incidentHub.Clients.Group(RealtimeContract.StationGroup(request.UnitStationId.ToString()))
+                    .SendAsync(RealtimeContract.ReceiveFieldRequest, change, cancellationToken);
+            }
+
+            await CommandCenter(request.ResponsibleStationId, request.UnitStationId)
+                .SendAsync(RealtimeContract.ReceiveFieldRequest, change, cancellationToken);
+        }, "yêu cầu từ hiện trường", change.Request.Id);
+
+    public Task IncidentSupplementAddedAsync(IncidentSupplementDto supplement, Guid? responsibleStationId,
+        IReadOnlyCollection<Guid> assignedStationIds, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
+        {
+            foreach (var stationId in assignedStationIds.Where(id => id != Guid.Empty).Distinct())
+            {
+                await _incidentHub.Clients.Group(RealtimeContract.StationGroup(stationId.ToString()))
+                    .SendAsync(RealtimeContract.ReceiveIncidentSupplement, supplement, cancellationToken);
+            }
+
+            await CommandCenter(responsibleStationId, assignedStationIds.ToArray())
+                .SendAsync(RealtimeContract.ReceiveIncidentSupplement, supplement, cancellationToken);
+            await _incidentHub.Clients.Group(RealtimeContract.IncidentGroup(supplement.TargetIncidentId))
+                .SendAsync(RealtimeContract.ReceiveIncidentSupplement, supplement, cancellationToken);
+        }, "thông tin bổ sung", supplement.TargetIncidentId);
+
     public Task TrafficTaskChangedAsync(TrafficTaskEventDto task, CancellationToken cancellationToken = default)
         => SafeAsync(async () =>
         {
