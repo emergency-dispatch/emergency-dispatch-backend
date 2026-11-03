@@ -1016,3 +1016,19 @@ Dùng khi Operator biết có sự cố từ bên ngoài (điện thoại, bộ 
 | Xử lý response | `data.incident` là sự cố mới. `dispatchSucceeded = true` → hiện "Đã điều N xe". `false` → hiện `dispatchMessage` và mở lại bước chọn xe (sự cố **đã được tạo**, không tạo lại). `null` → không yêu cầu điều xe |
 | Hiển thị nguồn | `IncidentResponseDto` có trường mới **`source`**. Khác `CitizenApp` → gắn nhãn, VD "Operator tạo · Điện thoại", để phân biệt với SOS từ người dân |
 | Realtime | Không cần làm gì thêm: các Operator khác nhận `ReceiveNewIncident` như SOS thường, Staff nhận `ReceiveJobAssigned` nếu có điều xe |
+
+---
+
+## 19. Cập nhật 03/11/2026: Operator xem nhân viên chưa có trạm ("Add existing staff")
+
+**Lỗi:** nút "Add existing staff" ở `StationTeamsPage.tsx` không bao giờ hiện. `stationTeamService.loadStaff()` gọi `GET /api/users?role=RescueStaff`, nhưng với Operator API này chỉ trả nhân viên **thuộc trạm của Operator**, nên `candidates` (nhân viên `!stationId`) luôn rỗng.
+
+**Backend đã thêm API mới** **`GET /api/users/unassigned-staff?pageIndex=1&pageSize=20&search=`** (Admin, Operator). Trả nhân viên cứu hộ đang hoạt động chưa thuộc trạm nào, của toàn hệ thống. Response giống `GET /api/users` (`PaginatedResultDto<UserResponseDto>`) nhưng chỉ có thông tin liên hệ (`id`, `fullName`, `email`, `phoneNumber`, `avatarUrl`, `role`, `status`, `stationId = null`), không có CCCD / y tế. `pageSize` tối đa 100.
+
+| Việc FE (web, `src/services/stationTeamService.ts`) | Ghi chú |
+|---|---|
+| Thêm hàm tải ứng viên gọi `GET /users/unassigned-staff` (lặp trang tới khi `hasNextPage = false`, `pageSize` 100) | Giữ `loadStaff()` cũ cho danh sách nhân viên trong trạm |
+| Gộp kết quả vào `rescueStaff` (hoặc state riêng `unassignedStaff`) để `candidates` trong `StationTeamsPage.tsx` (dòng ~75) có dữ liệu | Không đổi điều kiện `!s.stationId && !s.isLocked`: API chỉ trả tài khoản `Active` |
+| Thêm nhân viên vào trạm: giữ nguyên `addStaff()` → `PUT /users/{id}/assign-station-team` với `stationId` = trạm của Operator | Backend đã cho Operator kéo nhân viên **chưa có trạm** về trạm mình; nhân viên trạm khác → 403 |
+| Sau khi thêm, tải lại cả 2 danh sách | Nhân viên vừa thêm bị đăng xuất để nhận token mới có `StationId` (đã có sẵn) |
+| Ô tìm kiếm trong hộp thoại (tùy chọn) | Truyền `search` (tên / email / SĐT) |

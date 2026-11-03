@@ -26,6 +26,11 @@ public interface IUserRepository : IGenericRepository<User>
     Task<IReadOnlyList<User>> GetByStationWithTeamAsync(Guid stationId);
 
     /// <summary>
+    /// Nhân viên cứu hộ đang hoạt động chưa được gán trạm (để Operator kéo về trạm mình)
+    /// </summary>
+    Task<(IReadOnlyList<User> Users, int TotalCount)> GetUnassignedRescueStaffPagedAsync(string? search, int pageIndex, int pageSize);
+
+    /// <summary>
     /// Người dùng đang hoạt động theo danh sách vai trò (VD gửi thông báo cho toàn bộ Operator/Admin)
     /// </summary>
     Task<IReadOnlyList<User>> GetActiveByRolesAsync(IReadOnlyCollection<EmergencyDispatch.Domain.Enums.UserRole> roles);

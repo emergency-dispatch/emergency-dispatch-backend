@@ -947,6 +947,7 @@ Backend cung cấp 2 SignalR Hubs. Khi kết nối có token, server **tự đ�
 | POST | `/api/users` | `Admin`, `Operator` | Tạo tài khoản kèm vai trò |
 | PUT | `/api/users/{id}` | `Admin`, `Operator` | Cập nhật thông tin / vai trò / trạng thái |
 | DELETE | `/api/users/{id}` | `Admin` | Xóa mềm tài khoản |
+| GET | `/api/users/unassigned-staff?pageIndex=1&pageSize=20&search=` | `Admin`, `Operator` | Nhân viên cứu hộ đang hoạt động **chưa thuộc trạm nào** (mọi Operator đều xem được). Chỉ trả thông tin liên hệ: `id`, `fullName`, `email`, `phoneNumber`, `avatarUrl`, `role`, `status`; không có CCCD / hồ sơ y tế. `pageSize` tối đa 100 |
 | PUT | `/api/users/{id}/assign-station-team` | `Admin`, `Operator` | Gán nhân viên vào trạm và Tổ làm việc |
 | GET | `/api/users/station/{stationId}` | `Admin`, `Operator`, `RescueStaff` | Nhân viên của trạm kèm Tổ |
 | GET | `/api/users/my-team` | `RescueStaff`, `Operator`, `Admin` | Tổ làm việc, đồng đội và xe của trạm mình |

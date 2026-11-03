@@ -131,6 +131,31 @@ public class UserService : IUserService
         return new PaginatedResultDto<UserResponseDto>(dtos, totalCount, pageIndex, pageSize);
     }
 
+    public async Task<PaginatedResultDto<UserResponseDto>> GetUnassignedStaffAsync(int pageIndex, int pageSize, string? search)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var (users, totalCount) = await _userRepository.GetUnassignedRescueStaffPagedAsync(search, pageIndex, pageSize);
+
+        // Nhân viên chưa thuộc trạm của Operator → chỉ lộ thông tin cần để liên hệ / phân công
+        var dtos = users.Select(u => new UserResponseDto
+        {
+            Id = u.Id,
+            FullName = u.FullName,
+            Email = u.Email,
+            PhoneNumber = u.PhoneNumber,
+            AvatarUrl = u.AvatarUrl,
+            Role = u.Role,
+            Status = u.Status,
+            IsEmailVerified = u.IsEmailVerified,
+            StationId = null,
+            CreatedAt = u.CreatedAt,
+            UpdatedAt = u.UpdatedAt
+        });
+
+        return new PaginatedResultDto<UserResponseDto>(dtos, totalCount, pageIndex, pageSize);
+    }
+
     public async Task<UserResponseDto> CreateUserAsync(CreateUserDto dto, UserRole actorRole)
     {
         EnsureCanManageRole(actorRole, dto.Role);

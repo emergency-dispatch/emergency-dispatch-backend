@@ -93,6 +93,7 @@ public static partial class LocalizationCatalog
         { "Không tìm thấy người dùng với Id = {0}", "User with Id = {0} was not found." },
         { "Không tìm thấy trạm cứu hộ với Id = {0}", "Rescue station with Id = {0} was not found." },
         { "Lấy danh sách người dùng thành công.", "Users retrieved successfully." },
+        { "Lấy danh sách nhân viên chưa có trạm thành công.", "Unassigned rescue staff retrieved successfully." },
         { "Lấy thông tin người dùng thành công.", "User information retrieved successfully." },
         { "Tạo người dùng thành công.", "User created successfully." },
         { "Cập nhật người dùng thành công.", "User updated successfully." },

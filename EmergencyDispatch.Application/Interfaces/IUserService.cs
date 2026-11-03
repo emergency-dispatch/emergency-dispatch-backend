@@ -25,5 +25,11 @@ public interface IUserService
     // Quản lý điều phối nhân sự, gán trạm & Tổ làm việc (Staff & Operator & Admin)
     Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto, UserRole actorRole);
     Task<IReadOnlyList<TeamMemberSummaryDto>> GetStaffByStationAsync(Guid stationId);
+
+    /// <summary>
+    /// Nhân viên cứu hộ đang hoạt động chưa thuộc trạm nào (Operator dùng để thêm nhân sự có sẵn vào trạm mình).
+    /// Chỉ trả thông tin liên hệ cơ bản, không kèm CCCD / hồ sơ y tế.
+    /// </summary>
+    Task<PaginatedResultDto<UserResponseDto>> GetUnassignedStaffAsync(int pageIndex, int pageSize, string? search);
     Task<StaffTeamResponseDto> GetMyTeamAsync(Guid userId);
 }

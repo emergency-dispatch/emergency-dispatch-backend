@@ -96,6 +96,31 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         return (users, totalCount);
     }
 
+    public async Task<(IReadOnlyList<User> Users, int TotalCount)> GetUnassignedRescueStaffPagedAsync(string? search, int pageIndex, int pageSize)
+    {
+        var query = _dbSet.Where(u => u.Role == UserRole.RescueStaff
+                                      && u.Status == UserStatus.Active
+                                      && u.StationId == null);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.Trim().ToLower();
+            query = query.Where(u =>
+                u.FullName.ToLower().Contains(searchLower) ||
+                u.Email.ToLower().Contains(searchLower) ||
+                (u.PhoneNumber != null && u.PhoneNumber.Contains(searchLower)));
+        }
+
+        var totalCount = await query.CountAsync();
+        var users = await query
+            .OrderBy(u => u.FullName)
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return (users, totalCount);
+    }
+
     public async Task<IReadOnlyList<User>> GetByStationWithTeamAsync(Guid stationId)
     {
         return await _dbSet

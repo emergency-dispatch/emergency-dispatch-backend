@@ -143,6 +143,30 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Danh sách nhân viên cứu hộ đang hoạt động chưa được gán trạm (Admin hoặc Operator).
+    /// Operator dùng để chọn nhân viên có sẵn rồi gán vào trạm mình qua PUT /api/users/{id}/assign-station-team.
+    /// </summary>
+    [HttpGet("unassigned-staff")]
+    [Authorize(Roles = $"{nameof(UserRole.Admin)},{nameof(UserRole.Operator)}")]
+    [ProducesResponseType(typeof(ApiResponseDto<PaginatedResultDto<UserResponseDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUnassignedStaff(
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        try
+        {
+            var result = await _userService.GetUnassignedStaffAsync(pageIndex, pageSize, search);
+            return Ok(ApiResponseDto<PaginatedResultDto<UserResponseDto>>.Ok(result, "Lấy danh sách nhân viên chưa có trạm thành công."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                ApiResponseDto<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
     /// Lấy thông tin chi tiết một người dùng theo Id (Admin hoặc Operator)
     /// </summary>
     [HttpGet("{id:guid}")]
