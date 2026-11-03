@@ -130,6 +130,20 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
         => SafeAsync(() => _incidentHub.Clients.Groups(RealtimeContract.OperatorsGroup, RealtimeContract.RescuersGroup)
             .SendAsync(RealtimeContract.ReceiveTrafficHotspot, hotspot, cancellationToken), "điểm nghẽn", hotspot.Id);
 
+    public Task TrafficTaskChangedAsync(TrafficTaskEventDto task, CancellationToken cancellationToken = default)
+        => SafeAsync(async () =>
+        {
+            // Chỉ nhân viên trạm có xe được giao (giống ReceiveJobAssigned)
+            if (task.UnitStationId != Guid.Empty)
+            {
+                await _incidentHub.Clients.Group(RealtimeContract.StationGroup(task.UnitStationId.ToString()))
+                    .SendAsync(RealtimeContract.ReceiveTrafficTaskAssigned, task, cancellationToken);
+            }
+
+            await CommandCenter(task.Hotspot.ResponsibleStationId, task.UnitStationId)
+                .SendAsync(RealtimeContract.ReceiveTrafficTaskAssigned, task, cancellationToken);
+        }, "nhiệm vụ giải tỏa điểm nghẽn", task.Hotspot.Id);
+
     public Task EscalationAlertAsync(EscalationAlertDto alert, CancellationToken cancellationToken = default)
         => SafeAsync(async () =>
         {

@@ -699,12 +699,49 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
 ```
 * **Response**: `200 OK` (Trả về chi tiết Hotspot và thời gian hết hạn `expiresAt`).
 
+* Điểm nghẽn mới được gán **trạm phụ trách** là trạm gần nhất (`responsibleStationId`, giống cách giao sự cố).
+
+**Vòng đời** (`status`, luồng phụ không chia cấp độ):
+```
+Active ──(assign)──► Assigned ──(resolve)──► Resolved
+  │                     │
+  ├──(hết TTL)──► Expired └──(unassign)──► Active
+  └──(resolve)──► Resolved
+```
+* `Assigned` **không tự hết hạn** (worker chỉ chuyển `Active` quá TTL sang `Expired`); `remainingMinutes = 0`.
+* Trường mới trong `TrafficHotspotResponseDto`: `status`, `responsibleStationId`, `responsibleStationName`, `assignedRescueUnitId`, `assignedUnitPlate`, `assignedUnitStationId`, `assignedAt`, `resolvedAt`, `resolutionNote`, `sourceIncidentId`. `isActive = true` khi `Active` (chưa hết hạn) hoặc `Assigned`.
+
 #### 6.2. Danh sách điểm nghẽn đang hoạt động (`GET /api/traffic/active`)
 * **Quyền hạn**: Công khai (Web CAD và App Mobile).
-* **Mô tả**: Trả về toàn bộ các điểm nóng còn hiệu lực để hiển thị lớp bản đồ cảnh báo.
+* **Mô tả**: Trả về các điểm nghẽn còn trên bản đồ: `Active` chưa hết hạn và `Assigned` (kèm biển số xe đang xử lý).
 
 #### 6.3. Giải tỏa điểm nghẽn (`PUT /api/traffic/{id}/resolve`)
 * **Quyền hạn**: `Operator`, `Admin`, `RescueStaff`
+* **Body (tùy chọn)**: `{ "note": "Đã phân luồng xong" }` (tối đa 500 ký tự). Gọi không body vẫn hợp lệ.
+* Điểm nghẽn `Active`: như cũ, mọi vai trò trên đều giải tỏa được (Operator chỉ trạm phụ trách).
+* Điểm nghẽn `Assigned`: chỉ Operator trạm phụ trách / Admin, hoặc **RescueStaff thuộc trạm của xe được giao**; khác → `403`. Xe được giao trở về `Available`.
+* Phát `ReceiveTrafficHotspot` và (nếu có đội) `ReceiveTrafficTaskAssigned` với `action = "Resolved"`. Ghi audit `TrafficResolved`.
+
+#### 6.4. Chi tiết điểm nghẽn (`GET /api/traffic/{id}`)
+* **Quyền hạn**: `Operator`, `Admin`, `RescueStaff`. Trả cả điểm nghẽn đã giải tỏa / hết hạn. Không có → `404`.
+
+#### 6.5. Giao xe / đội giải tỏa điểm nghẽn (`PUT /api/traffic/{id}/assign`)
+* **Quyền hạn**: `Operator` (điểm nghẽn và xe phải thuộc trạm mình), `Admin` (mọi trạm).
+* **Body**: `{ "rescueUnitId": "guid", "notes": "Phân luồng xe container cổng D1" }` (`notes` tùy chọn). Chấp nhận mọi loại xe (gợi ý dùng `PolicePatrol`).
+* **Điều kiện**: điểm nghẽn `Active` và chưa hết hạn; xe `Available`, không có lượt điều phối sự cố đang chạy, không đang xử lý điểm nghẽn khác.
+* **Kết quả**: điểm nghẽn → `Assigned`; xe → `Dispatched` (không được gợi ý cho sự cố tới khi giải tỏa / bị rút). Phát `ReceiveTrafficHotspot`, `ReceiveTrafficTaskAssigned` (`action = "Assigned"`, gửi nhân viên trạm của xe + trung tâm điều phối), `ReceiveRescueUnitStatus`; push notification loại `TrafficTask` tới nhân viên trạm của xe; ghi audit `TrafficTaskAssigned`.
+* **Lỗi**: `404` không thấy điểm nghẽn / xe · `403` khác trạm · `409` điểm nghẽn đã có xe, xe không sẵn sàng, hoặc bị người khác cập nhật cùng lúc · `400` điểm nghẽn đã giải tỏa / hết hạn.
+
+#### 6.6. Rút xe khỏi điểm nghẽn (`PUT /api/traffic/{id}/unassign`)
+* **Quyền hạn**: `Operator` trạm phụ trách, `Admin`.
+* **Body**: `{ "reason": "Cần xe cho sự cố cháy" }` (bắt buộc ≥ 5 ký tự). Dùng khi cần xe cho sự cố khẩn cấp (sự cố được ưu tiên hơn điểm nghẽn).
+* **Kết quả**: xe → `Available`; điểm nghẽn → `Active` (nếu đã quá TTL sẽ bị worker chuyển `Expired` ở lần quét kế tiếp). Phát `ReceiveTrafficTaskAssigned` (`action = "Unassigned"`), push `TrafficTask`, audit `TrafficTaskUnassigned`.
+
+#### 6.7. Sự kiện realtime `ReceiveTrafficTaskAssigned` (Hub `/hubs/incidents`)
+```json
+{ "action": "Assigned | Unassigned | Resolved", "rescueUnitId": "guid", "plateNumber": "51B-003.14",
+  "unitStationId": "guid", "notes": "…", "hotspot": { /* TrafficHotspotResponseDto */ }, "changedAt": "…" }
+```
 
 ---
 

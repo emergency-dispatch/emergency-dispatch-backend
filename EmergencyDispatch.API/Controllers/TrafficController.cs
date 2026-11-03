@@ -67,23 +67,46 @@ public class TrafficController : ControllerBase
     }
 
     /// <summary>
-    /// Giải tỏa thủ công một điểm nghẽn giao thông (sau khi giao thông thông thoáng hoặc dọn xong vật cản)
+    /// Chi tiết một điểm nghẽn (kể cả đã giải tỏa / hết hạn) – Operator, Admin, RescueStaff
+    /// </summary>
+    [HttpGet("{id:guid}")]
+    [Authorize(Roles = "Operator,Admin,RescueStaff")]
+    [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHotspot(Guid id, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _trafficService.GetByIdAsync(id, cancellationToken));
+
+    /// <summary>
+    /// Giao một xe đang sẵn sàng của trạm xuống phân luồng, giải tỏa điểm nghẽn (Operator trạm phụ trách, Admin).
+    /// Xe chuyển sang Dispatched (không được gợi ý cho sự cố) tới khi giải tỏa hoặc bị rút.
+    /// </summary>
+    [HttpPut("{id:guid}/assign")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AssignUnit(Guid id, [FromBody] AssignTrafficHotspotDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _trafficService.AssignUnitAsync(id, dto, CurrentUserId(), cancellationToken));
+
+    /// <summary>
+    /// Rút xe khỏi điểm nghẽn (VD: cần xe cho sự cố khẩn cấp). Lý do bắt buộc ≥ 5 ký tự. Xe về Sẵn sàng, điểm nghẽn quay lại Active
+    /// </summary>
+    [HttpPut("{id:guid}/unassign")]
+    [Authorize(Roles = "Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UnassignUnit(Guid id, [FromBody] UnassignTrafficHotspotDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _trafficService.UnassignUnitAsync(id, dto, CurrentUserId(), cancellationToken));
+
+    /// <summary>
+    /// Giải tỏa điểm nghẽn (sau khi giao thông thông thoáng hoặc dọn xong vật cản). Body tùy chọn: { "note": "..." }.
+    /// Điểm nghẽn đã giao đội: chỉ Operator / Admin hoặc nhân viên trạm của xe được giao. Xe được giao trở về Sẵn sàng.
     /// </summary>
     [HttpPut("{id:guid}/resolve")]
     [Authorize(Roles = "Operator,Admin,RescueStaff")]
     [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<TrafficHotspotResponseDto>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> ResolveHotspot(Guid id, CancellationToken cancellationToken)
-    {
-        var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var userId = Guid.TryParse(claim, out var guid) ? guid : Guid.Empty;
+    public async Task<IActionResult> ResolveHotspot(Guid id, [FromBody] ResolveTrafficHotspotDto? dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _trafficService.ResolveHotspotAsync(id, CurrentUserId(), dto?.Note, cancellationToken));
 
-        var result = await _trafficService.ResolveHotspotAsync(id, userId, cancellationToken);
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
-    }
+    private Guid CurrentUserId()
+        => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
 }

@@ -27,6 +27,33 @@ public enum TrafficCongestionLevel
 }
 
 /// <summary>
+/// Vòng đời điểm nghẽn giao thông (luồng phụ, không chia cấp độ nghiêm trọng)
+/// Active → Assigned (Operator giao đội xử lý) → Resolved; Active → Expired (hết TTL); Assigned → Active (rút đội)
+/// </summary>
+public enum TrafficHotspotStatus
+{
+    /// <summary>
+    /// Đang hiển thị trên bản đồ, chưa có đội xử lý
+    /// </summary>
+    Active = 0,
+
+    /// <summary>
+    /// Đã giao một xe / đội xuống phân luồng, giải tỏa (không tự hết hạn khi đang xử lý)
+    /// </summary>
+    Assigned = 1,
+
+    /// <summary>
+    /// Đã giải tỏa (Operator hoặc đội được giao xác nhận)
+    /// </summary>
+    Resolved = 2,
+
+    /// <summary>
+    /// Hết thời gian hiển thị (TTL) khi chưa có đội xử lý
+    /// </summary>
+    Expired = 3
+}
+
+/// <summary>
 /// Trạng thái đánh giá và xác thực ùn tắc giao thông tại hiện trường sự cố
 /// Tách bạch giữa nhận định ban đầu của AI và quyết định xác thực của Điều phối viên (Human-in-the-loop).
 /// </summary>

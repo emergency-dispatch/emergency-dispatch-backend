@@ -38,6 +38,9 @@ public static class RealtimeContract
     /// <summary>Điểm nghẽn giao thông mới hoặc giải tỏa trên Live Map</summary>
     public const string ReceiveTrafficHotspot = "ReceiveTrafficHotspot";
 
+    /// <summary>Giao / rút / hoàn tất nhiệm vụ giải tỏa điểm nghẽn (nhân viên trạm của xe + trung tâm điều phối)</summary>
+    public const string ReceiveTrafficTaskAssigned = "ReceiveTrafficTaskAssigned";
+
     /// <summary>Cảnh báo khẩn cấp leo thang sự cố quá hạn phản hồi (gửi tới Operator và Admin kèm âm thanh báo động)</summary>
     public const string ReceiveEscalationAlert = "ReceiveEscalationAlert";
 

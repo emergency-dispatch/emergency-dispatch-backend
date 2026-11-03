@@ -1298,6 +1298,15 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("AssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AssignedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssignedRescueUnitId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("CongestionLevel")
                         .HasColumnType("integer");
 
@@ -1343,11 +1352,24 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<DateTime?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("ResolvedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ResponsibleStationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SourceIncidentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -1359,6 +1381,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssignedRescueUnitId")
+                        .HasDatabaseName("IX_TrafficHotspots_AssignedUnit");
+
                     b.HasIndex("ExpiresAt")
                         .HasDatabaseName("IX_TrafficHotspots_ExpiresAt");
 
@@ -1367,6 +1392,14 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("ReportedByUserId")
                         .HasDatabaseName("IX_TrafficHotspots_ReportedBy");
+
+                    b.HasIndex("ResponsibleStationId")
+                        .HasDatabaseName("IX_TrafficHotspots_Station");
+
+                    b.HasIndex("SourceIncidentId");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_TrafficHotspots_Status");
 
                     b.ToTable("TrafficHotspots");
                 });
@@ -1893,12 +1926,31 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.TrafficHotspot", b =>
                 {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.RescueUnit", "AssignedRescueUnit")
+                        .WithMany()
+                        .HasForeignKey("AssignedRescueUnitId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EmergencyDispatch.Domain.Entities.User", "ReportedByUser")
                         .WithMany("TrafficHotspots")
                         .HasForeignKey("ReportedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Station", "ResponsibleStation")
+                        .WithMany()
+                        .HasForeignKey("ResponsibleStationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Incident", null)
+                        .WithMany()
+                        .HasForeignKey("SourceIncidentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("AssignedRescueUnit");
+
                     b.Navigation("ReportedByUser");
+
+                    b.Navigation("ResponsibleStation");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>

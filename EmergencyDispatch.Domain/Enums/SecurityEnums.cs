@@ -36,5 +36,11 @@ public enum SystemAuditAction
     SettingsUpdated = 7,
     Unblocked = 8,
     BlockExtended = 9,
-    Exported = 10
+    Exported = 10,
+    /// <summary>Operator giao xe / đội xử lý điểm nghẽn giao thông</summary>
+    TrafficTaskAssigned = 11,
+    /// <summary>Operator rút xe / đội khỏi điểm nghẽn</summary>
+    TrafficTaskUnassigned = 12,
+    /// <summary>Điểm nghẽn được giải tỏa</summary>
+    TrafficResolved = 13
 }

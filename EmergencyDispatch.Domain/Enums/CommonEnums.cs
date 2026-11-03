@@ -18,5 +18,7 @@ public enum NotificationType
     JobAssigned = 1,
     StatusUpdate = 2,
     Escalation = 3,
-    System = 4
+    System = 4,
+    /// <summary>Được giao / rút khỏi nhiệm vụ phân luồng, giải tỏa điểm nghẽn giao thông</summary>
+    TrafficTask = 5
 }

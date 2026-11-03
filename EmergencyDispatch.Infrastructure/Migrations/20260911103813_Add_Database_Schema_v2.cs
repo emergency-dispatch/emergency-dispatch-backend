@@ -183,11 +183,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                 type: "integer",
                 nullable: true);
 
-            migrationBuilder.AddColumn<DateTime>(
-                name: "ClosedAt",
-                table: "Incidents",
-                type: "timestamp with time zone",
-                nullable: true);
+            // Migration 20260911060625 (nhánh song song) cũng thêm cột này → dùng IF NOT EXISTS để cài trên DB trống không lỗi.
+            // DB đã chạy cả 2 migration (Neon) không bị ảnh hưởng vì lịch sử đã ghi nhận.
+            migrationBuilder.Sql("ALTER TABLE \"Incidents\" ADD COLUMN IF NOT EXISTS \"ClosedAt\" timestamp with time zone NULL;");
 
             migrationBuilder.AddColumn<long>(
                 name: "DispatchTimeMs",

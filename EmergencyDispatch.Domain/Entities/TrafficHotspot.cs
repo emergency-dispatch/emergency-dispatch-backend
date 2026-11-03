@@ -78,4 +78,43 @@ public class TrafficHotspot : BaseEntity
     /// Người giải tỏa điểm nghẽn (Operator hoặc tuần tra viên)
     /// </summary>
     public Guid? ResolvedByUserId { get; set; }
+
+    /// <summary>
+    /// Trạng thái vòng đời (IsActive = true khi Active hoặc Assigned)
+    /// </summary>
+    public TrafficHotspotStatus Status { get; set; } = TrafficHotspotStatus.Active;
+
+    /// <summary>
+    /// Trạm phụ trách (trạm gần nhất theo vị trí). Operator chỉ giao đội cho điểm nghẽn của trạm mình
+    /// </summary>
+    public Guid? ResponsibleStationId { get; set; }
+    public Station? ResponsibleStation { get; set; }
+
+    /// <summary>
+    /// Xe / đội đang được giao xuống phân luồng, giải tỏa điểm nghẽn
+    /// </summary>
+    public Guid? AssignedRescueUnitId { get; set; }
+    public RescueUnit? AssignedRescueUnit { get; set; }
+
+    /// <summary>
+    /// Operator đã giao đội và thời điểm giao
+    /// </summary>
+    public Guid? AssignedByUserId { get; set; }
+    public DateTime? AssignedAt { get; set; }
+
+    /// <summary>
+    /// Ghi chú khi giải tỏa (kết quả xử lý của đội / Operator)
+    /// </summary>
+    public string? ResolutionNote { get; set; }
+
+    /// <summary>
+    /// Sự cố gốc nếu điểm nghẽn được tạo từ đánh giá kẹt xe trên ảnh một sự cố (tùy chọn)
+    /// </summary>
+    public Guid? SourceIncidentId { get; set; }
+
+    /// <summary>
+    /// Điểm nghẽn còn nằm trên bản đồ: đang chờ xử lý (chưa hết TTL) hoặc đang có đội xử lý
+    /// </summary>
+    public bool IsOpenAt(DateTime utcNow)
+        => Status == TrafficHotspotStatus.Assigned || (Status == TrafficHotspotStatus.Active && ExpiresAt > utcNow);
 }

@@ -557,6 +557,25 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(t => t.IsActive).HasDatabaseName("IX_TrafficHotspots_IsActive");
             entity.HasIndex(t => t.ExpiresAt).HasDatabaseName("IX_TrafficHotspots_ExpiresAt");
             entity.HasIndex(t => t.ReportedByUserId).HasDatabaseName("IX_TrafficHotspots_ReportedBy");
+            entity.Property(t => t.ResolutionNote).HasMaxLength(500);
+            entity.HasIndex(t => t.Status).HasDatabaseName("IX_TrafficHotspots_Status");
+            entity.HasIndex(t => t.AssignedRescueUnitId).HasDatabaseName("IX_TrafficHotspots_AssignedUnit");
+            entity.HasIndex(t => t.ResponsibleStationId).HasDatabaseName("IX_TrafficHotspots_Station");
+
+            entity.HasOne(t => t.ResponsibleStation)
+                  .WithMany()
+                  .HasForeignKey(t => t.ResponsibleStationId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(t => t.AssignedRescueUnit)
+                  .WithMany()
+                  .HasForeignKey(t => t.AssignedRescueUnitId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne<Incident>()
+                  .WithMany()
+                  .HasForeignKey(t => t.SourceIncidentId)
+                  .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(t => t.ReportedByUser)
                   .WithMany(u => u.TrafficHotspots)

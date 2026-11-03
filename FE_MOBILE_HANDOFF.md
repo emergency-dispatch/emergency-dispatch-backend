@@ -1032,3 +1032,23 @@ Dùng khi Operator biết có sự cố từ bên ngoài (điện thoại, bộ 
 | Thêm nhân viên vào trạm: giữ nguyên `addStaff()` → `PUT /users/{id}/assign-station-team` với `stationId` = trạm của Operator | Backend đã cho Operator kéo nhân viên **chưa có trạm** về trạm mình; nhân viên trạm khác → 403 |
 | Sau khi thêm, tải lại cả 2 danh sách | Nhân viên vừa thêm bị đăng xuất để nhận token mới có `StationId` (đã có sẵn) |
 | Ô tìm kiếm trong hộp thoại (tùy chọn) | Truyền `search` (tên / email / SĐT) |
+
+---
+
+## 20. Cập nhật 03/11/2026: giao đội giải tỏa điểm nghẽn giao thông (Traffic Hotspot)
+
+Điểm nghẽn (hotspot) vẫn là **luồng phụ, không chia cấp độ**, nhưng giờ Operator có thể **giao một xe / đội xuống phân luồng, giải tỏa**. Chi tiết API: `API_DOCUMENTATION.md` mục 6.1–6.7.
+
+Vòng đời: `Active → Assigned → Resolved`, `Active → Expired` (hết TTL), `Assigned → Active` (rút đội). Hotspot `Assigned` không tự hết hạn.
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Hiển thị `status` + `assignedUnitPlate` trên marker / popup hotspot | Web Live Map (Operator) | Gợi ý màu: Active (cam), Assigned (xanh dương + biển số xe). Dùng `isActive` / `status` thay vì tự tính từ `expiresAt` |
+| Nút **"Giao đội xử lý"** trên popup hotspot `Active` của trạm mình → chọn xe `Available` của trạm (ưu tiên `PolicePatrol`) → `PUT /api/traffic/{id}/assign` `{ rescueUnitId, notes }` | Web Live Map | 409 → hiện `message` (xe vừa bận / hotspot đã có xe) và tải lại |
+| Nút **"Rút đội"** (hotspot `Assigned`) → hỏi lý do ≥ 5 ký tự → `PUT /api/traffic/{id}/unassign` `{ reason }` | Web Live Map | Dùng khi cần xe cho sự cố khẩn cấp |
+| Nút **"Đã giải tỏa"** → `PUT /api/traffic/{id}/resolve` kèm ô ghi chú tùy chọn `{ note }` | Web (Operator) + cổng `/staff` + mobile staff | Hotspot `Assigned`: chỉ staff trạm của xe được giao (khác trạm → 403) |
+| Lắng nghe **`ReceiveTrafficTaskAssigned`** (`action`: `Assigned` / `Unassigned` / `Resolved`) | Staff (web `/staff`, mobile) + Operator | Staff: `Assigned` → hiện thẻ nhiệm vụ "Giải tỏa ùn tắc" (tiêu đề, địa chỉ, mức kẹt, `notes`), có nút "Đã giải tỏa". `Unassigned` / `Resolved` → ẩn thẻ |
+| Push notification loại mới **`TrafficTask`** (`data.hotspotId`, `data.action`) | Mobile staff | Chạm vào → mở thẻ nhiệm vụ giải tỏa |
+| Trang Audit (admin): thêm nhãn cho 3 action mới `TrafficTaskAssigned`, `TrafficTaskUnassigned`, `TrafficResolved`, entity `TrafficHotspot` | `auditMeta.ts` + i18n vi/en `admin/monitoring.ts` | Hiện đang không có icon / nhãn cho các giá trị này |
+| Nút "Báo kẹt xe" ở cổng staff đang ghi "Chưa có API" | `StaffQuickActionPanel.tsx` | API đã có từ trước: `POST /api/traffic/report` |
+| Citizen báo kẹt xe (UC-24) | Web citizen + mobile | Chưa client nào gọi `POST /api/traffic/report` |

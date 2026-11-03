@@ -37,6 +37,11 @@ public interface IRealtimeNotifier
     Task TrafficHotspotReportedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Giao / rút / hoàn tất nhiệm vụ giải tỏa điểm nghẽn: gửi tới nhân viên trạm của xe và trung tâm điều phối (ReceiveTrafficTaskAssigned)
+    /// </summary>
+    Task TrafficTaskChangedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficTaskEventDto task, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Cảnh báo leo thang: cấp 1 → Operator trạm phụ trách + Admin; cấp 2 → mọi Operator (BR-17)
     /// </summary>
     Task EscalationAlertAsync(EscalationAlertDto alert, CancellationToken cancellationToken = default);
