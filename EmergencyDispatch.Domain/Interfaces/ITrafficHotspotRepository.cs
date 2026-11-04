@@ -13,6 +13,17 @@ public interface ITrafficHotspotRepository : IGenericRepository<TrafficHotspot>
     Task<IReadOnlyList<TrafficHotspot>> GetActiveHotspotsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Điểm nghẽn Blocked còn Active (chưa giao đội, chưa hết hạn), tạo trước cutoff và chưa leo thang
+    /// </summary>
+    Task<IReadOnlyList<TrafficHotspot>> GetEscalatableAsync(DateTime cutoffUtc, DateTime nowUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Đánh dấu leo thang nguyên tử: chỉ thành công khi điểm nghẽn vẫn Active và chưa leo thang
+    /// (Operator có thể vừa giao đội trong lúc worker quét)
+    /// </summary>
+    Task<bool> TryMarkEscalatedAsync(Guid id, DateTime nowUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Chi tiết điểm nghẽn kèm người báo, trạm phụ trách và xe được giao
     /// </summary>
     Task<TrafficHotspot?> GetWithDetailsAsync(Guid id, CancellationToken cancellationToken = default);

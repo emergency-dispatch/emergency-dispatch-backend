@@ -21,6 +21,8 @@ public class StationServiceTests
     public StationServiceTests()
     {
         _stations.Setup(s => s.AddAsync(It.IsAny<Station>())).ReturnsAsync((Station s) => { _all.Add(s); return s; });
+        _stations.Setup(s => s.ExistsAsync(It.IsAny<Expression<Func<Station, bool>>>()))
+            .ReturnsAsync((Expression<Func<Station, bool>> p) => _all.Any(p.Compile()));
         _stations.Setup(s => s.GetAllAsync(It.IsAny<Expression<Func<Station, bool>>?>(), It.IsAny<Func<IQueryable<Station>, IQueryable<Station>>?>()))
             .ReturnsAsync((Expression<Func<Station, bool>>? p, Func<IQueryable<Station>, IQueryable<Station>>? _) => p == null ? _all : _all.Where(p.Compile()).ToList());
         _svc = new StationService(_stations.Object, _users.Object, _audit.Object, _sessions.Object);
@@ -45,6 +47,96 @@ public class StationServiceTests
     private static CreateStationDto NewDto(Guid? head = null) => new() { Name = " Trạm Q7 ", Address = " 1 NVL ", Latitude = 10.73, Longitude = 106.72, HeadOperatorId = head };
 
     private static UpdateStationDto UpdDto(Guid? head = null) => new() { Name = "Q7", Address = "a", Latitude = 10.7, Longitude = 106.7, HeadOperatorId = head, CoverageRadiusKm = 8 };
+
+    [Fact]
+    public async Task Create_WithoutCode_GeneratesSmallestFreeCode()
+    {
+        Existing(s => { s.Name = "A"; s.Code = "ST-001"; });
+        Existing(s => { s.Name = "B"; s.Code = "ST-003"; });
+
+        var dto = await _svc.CreateAsync(NewDto());
+
+        Assert.Equal("ST-002", dto.Code);
+    }
+
+    [Fact]
+    public async Task Create_WithCode_IsNormalizedToUpperCase()
+    {
+        var dto = NewDto();
+        dto.Code = "  htp-q7 ";
+
+        var created = await _svc.CreateAsync(dto);
+
+        Assert.Equal("HTP-Q7", created.Code);
+    }
+
+    [Fact]
+    public async Task Create_DuplicateCode_IgnoringCase_Throws()
+    {
+        Existing(s => { s.Name = "A"; s.Code = "HTP-01"; });
+        var dto = NewDto();
+        dto.Code = "htp-01";
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _svc.CreateAsync(dto));
+
+        Assert.Contains("HTP-01", ex.Message);
+        _stations.Verify(s => s.AddAsync(It.IsAny<Station>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_DuplicateName_Throws()
+    {
+        Existing(s => { s.Name = "Trạm Q7"; s.Code = "ST-001"; });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _svc.CreateAsync(NewDto()));
+        _stations.Verify(s => s.AddAsync(It.IsAny<Station>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Update_BlankCode_KeepsCurrent_OwnCodeAndNameAreNotDuplicates()
+    {
+        var s = Existing(x => x.Code = "ST-007");
+
+        var dto = await _svc.UpdateAsync(s.Id, UpdDto());
+        var upd = UpdDto();
+        upd.Code = "st-007";
+        var again = await _svc.UpdateAsync(s.Id, upd);
+
+        Assert.Equal("ST-007", dto.Code);
+        Assert.Equal("ST-007", again.Code);
+    }
+
+    [Fact]
+    public async Task Update_CodeTakenByAnotherStation_Throws()
+    {
+        Existing(x => { x.Name = "Other"; x.Code = "ST-001"; });
+        var s = Existing(x => x.Code = "ST-002");
+        var upd = UpdDto();
+        upd.Code = "ST-001";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _svc.UpdateAsync(s.Id, upd));
+        Assert.Equal("ST-002", s.Code);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("ST-01", true)]
+    [InlineData("htp_q7", true)]
+    [InlineData("A", false)]
+    [InlineData("-ST", false)]
+    [InlineData("ST 01", false)]
+    [InlineData("ST-0123456789ABCDEFGH", false)]
+    public void CreateDto_CodeFormat(string? code, bool valid)
+    {
+        var dto = NewDto();
+        dto.Code = code;
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        var ok = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            dto, new System.ComponentModel.DataAnnotations.ValidationContext(dto), results, true);
+
+        Assert.Equal(valid, ok);
+    }
 
     [Fact]
     public async Task Create_WithoutHead_TrimsFields()

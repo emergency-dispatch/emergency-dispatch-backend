@@ -42,5 +42,7 @@ public enum SystemAuditAction
     /// <summary>Operator rút xe / đội khỏi điểm nghẽn</summary>
     TrafficTaskUnassigned = 12,
     /// <summary>Điểm nghẽn được giải tỏa</summary>
-    TrafficResolved = 13
+    TrafficResolved = 13,
+    /// <summary>Điểm nghẽn tê liệt (Blocked) chưa có đội xử lý quá ngưỡng — hệ thống tự leo thang</summary>
+    TrafficEscalated = 14
 }

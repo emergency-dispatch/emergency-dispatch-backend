@@ -1115,8 +1115,6 @@ Backend: cấu hình khu vực phục vụ có thêm `rejectOutside` (mặc đ�
 | **Mobile:** nối nút SOS với API thật (upload ảnh `POST /api/media/upload` → `POST /api/incidents`). Trước khi gửi gọi `GET /api/settings/service-area` (không cần đăng nhập) để kiểm tra sớm; nếu `enabled && rejectOutside` mà ngoài bán kính thì hiện thông báo *"Emergency SOS is only available within High-Tech Park"* (DS-02) | Mobile citizen (`HomeScreen.tsx`, `MediaReportModal.tsx`) | Hiện `handleSosTriggered` chỉ mở `SosSuccessModal`, chưa gọi API |
 | Admin: thêm công tắc **"Từ chối SOS ngoài khu vực"** = `rejectOutside` trong form `PUT /api/settings/service-area` | Web Admin — Settings (Service area) | Tắt = chỉ gắn cờ và cảnh báo Operator |
 | TypeScript: thêm `rejectOutside: boolean` vào `ServiceAreaDto`; thêm `OUT_OF_SERVICE_AREA` vào danh sách mã lỗi | Web + mobile | |
-<<<<<<< Updated upstream
-=======
 
 ## 23. Cập nhật 04/11/2026: mã trạm (Station Code) và chặn trùng tên / mã trạm
 
@@ -1177,4 +1175,3 @@ Mọi thao tác ghi system audit với `entityType = "Equipment"` (Created / Upd
 | Thay `mockEquipmentList` bằng `GET /api/equipment` (trạm mình); nút **"Báo hỏng"** → `PUT /status` với `Maintenance` + lý do | Web `/staff` (`StaffEquipmentView.tsx`), mobile staff (`MedicalEquipmentModal.tsx`) | Có thể lọc `rescueUnitId` = xe của tổ để hiện "thiết bị trên xe" |
 | Trang audit hệ thống: nhãn cho `entityType = Equipment` | Web Admin — Audit trail | |
 | TypeScript: type `Equipment`, enum `EquipmentCategory`, `EquipmentStatus` | Web + mobile | |
->>>>>>> Stashed changes

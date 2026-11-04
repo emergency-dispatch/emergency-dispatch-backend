@@ -50,6 +50,26 @@ public class TrafficHotspotRepository : GenericRepository<TrafficHotspot>, ITraf
         return affected == 1;
     }
 
+    public async Task<IReadOnlyList<TrafficHotspot>> GetEscalatableAsync(DateTime cutoffUtc, DateTime nowUtc, CancellationToken cancellationToken = default)
+        => await WithDetails()
+            .Where(t => t.Status == TrafficHotspotStatus.Active
+                        && t.CongestionLevel == TrafficCongestionLevel.Blocked
+                        && t.EscalatedAt == null
+                        && t.CreatedAt <= cutoffUtc
+                        && t.ExpiresAt > nowUtc)
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+    public async Task<bool> TryMarkEscalatedAsync(Guid id, DateTime nowUtc, CancellationToken cancellationToken = default)
+    {
+        var affected = await _dbSet
+            .Where(t => t.Id == id && t.Status == TrafficHotspotStatus.Active && t.EscalatedAt == null && t.ExpiresAt > nowUtc)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(t => t.EscalatedAt, nowUtc)
+                .SetProperty(t => t.UpdatedAt, nowUtc), cancellationToken);
+        return affected == 1;
+    }
+
     public async Task<int> DeactivateExpiredHotspotsAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;

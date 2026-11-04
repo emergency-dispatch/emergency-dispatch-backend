@@ -1235,6 +1235,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<double>("CoverageRadiusKm")
                         .HasColumnType("double precision");
 
@@ -1278,6 +1283,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Stations_Code")
+                        .HasFilter("\"IsDeleted\" = false");
+
                     b.HasIndex("HeadOperatorId")
                         .IsUnique()
                         .HasDatabaseName("UQ_Stations_HeadOperator")
@@ -1288,7 +1298,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("Name")
                         .IsUnique()
-                        .HasDatabaseName("IX_Stations_Name");
+                        .HasDatabaseName("IX_Stations_Name")
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("Latitude", "Longitude")
                         .HasDatabaseName("IX_Stations_GeoLocation");
@@ -1505,6 +1516,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("EscalatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");

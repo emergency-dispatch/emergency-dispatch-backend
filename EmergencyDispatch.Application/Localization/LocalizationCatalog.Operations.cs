@@ -242,8 +242,6 @@ public static partial class LocalizationCatalog
         { "Cấu hình leo thang không hợp lệ.", "Invalid escalation settings." },
         { "Đã lưu cấu hình leo thang.", "Escalation settings saved." },
         { "Cấu hình khu vực phục vụ không hợp lệ.", "Invalid service area settings." },
-<<<<<<< Updated upstream
-=======
         { "Mã trạm \"{0}\" đã tồn tại trong hệ thống.", "Station code \"{0}\" already exists in the system." },
 
         // Thiết bị cứu hộ (Equipment)
@@ -267,7 +265,6 @@ public static partial class LocalizationCatalog
         { "Ghi chú tối đa 500 ký tự.", "Notes must be at most 500 characters." },
         { "Tên trạm \"{0}\" đã tồn tại trong hệ thống.", "Station name \"{0}\" already exists in the system." },
         { "Mã trạm gồm 2–20 ký tự: chữ, số, dấu gạch ngang hoặc gạch dưới.", "Station code must be 2–20 characters: letters, digits, hyphens or underscores." },
->>>>>>> Stashed changes
         { "Đã lưu khu vực phục vụ.", "Service area saved." },
         { "Mỗi trọng số Load-Aware phải lớn hơn 0.", "Each Load-Aware weight must be greater than 0." },
         { "Tổng ba trọng số Load-Aware phải bằng 1.", "The three Load-Aware weights must sum to 1." },
