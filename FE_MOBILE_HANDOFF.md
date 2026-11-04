@@ -1133,3 +1133,21 @@ Backend: trạm có thêm `code` (VD `ST-001`), duy nhất trong các trạm ch�
 | Bảng trạm: thêm cột **Mã** và cho tìm kiếm theo mã | Web Admin — Stations (`StationsTable.tsx`) | |
 | Hiện mã trạm cạnh tên ở các chỗ chọn trạm (giao Operator phụ trách, thêm xe, thêm nhân viên) | Web Admin / Operator | Tùy chọn |
 | TypeScript: thêm `code: string` vào `Station` type; `code?: string` vào payload tạo / sửa | Web | |
+
+## 24. Cập nhật 04/11/2026: leo thang điểm nghẽn tê liệt (Blocked) chưa có đội giải tỏa
+
+Backend: `EscalationWorker` (30 giây / lần) quét thêm điểm nghẽn `congestionLevel = Blocked`, `status = Active` (chưa giao đội), chưa hết hạn, đã quá ngưỡng chờ (dùng chung ngưỡng sự cố: `dayThresholdMinutes` / `nightThresholdMinutes` trong `/api/settings/escalation`, mặc định 5 / 2.5 phút). Mỗi điểm nghẽn leo thang **tối đa 1 lần**.
+
+Khi leo thang:
+* SignalR mới trên `/hubs/incidents`: **`ReceiveTrafficHotspotEscalation`** (payload `TrafficHotspotResponseDto`) → Operator trạm phụ trách + Admin (điểm nghẽn chưa có trạm → mọi Operator).
+* Notification `type = Escalation`, `highPriority = true` (push có còi), tiêu đề "ĐIỂM NGHẼN TÊ LIỆT CHƯA CÓ ĐỘI GIẢI TỎA", `data.trafficHotspotId`.
+* `TrafficHotspotResponseDto` có thêm **`escalatedAt`** (null = chưa leo thang) ở mọi API / event điểm nghẽn.
+* System audit: `SystemAuditAction.TrafficEscalated` (14).
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Lắng nghe `ReceiveTrafficHotspotEscalation`: bíp + toast đỏ "Điểm nghẽn tê liệt chưa có đội giải tỏa", bấm vào thì mở popup điểm nghẽn trên Live Map (có nút giao đội) | Web Operator (`DispatchContext.tsx`, Live Map) | Giống cảnh báo leo thang sự cố cấp 1 (`playPriorityBeep`) |
+| Marker điểm nghẽn có `escalatedAt != null` và còn `Active`: viền đỏ nhấp nháy / badge "Quá hạn" | Web Operator — Live Map | Hết nhấp nháy khi chuyển `Assigned` |
+| Chạm notification có `data.trafficHotspotId` → mở điểm nghẽn | Web + mobile (Operator / Admin) | |
+| Trang audit hệ thống: nhãn cho `TrafficEscalated` (vi "Leo thang điểm nghẽn" / en "Traffic hotspot escalated") | Web Admin — Audit trail | |
+| TypeScript: `escalatedAt?: string` trong `TrafficHotspot` type; thêm event vào `HubEvents` | Web | |

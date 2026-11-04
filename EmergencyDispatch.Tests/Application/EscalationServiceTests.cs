@@ -22,6 +22,7 @@ public class EscalationServiceTests
     private readonly Mock<ISystemAuditService> _audit = new();
     private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<IIncidentLockScope> _lock = new();
+    private readonly Mock<ITrafficHotspotRepository> _hotspots = new();
     private readonly EscalationService _svc;
     private readonly EscalationRule _rule = new() { MinSeverityLevel = SeverityLevel.Level3, NotifyRoles = "[\"Operator\"]", IsActive = true, Description = "r" };
 
@@ -37,8 +38,24 @@ public class EscalationServiceTests
             .ReturnsAsync(true);
         _incidents.Setup(i => i.BeginLockedTransactionAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(_lock.Object);
         _users.Setup(u => u.GetActiveByRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>())).ReturnsAsync(new List<User>());
+        _hotspots.Setup(h => h.GetEscalatableAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TrafficHotspot>());
         _svc = new EscalationService(_esc.Object, _incidents.Object, _rt.Object, _settings.Object, _notify.Object,
-            NullLogger<EscalationService>.Instance, _audit.Object, _users.Object);
+            NullLogger<EscalationService>.Instance, _audit.Object, _users.Object, _hotspots.Object);
+    }
+
+    private TrafficHotspot BlockedHotspot(Guid? station = null, bool markSucceeds = true)
+    {
+        var h = new TrafficHotspot
+        {
+            Title = "Cây đổ chắn đường D2", LocationAddress = "Đường D2", CongestionLevel = TrafficCongestionLevel.Blocked,
+            Status = TrafficHotspotStatus.Active, ResponsibleStationId = station, CreatedAt = DateTime.UtcNow.AddMinutes(-6),
+            ExpiresAt = DateTime.UtcNow.AddMinutes(30)
+        };
+        _hotspots.Setup(x => x.GetEscalatableAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TrafficHotspot> { h });
+        _hotspots.Setup(x => x.TryMarkEscalatedAsync(h.Id, It.IsAny<DateTime>(), It.IsAny<CancellationToken>())).ReturnsAsync(markSucceeds);
+        return h;
     }
 
     private Incident Candidate(Guid? station = null)
@@ -202,5 +219,67 @@ public class EscalationServiceTests
         _rt.Verify(r => r.EscalationAlertAsync(It.Is<EscalationAlertDto>(a => a.Tier == 2 && a.TimeoutMinutes == 10), It.IsAny<CancellationToken>()), Times.Once);
         _notify.Verify(n => n.NotifyRolesAsync(It.Is<IReadOnlyCollection<UserRole>>(r => r.Contains(UserRole.Operator) && r.Contains(UserRole.Admin)),
             It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ---------- Traffic hotspot escalation ----------
+    [Fact]
+    public async Task Process_QueriesHotspotsWithSameThresholdCutoff()
+    {
+        DateTime cutoff = default;
+        _hotspots.Setup(h => h.GetEscalatableAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .Callback<DateTime, DateTime, CancellationToken>((c, _, _) => cutoff = c)
+            .ReturnsAsync(new List<TrafficHotspot>());
+
+        await _svc.ProcessEscalationsAsync();
+
+        Assert.InRange((DateTime.UtcNow - cutoff).TotalMinutes, 4.9, 5.1);
+    }
+
+    [Fact]
+    public async Task Process_BlockedHotspotPastThreshold_IsEscalatedAuditedAndBroadcast()
+    {
+        var h = BlockedHotspot(Guid.NewGuid());
+        NotificationRequest? sent = null;
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<Guid>, NotificationRequest, CancellationToken>((_, r, _) => sent = r);
+
+        Assert.Equal(1, await _svc.ProcessEscalationsAsync());
+
+        _rt.Verify(r => r.TrafficHotspotEscalatedAsync(It.Is<EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto>(d => d.Id == h.Id && d.EscalatedAt != null),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _audit.Verify(a => a.LogAsync(SystemAuditAction.TrafficEscalated, It.IsAny<string>(), h.Id, h.Title, It.IsAny<string>(),
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(NotificationType.Escalation, sent!.Type);
+        Assert.True(sent.HighPriority);
+        Assert.Contains("Đường D2", sent.Message);
+    }
+
+    [Fact]
+    public async Task Process_HotspotAssignedOrEscalatedMeanwhile_IsSkipped()
+    {
+        BlockedHotspot(markSucceeds: false);
+
+        Assert.Equal(0, await _svc.ProcessEscalationsAsync());
+
+        _rt.Verify(r => r.TrafficHotspotEscalatedAsync(It.IsAny<EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto>(), It.IsAny<CancellationToken>()), Times.Never);
+        _notify.Verify(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Process_HotspotRecipientsAreStationOperatorsPlusAdmins()
+    {
+        var station = Guid.NewGuid();
+        BlockedHotspot(station);
+        var admin = new User { Role = UserRole.Admin };
+        var opHere = new User { Role = UserRole.Operator, StationId = station };
+        var opElsewhere = new User { Role = UserRole.Operator, StationId = Guid.NewGuid() };
+        _users.Setup(u => u.GetActiveByRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>())).ReturnsAsync(new List<User> { admin, opHere, opElsewhere });
+        IReadOnlyCollection<Guid>? ids = null;
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<Guid>, NotificationRequest, CancellationToken>((i, _, _) => ids = i);
+
+        await _svc.ProcessEscalationsAsync();
+
+        Assert.Equal(new[] { admin.Id, opHere.Id }.OrderBy(x => x), ids!.OrderBy(x => x));
     }
 }

@@ -103,6 +103,11 @@ public class TrafficHotspot : BaseEntity
     public DateTime? AssignedAt { get; set; }
 
     /// <summary>
+    /// Thời điểm leo thang: điểm nghẽn Blocked chưa được giao đội sau ngưỡng chờ (mỗi điểm nghẽn leo thang tối đa 1 lần)
+    /// </summary>
+    public DateTime? EscalatedAt { get; set; }
+
+    /// <summary>
     /// Ghi chú khi giải tỏa (kết quả xử lý của đội / Operator)
     /// </summary>
     public string? ResolutionNote { get; set; }

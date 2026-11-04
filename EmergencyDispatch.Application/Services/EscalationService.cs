@@ -23,6 +23,7 @@ public class EscalationService : IEscalationService
     private readonly ILogger<EscalationService> _logger;
     private readonly ISystemAuditService _auditService;
     private readonly IUserRepository _userRepository;
+    private readonly ITrafficHotspotRepository _hotspotRepository;
 
     private static readonly UserRole[] DefaultNotifyRoles = { UserRole.Operator, UserRole.Admin };
     private static readonly UserRole[] AllowedNotifyRoles = { UserRole.Admin, UserRole.Operator, UserRole.RescueStaff };
@@ -35,8 +36,10 @@ public class EscalationService : IEscalationService
         INotificationService notificationService,
         ILogger<EscalationService> logger,
         ISystemAuditService auditService,
-        IUserRepository userRepository)
+        IUserRepository userRepository,
+        ITrafficHotspotRepository hotspotRepository)
     {
+        _hotspotRepository = hotspotRepository;
         _userRepository = userRepository;
         _escalationRepository = escalationRepository;
         _incidentRepository = incidentRepository;
@@ -436,7 +439,52 @@ public class EscalationService : IEscalationService
             totalEscalated++;
         }
 
+        totalEscalated += await ProcessTrafficHotspotEscalationsAsync(nowUtc, thresholdMinutes, cancellationToken);
+
         return totalEscalated;
+    }
+
+    /// <summary>
+    /// Điểm nghẽn tê liệt hoàn toàn (Blocked) chưa được giao đội giải tỏa sau ngưỡng chờ (cùng ngưỡng ngày / đêm với sự cố)
+    /// → cảnh báo Operator trạm phụ trách + Admin. Mỗi điểm nghẽn leo thang tối đa 1 lần.
+    /// </summary>
+    private async Task<int> ProcessTrafficHotspotEscalationsAsync(DateTime nowUtc, double thresholdMinutes, CancellationToken cancellationToken)
+    {
+        var escalated = 0;
+        foreach (var hotspot in await _hotspotRepository.GetEscalatableAsync(nowUtc.AddMinutes(-thresholdMinutes), nowUtc, cancellationToken))
+        {
+            // Operator có thể vừa giao đội / giải tỏa kể từ lúc lấy danh sách
+            if (!await _hotspotRepository.TryMarkEscalatedAsync(hotspot.Id, nowUtc, cancellationToken))
+            {
+                continue;
+            }
+            hotspot.EscalatedAt = nowUtc;
+
+            var elapsed = Math.Round((nowUtc - hotspot.CreatedAt).TotalMinutes, 1);
+            _logger.LogWarning("🚨 [ESCALATION TRAFFIC] Điểm nghẽn {HotspotId} ({Title}) tê liệt, chưa có đội giải tỏa sau {Elapsed} phút!",
+                hotspot.Id, hotspot.Title, elapsed);
+
+            await _auditService.LogAsync(SystemAuditAction.TrafficEscalated, AuditEntityTypes.TrafficHotspot, hotspot.Id, hotspot.Title,
+                $"Tự động leo thang điểm nghẽn tê liệt chưa có đội giải tỏa sau {elapsed} phút (ngưỡng {thresholdMinutes} phút).",
+                cancellationToken: cancellationToken);
+
+            await _realtimeNotifier.TrafficHotspotEscalatedAsync(TrafficService.MapToResponseDto(hotspot), cancellationToken);
+
+            await _notificationService.NotifyUsersAsync(
+                await ResolveRecipientsAsync(new[] { UserRole.Operator }, hotspot.ResponsibleStationId),
+                new NotificationRequest
+                {
+                    Type = NotificationType.Escalation,
+                    Title = "ĐIỂM NGHẼN TÊ LIỆT CHƯA CÓ ĐỘI GIẢI TỎA",
+                    Message = $"{hotspot.Title} — {hotspot.LocationAddress}: đường bị chặn hoàn toàn, chưa giao đội sau {elapsed} phút.",
+                    Data = new { trafficHotspotId = hotspot.Id },
+                    HighPriority = true
+                }, cancellationToken);
+
+            escalated++;
+        }
+
+        return escalated;
     }
 
     /// <summary>

@@ -409,7 +409,7 @@ public class TrafficService : ITrafficService
             ChangedAt = DateTime.UtcNow
         }, cancellationToken);
 
-    private static TrafficHotspotResponseDto MapToResponseDto(TrafficHotspot hotspot)
+    internal static TrafficHotspotResponseDto MapToResponseDto(TrafficHotspot hotspot)
     {
         return new TrafficHotspotResponseDto
         {
@@ -433,6 +433,7 @@ public class TrafficService : ITrafficService
             AssignedUnitPlate = hotspot.AssignedRescueUnit?.PlateNumber,
             AssignedUnitStationId = hotspot.AssignedRescueUnit?.StationId,
             AssignedAt = hotspot.AssignedAt,
+            EscalatedAt = hotspot.EscalatedAt,
             ResolvedAt = hotspot.ResolvedAt,
             ResolutionNote = hotspot.ResolutionNote,
             SourceIncidentId = hotspot.SourceIncidentId

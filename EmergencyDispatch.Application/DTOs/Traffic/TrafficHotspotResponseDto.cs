@@ -42,6 +42,11 @@ public class TrafficHotspotResponseDto
     public Guid? AssignedUnitStationId { get; set; }
     public DateTime? AssignedAt { get; set; }
 
+    /// <summary>
+    /// Thời điểm hệ thống leo thang (Blocked, chưa giao đội quá ngưỡng); null = chưa leo thang
+    /// </summary>
+    public DateTime? EscalatedAt { get; set; }
+
     public DateTime? ResolvedAt { get; set; }
     public string? ResolutionNote { get; set; }
     public Guid? SourceIncidentId { get; set; }

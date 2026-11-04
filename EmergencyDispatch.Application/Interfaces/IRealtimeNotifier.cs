@@ -37,6 +37,11 @@ public interface IRealtimeNotifier
     Task TrafficHotspotReportedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Điểm nghẽn tê liệt (Blocked) chưa có đội xử lý quá ngưỡng → Operator trạm phụ trách + Admin (ReceiveTrafficHotspotEscalation)
+    /// </summary>
+    Task TrafficHotspotEscalatedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Giao / rút / hoàn tất nhiệm vụ giải tỏa điểm nghẽn: gửi tới nhân viên trạm của xe và trung tâm điều phối (ReceiveTrafficTaskAssigned)
     /// </summary>
     /// <summary>
