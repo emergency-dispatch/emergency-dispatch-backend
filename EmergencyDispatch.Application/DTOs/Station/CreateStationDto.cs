@@ -4,6 +4,12 @@ namespace EmergencyDispatch.Application.DTOs.Station;
 
 public class CreateStationDto
 {
+    /// <summary>
+    /// Mã trạm (VD: ST-001). Bỏ trống thì hệ thống tự sinh; không phân biệt hoa thường, lưu dạng chữ in hoa
+    /// </summary>
+    [RegularExpression("^[A-Za-z0-9][A-Za-z0-9_-]{1,19}$", ErrorMessage = "Mã trạm gồm 2–20 ký tự: chữ, số, dấu gạch ngang hoặc gạch dưới.")]
+    public string? Code { get; set; }
+
     [Required(ErrorMessage = "Tên trạm cứu hộ không được để trống.")]
     [MaxLength(200, ErrorMessage = "Tên trạm tối đa 200 ký tự.")]
     public string Name { get; set; } = string.Empty;

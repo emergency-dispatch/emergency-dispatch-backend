@@ -1115,3 +1115,21 @@ Backend: cấu hình khu vực phục vụ có thêm `rejectOutside` (mặc đ�
 | **Mobile:** nối nút SOS với API thật (upload ảnh `POST /api/media/upload` → `POST /api/incidents`). Trước khi gửi gọi `GET /api/settings/service-area` (không cần đăng nhập) để kiểm tra sớm; nếu `enabled && rejectOutside` mà ngoài bán kính thì hiện thông báo *"Emergency SOS is only available within High-Tech Park"* (DS-02) | Mobile citizen (`HomeScreen.tsx`, `MediaReportModal.tsx`) | Hiện `handleSosTriggered` chỉ mở `SosSuccessModal`, chưa gọi API |
 | Admin: thêm công tắc **"Từ chối SOS ngoài khu vực"** = `rejectOutside` trong form `PUT /api/settings/service-area` | Web Admin — Settings (Service area) | Tắt = chỉ gắn cờ và cảnh báo Operator |
 | TypeScript: thêm `rejectOutside: boolean` vào `ServiceAreaDto`; thêm `OUT_OF_SERVICE_AREA` vào danh sách mã lỗi | Web + mobile | |
+
+## 23. Cập nhật 04/11/2026: mã trạm (Station Code) và chặn trùng tên / mã trạm
+
+Backend: trạm có thêm `code` (VD `ST-001`), duy nhất trong các trạm chưa xóa, lưu chữ in hoa. Migration `Station_Code` tự gán `ST-001`, `ST-002`… cho trạm đang có (theo thứ tự tạo).
+
+* `GET /api/stations`, `GET /api/stations/{id}`: response có thêm `code`.
+* `POST /api/stations`: `code` **tùy chọn** — bỏ trống thì backend tự sinh `ST-xxx` nhỏ nhất chưa dùng. Định dạng 2–20 ký tự `[A-Za-z0-9_-]`, không bắt đầu bằng `-` / `_`; không phân biệt hoa thường.
+* `PUT /api/stations/{id}`: `code` tùy chọn — bỏ trống thì giữ mã cũ.
+* Trùng mã → **400**, `message` *"Mã trạm "ST-001" đã tồn tại trong hệ thống."* / *"Station code "ST-001" already exists in the system."*
+* Trùng tên → **400**, `message` *"Tên trạm "…" đã tồn tại trong hệ thống."* (trước đây trả 500).
+* Trạm đã xóa không giữ chỗ tên / mã: có thể tạo lại trạm cùng tên hoặc mã.
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Form tạo / sửa trạm: thêm ô **"Mã trạm"** (placeholder "Để trống để tự sinh"), validate client cùng regex `^[A-Za-z0-9][A-Za-z0-9_-]{1,19}$` | Web Admin — Stations (`StationFormDrawer.tsx`) | Khi lưu lỗi 400 hiện toast bằng `message` của server (kịch bản DS-06) |
+| Bảng trạm: thêm cột **Mã** và cho tìm kiếm theo mã | Web Admin — Stations (`StationsTable.tsx`) | |
+| Hiện mã trạm cạnh tên ở các chỗ chọn trạm (giao Operator phụ trách, thêm xe, thêm nhân viên) | Web Admin / Operator | Tùy chọn |
+| TypeScript: thêm `code: string` vào `Station` type; `code?: string` vào payload tạo / sửa | Web | |

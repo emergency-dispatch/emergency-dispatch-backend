@@ -52,10 +52,16 @@ public class StationService : IStationService
 
     public async Task<StationResponseDto> CreateAsync(CreateStationDto dto)
     {
+        var name = dto.Name.Trim();
+        await EnsureNameAvailableAsync(name, Guid.Empty);
+        var code = string.IsNullOrWhiteSpace(dto.Code)
+            ? await NextCodeAsync()
+            : await EnsureCodeAvailableAsync(dto.Code, Guid.Empty);
         var headOperator = await ResolveHeadOperatorAsync(dto.HeadOperatorId, null);
         var station = new Station
         {
-            Name = dto.Name.Trim(),
+            Code = code,
+            Name = name,
             Address = dto.Address.Trim(),
             Latitude = dto.Latitude,
             Longitude = dto.Longitude,
@@ -84,9 +90,15 @@ public class StationService : IStationService
 
         var before = Snapshot(station);
         var oldHeadId = station.HeadOperatorId;
+        var name = dto.Name.Trim();
+        await EnsureNameAvailableAsync(name, station.Id);
+        var code = string.IsNullOrWhiteSpace(dto.Code)
+            ? station.Code
+            : await EnsureCodeAvailableAsync(dto.Code, station.Id);
         var headOperator = await ResolveHeadOperatorAsync(dto.HeadOperatorId, station.Id);
 
-        station.Name = dto.Name.Trim();
+        station.Code = code;
+        station.Name = name;
         station.Address = dto.Address.Trim();
         station.Latitude = dto.Latitude;
         station.Longitude = dto.Longitude;
@@ -207,8 +219,45 @@ public class StationService : IStationService
         }
     }
 
+    /// <summary>
+    /// Mã trạm không trùng với trạm khác chưa xóa (DS-06); trả về mã đã chuẩn hóa chữ in hoa
+    /// </summary>
+    private async Task<string> EnsureCodeAvailableAsync(string requested, Guid excludeStationId)
+    {
+        var code = requested.Trim().ToUpperInvariant();
+        if (await _stationRepository.ExistsAsync(s => s.Code == code && s.Id != excludeStationId))
+        {
+            throw new InvalidOperationException(LocalizationHelper.Localize("Mã trạm \"{0}\" đã tồn tại trong hệ thống.", code));
+        }
+        return code;
+    }
+
+    private async Task EnsureNameAvailableAsync(string name, Guid excludeStationId)
+    {
+        if (await _stationRepository.ExistsAsync(s => s.Name == name && s.Id != excludeStationId))
+        {
+            throw new InvalidOperationException(LocalizationHelper.Localize("Tên trạm \"{0}\" đã tồn tại trong hệ thống.", name));
+        }
+    }
+
+    /// <summary>
+    /// Mã tự sinh ST-001, ST-002… — lấy số nhỏ nhất chưa dùng
+    /// </summary>
+    private async Task<string> NextCodeAsync()
+    {
+        for (var n = 1; ; n++)
+        {
+            var code = $"ST-{n:000}";
+            if (!await _stationRepository.ExistsAsync(s => s.Code == code))
+            {
+                return code;
+            }
+        }
+    }
+
     private static object Snapshot(Station s) => new
     {
+        s.Code,
         s.Name,
         s.Address,
         s.Latitude,
@@ -251,6 +300,7 @@ public class StationService : IStationService
         return new StationResponseDto
         {
             Id = station.Id,
+            Code = station.Code,
             Name = station.Name,
             Address = station.Address,
             Latitude = station.Latitude,

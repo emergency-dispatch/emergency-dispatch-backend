@@ -171,11 +171,14 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Station>(entity =>
         {
             entity.HasKey(s => s.Id);
-            entity.HasIndex(s => s.Name).IsUnique().HasDatabaseName("IX_Stations_Name");
+            // Unique chỉ trong các trạm chưa xóa mềm: xóa trạm xong vẫn tạo lại được trạm cùng tên / mã
+            entity.HasIndex(s => s.Name).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("IX_Stations_Name");
+            entity.HasIndex(s => s.Code).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("IX_Stations_Code");
             entity.HasIndex(s => new { s.Latitude, s.Longitude }).HasDatabaseName("IX_Stations_GeoLocation");
             entity.HasIndex(s => s.IsActive).HasDatabaseName("IX_Stations_IsActive");
 
             entity.Property(s => s.Name).HasMaxLength(200).IsRequired();
+            entity.Property(s => s.Code).HasMaxLength(20).IsRequired();
             entity.Property(s => s.Address).IsRequired();
             entity.Property(s => s.PhoneNumber).HasMaxLength(20);
             entity.Property(s => s.Email).HasMaxLength(255);

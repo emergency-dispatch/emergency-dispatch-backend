@@ -5,6 +5,10 @@ namespace EmergencyDispatch.Domain.Entities;
 /// </summary>
 public class Station : BaseEntity
 {
+    /// <summary>
+    /// Mã trạm (VD: ST-001), duy nhất trong các trạm chưa xóa, lưu dạng chữ in hoa
+    /// </summary>
+    public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Address { get; set; } = string.Empty;
     public double Latitude { get; set; }

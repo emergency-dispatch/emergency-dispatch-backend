@@ -132,6 +132,7 @@ public static class DbInitializer
             {
                 new()
                 {
+                    Code = "ST-001",
                     Name = "Trạm Cứu hộ Trung tâm Quận 1",
                     Address = "123 Lê Lợi, Phường Bến Thành, Quận 1, TP. Hồ Chí Minh",
                     Latitude = 10.776889,
@@ -142,6 +143,7 @@ public static class DbInitializer
                 },
                 new()
                 {
+                    Code = "ST-002",
                     Name = "Trạm Cứu hộ Khu vực Quận 7",
                     Address = "456 Nguyễn Lương Bằng, Phường Tân Phú, Quận 7, TP. Hồ Chí Minh",
                     Latitude = 10.732842,
