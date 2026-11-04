@@ -267,9 +267,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
-                    b.Property<Guid>("AssignmentId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -293,8 +290,25 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<Guid>("IncidentId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("SignatureUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("SignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SignerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("StationTeamId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
@@ -310,11 +324,14 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AssignmentId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_CompletionReports_AssignmentId");
+                    b.HasIndex("StationTeamId");
 
                     b.HasIndex("SubmittedByUserId");
+
+                    b.HasIndex("IncidentId", "StationTeamId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_CompletionReports_Incident_Team")
+                        .HasFilter("\"StationTeamId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.ToTable("CompletionReports", t =>
                         {
@@ -379,6 +396,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CompletionReportId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -436,6 +456,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("CompletionReportId");
 
                     b.HasIndex("IncidentId", "Status")
                         .HasDatabaseName("IX_DispatchAssignments_Incident_Status");
@@ -1207,6 +1229,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<Guid>("StationId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("StationTeamId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -1222,6 +1247,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("StationId");
+
+                    b.HasIndex("StationTeamId");
 
                     b.ToTable("RescueUnits");
                 });
@@ -1323,9 +1350,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<Guid?>("RescueUnitId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid>("StationId")
                         .HasColumnType("uuid");
 
@@ -1333,11 +1357,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("RescueUnitId")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_StationTeams_RescueUnit")
-                        .HasFilter("\"RescueUnitId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.HasIndex("StationId", "Name")
                         .IsUnique()
@@ -1859,18 +1878,25 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReport", b =>
                 {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.DispatchAssignment", "Assignment")
-                        .WithOne("CompletionReport")
-                        .HasForeignKey("EmergencyDispatch.Domain.Entities.CompletionReport", "AssignmentId")
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
+                        .WithMany()
+                        .HasForeignKey("IncidentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.StationTeam", "StationTeam")
+                        .WithMany()
+                        .HasForeignKey("StationTeamId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("EmergencyDispatch.Domain.Entities.User", "SubmittedByUser")
                         .WithMany()
                         .HasForeignKey("SubmittedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Navigation("Assignment");
+                    b.Navigation("Incident");
+
+                    b.Navigation("StationTeam");
 
                     b.Navigation("SubmittedByUser");
                 });
@@ -1893,6 +1919,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasForeignKey("AssignedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("EmergencyDispatch.Domain.Entities.CompletionReport", "CompletionReport")
+                        .WithMany("Assignments")
+                        .HasForeignKey("CompletionReportId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
                         .WithMany("DispatchAssignments")
                         .HasForeignKey("IncidentId")
@@ -1906,6 +1937,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("AssignedByUser");
+
+                    b.Navigation("CompletionReport");
 
                     b.Navigation("Incident");
 
@@ -2131,7 +2164,14 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("EmergencyDispatch.Domain.Entities.StationTeam", "StationTeam")
+                        .WithMany("RescueUnits")
+                        .HasForeignKey("StationTeamId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Station");
+
+                    b.Navigation("StationTeam");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Station", b =>
@@ -2146,18 +2186,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeam", b =>
                 {
-                    b.HasOne("EmergencyDispatch.Domain.Entities.RescueUnit", "RescueUnit")
-                        .WithMany()
-                        .HasForeignKey("RescueUnitId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("EmergencyDispatch.Domain.Entities.Station", "Station")
                         .WithMany()
                         .HasForeignKey("StationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("RescueUnit");
 
                     b.Navigation("Station");
                 });
@@ -2232,13 +2265,13 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.CompletionReport", b =>
                 {
+                    b.Navigation("Assignments");
+
                     b.Navigation("MediaItems");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.DispatchAssignment", b =>
                 {
-                    b.Navigation("CompletionReport");
-
                     b.Navigation("StatusHistories");
                 });
 
@@ -2283,6 +2316,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.StationTeam", b =>
                 {
                     b.Navigation("Members");
+
+                    b.Navigation("RescueUnits");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.User", b =>

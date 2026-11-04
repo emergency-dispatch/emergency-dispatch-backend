@@ -20,6 +20,8 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
                 .ThenInclude(r => r!.Station)
             .Include(d => d.CompletionReport)
                 .ThenInclude(c => c!.MediaItems)
+            .Include(d => d.CompletionReport)
+                .ThenInclude(c => c!.StationTeam)
             .FirstOrDefaultAsync(d => d.Id == id);
     }
 
@@ -38,6 +40,8 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
                 .ThenInclude(r => r!.Station)
             .Include(d => d.CompletionReport)
                 .ThenInclude(c => c!.MediaItems)
+            .Include(d => d.CompletionReport)
+                .ThenInclude(c => c!.StationTeam)
             .Where(d => d.IncidentId == incidentId)
             .OrderByDescending(d => d.DispatchedAt)
             .ToListAsync();

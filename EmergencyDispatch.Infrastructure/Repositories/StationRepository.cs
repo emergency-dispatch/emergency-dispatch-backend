@@ -19,7 +19,7 @@ public class StationRepository : GenericRepository<Station>, IStationRepository
             .Include(s => s.StaffMembers)
                 .ThenInclude(u => u.TeamMembership)
                     .ThenInclude(m => m!.Team)
-                        .ThenInclude(t => t!.RescueUnit)
+                        .ThenInclude(t => t!.RescueUnits)
             .FirstOrDefaultAsync(s => s.Id == id);
     }
 

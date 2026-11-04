@@ -49,6 +49,12 @@ public class RescueUnit : BaseEntity
     public Station? Station { get; set; }
 
     /// <summary>
+    /// Tổ phụ trách xe (cùng trạm); null = xe chưa gán tổ. Một tổ có thể phụ trách nhiều xe
+    /// </summary>
+    public Guid? StationTeamId { get; set; }
+    public StationTeam? StationTeam { get; set; }
+
+    /// <summary>
     /// Danh sách các lượt phân công điều động qua các ca sự cố
     /// </summary>
     public ICollection<DispatchAssignment> DispatchAssignments { get; set; } = new List<DispatchAssignment>();

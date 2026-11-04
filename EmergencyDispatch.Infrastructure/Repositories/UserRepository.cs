@@ -18,7 +18,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .Include(u => u.Station)
             .Include(u => u.TeamMembership)
                 .ThenInclude(m => m!.Team)
-                    .ThenInclude(t => t!.RescueUnit)
+                    .ThenInclude(t => t!.RescueUnits)
             .Include(u => u.RefreshTokens.Where(t => !t.IsRevoked))
             .FirstOrDefaultAsync(u => u.Id == id);
     }

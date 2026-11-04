@@ -46,4 +46,12 @@ public class ResolveDispatchDto
 
     [MaxLength(1000, ErrorMessage = "Ghi chú không được vượt quá 1000 ký tự.")]
     public string? HandoverNotes { get; set; }
+
+    /// <summary>
+    /// Ảnh chữ ký xác nhận của thành viên tổ nộp báo cáo (PNG từ khung ký, upload qua /api/media/upload trước).
+    /// Bắt buộc; chỉ nhận URL do hệ thống upload. Người ký = tài khoản nộp báo cáo
+    /// </summary>
+    [Required(ErrorMessage = "Cần chữ ký xác nhận của thành viên tổ trước khi nộp báo cáo nghiệm thu.")]
+    [MaxLength(1000)]
+    public string? SignatureUrl { get; set; }
 }

@@ -56,7 +56,7 @@ public class StationTeamService : IStationTeamService
     {
         t.Name,
         t.StationId,
-        t.RescueUnitId,
+        RescueUnitIds = t.RescueUnits.Select(u => u.Id).ToList(),
         Members = t.Members.Select(m => new { m.StaffId, m.CrewRole }).ToList()
     };
 
@@ -96,13 +96,13 @@ public class StationTeamService : IStationTeamService
         var team = new StationTeam
         {
             StationId = stationId,
-            Name = dto.Name.Trim(),
-            RescueUnitId = dto.RescueUnitId
+            Name = dto.Name.Trim()
         };
         foreach (var m in dto.Members)
         {
             team.Members.Add(new StationTeamMember { StaffId = m.StaffId, CrewRole = m.CrewRole });
         }
+        await ApplyUnitsAsync(team, dto.EffectiveRescueUnitIds());
 
         await _teamRepository.AddAsync(team, cancellationToken);
         await _teamRepository.SaveChangesAsync(cancellationToken);
@@ -133,8 +133,8 @@ public class StationTeamService : IStationTeamService
 
         var before = Snapshot(team);
         team.Name = dto.Name.Trim();
-        team.RescueUnitId = dto.RescueUnitId;
         team.UpdatedAt = DateTime.UtcNow;
+        await ApplyUnitsAsync(team, dto.EffectiveRescueUnitIds());
 
         var desired = dto.Members.ToDictionary(m => m.StaffId, m => m.CrewRole);
         foreach (var existing in team.Members.ToList())
@@ -271,22 +271,47 @@ public class StationTeamService : IStationTeamService
             }
         }
 
-        if (dto.RescueUnitId.HasValue)
+        foreach (var unitId in dto.EffectiveRescueUnitIds())
         {
-            var unit = await _rescueUnitRepository.GetByIdAsync(dto.RescueUnitId.Value);
-            if (unit == null || unit.StationId != stationId)
+            var unit = await _rescueUnitRepository.GetByIdAsync(unitId);
+            if (unit == null || unit.IsDeleted || unit.StationId != stationId)
             {
                 return ApiResponseDto<StationTeamDto>.FailureResult("Xe không thuộc trạm này.");
             }
 
-            var otherTeam = teams.FirstOrDefault(t => t.Id != teamId && t.RescueUnitId == dto.RescueUnitId);
+            // Mỗi xe thuộc tối đa 1 tổ; một tổ có thể phụ trách nhiều xe
+            var otherTeam = teams.FirstOrDefault(t => t.Id != teamId && t.RescueUnits.Any(u => u.Id == unitId));
             if (otherTeam != null)
             {
-                return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize("Xe đã có {0} phụ trách.", otherTeam.Name));
+                return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize("Xe {0} đã có {1} phụ trách.", unit.PlateNumber, otherTeam.Name));
             }
         }
 
         return null;
+    }
+
+    private static IEnumerable<RescueUnit> UnitsOf(StationTeam team)
+        => team.RescueUnits.Where(u => !u.IsDeleted).OrderBy(u => u.PlateNumber);
+
+    /// <summary>
+    /// Đồng bộ danh sách xe của tổ: gỡ xe không còn chọn, gán xe mới (đã kiểm tra ở ValidateAsync)
+    /// </summary>
+    private async Task ApplyUnitsAsync(StationTeam team, IReadOnlyCollection<Guid> unitIds)
+    {
+        foreach (var unit in team.RescueUnits.Where(u => !unitIds.Contains(u.Id)).ToList())
+        {
+            unit.StationTeamId = null;
+            team.RescueUnits.Remove(unit);
+        }
+        foreach (var unitId in unitIds.Where(id => team.RescueUnits.All(u => u.Id != id)))
+        {
+            var unit = await _rescueUnitRepository.GetByIdAsync(unitId);
+            if (unit != null)
+            {
+                unit.StationTeamId = team.Id;
+                team.RescueUnits.Add(unit);
+            }
+        }
     }
 
     public static StationTeamDto Map(StationTeam team) => new()
@@ -294,8 +319,10 @@ public class StationTeamService : IStationTeamService
         Id = team.Id,
         StationId = team.StationId,
         Name = team.Name,
-        RescueUnitId = team.RescueUnitId,
-        RescueUnitPlate = team.RescueUnit?.PlateNumber,
+        RescueUnitIds = UnitsOf(team).Select(u => u.Id).ToList(),
+        RescueUnitPlates = UnitsOf(team).Select(u => u.PlateNumber).ToList(),
+        RescueUnitId = UnitsOf(team).FirstOrDefault()?.Id,
+        RescueUnitPlate = UnitsOf(team).FirstOrDefault()?.PlateNumber,
         IsUnderstaffed = team.Members.Count < MinTeamSize,
         Members = team.Members
             .OrderBy(m => m.CrewRole)

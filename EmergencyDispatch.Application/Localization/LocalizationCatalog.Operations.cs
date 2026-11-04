@@ -100,7 +100,7 @@ public static partial class LocalizationCatalog
         { "Tài khoản {0} đang bị khóa.", "Account {0} is locked." },
         { "{0} đã thuộc {1}.", "{0} already belongs to {1}." },
         { "Xe không thuộc trạm này.", "The vehicle does not belong to this station." },
-        { "Xe đã có {0} phụ trách.", "The vehicle is already assigned to {0}." },
+        { "Xe {0} đã có {1} phụ trách.", "Vehicle {0} is already assigned to {1}." },
 
         // ===== Phương tiện cứu hộ =====
         { "Lấy danh sách phương tiện cứu hộ thành công.", "Rescue vehicles retrieved successfully." },
@@ -243,6 +243,13 @@ public static partial class LocalizationCatalog
         { "Đã lưu cấu hình leo thang.", "Escalation settings saved." },
         { "Cấu hình khu vực phục vụ không hợp lệ.", "Invalid service area settings." },
         { "Mã trạm \"{0}\" đã tồn tại trong hệ thống.", "Station code \"{0}\" already exists in the system." },
+
+        // Chữ ký xác nhận trong báo cáo nghiệm thu
+        { "Ảnh chữ ký không hợp lệ. Vui lòng tải chữ ký lên qua hệ thống trước khi nộp báo cáo.", "Invalid signature image. Please upload the signature through the system before submitting the report." },
+        { "Cần chữ ký xác nhận của thành viên tổ trước khi nộp báo cáo nghiệm thu.", "A crew member's confirmation signature is required before submitting the completion report." },
+        { "Nhiệm vụ này đã được một thành viên trong tổ nghiệm thu. Không cần nộp lại.", "This mission has already been closed by a crew member. No need to submit again." },
+        { "Chỉ thành viên tổ \"{0}\" phụ trách xe {1} được nghiệm thu nhiệm vụ này.", "Only members of crew \"{0}\" assigned to unit {1} can close this mission." },
+        { "Nghiệm thu thành công cho xe {0}. Sự cố vẫn mở, chờ tổ của các xe còn lại chụp ảnh và ký nghiệm thu: {1}.", "Sign-off recorded for unit(s) {0}. The incident stays open until the crews of the remaining units photograph and sign off: {1}." },
 
         // Thiết bị cứu hộ (Equipment)
         { "Không tìm thấy thiết bị.", "Equipment not found." },

@@ -494,6 +494,12 @@ public class UserService : IUserService
             };
         }
 
+        // Các xe tổ của cán bộ phụ trách (một tổ có thể nhiều xe)
+        var teamUnits = user.TeamMembership?.Team?.RescueUnits
+            .Where(u => !u.IsDeleted)
+            .OrderBy(u => u.PlateNumber)
+            .ToList() ?? new List<RescueUnit>();
+
         var station = await _stationRepository.GetByIdWithUnitsAndStaffAsync(user.StationId.Value);
         if (station == null)
         {
@@ -546,8 +552,10 @@ public class UserService : IUserService
             MyTeamName = TeamNameOf(user),
             MyTeamId = user.TeamMembership?.TeamId,
             MyCrewRole = user.TeamMembership?.CrewRole.ToString(),
-            MyTeamRescueUnitId = user.TeamMembership?.Team?.RescueUnitId,
-            MyTeamRescueUnitPlate = user.TeamMembership?.Team?.RescueUnit?.PlateNumber,
+            MyTeamRescueUnitIds = teamUnits.Select(u => u.Id).ToList(),
+            MyTeamRescueUnitPlates = teamUnits.Select(u => u.PlateNumber).ToList(),
+            MyTeamRescueUnitId = teamUnits.FirstOrDefault()?.Id,
+            MyTeamRescueUnitPlate = teamUnits.FirstOrDefault()?.PlateNumber,
             MyTeamMembers = user.TeamMembership?.Team == null
                 ? new List<TeamMemberSummaryDto>()
                 : staffMembers.Where(m => m.TeamName == TeamNameOf(user)).ToList(),

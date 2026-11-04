@@ -39,6 +39,15 @@ public class StaffTeamResponseDto
     public string? MyTeamName { get; set; } // Tổ làm việc của cán bộ hiện tại
     public Guid? MyTeamId { get; set; }
     public string? MyCrewRole { get; set; }
+    /// <summary>
+    /// Các xe tổ của cán bộ phụ trách (một tổ có thể nhiều xe)
+    /// </summary>
+    public List<Guid> MyTeamRescueUnitIds { get; set; } = new();
+    public List<string> MyTeamRescueUnitPlates { get; set; } = new();
+
+    /// <summary>
+    /// [Cũ — giữ cho FE chưa cập nhật] Xe đầu tiên của tổ
+    /// </summary>
     public Guid? MyTeamRescueUnitId { get; set; }
     public string? MyTeamRescueUnitPlate { get; set; }
 

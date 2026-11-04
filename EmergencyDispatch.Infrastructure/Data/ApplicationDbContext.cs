@@ -7,6 +7,8 @@ namespace EmergencyDispatch.Infrastructure.Data;
 
 public class ApplicationDbContext : DbContext
 {
+    private const string CompletionReportTeamIndex = "UQ_CompletionReports_Incident_Team";
+
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
     {
     }
@@ -54,7 +56,7 @@ public class ApplicationDbContext : DbContext
                 return true;
             }
 
-            if (pg.SqlState == PostgresErrorCodes.UniqueViolation && pg.ConstraintName == "IX_CompletionReports_AssignmentId")
+            if (pg.SqlState == PostgresErrorCodes.UniqueViolation && pg.ConstraintName == CompletionReportTeamIndex)
             {
                 entityName = nameof(DispatchAssignment);
                 return true;
@@ -361,19 +363,35 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<CompletionReport>(entity =>
         {
             entity.HasKey(c => c.Id);
-            entity.HasIndex(c => c.AssignmentId).IsUnique().HasDatabaseName("IX_CompletionReports_AssignmentId");
+            // Mỗi tổ tối đa 1 báo cáo nghiệm thu cho một sự cố (chặn hai thành viên cùng tổ nộp đồng thời)
+            entity.HasIndex(c => new { c.IncidentId, c.StationTeamId }).IsUnique()
+                  .HasFilter("\"StationTeamId\" IS NOT NULL AND \"IsDeleted\" = false")
+                  .HasDatabaseName(CompletionReportTeamIndex);
 
             entity.Property(c => c.ActionsSummary).HasMaxLength(2000).IsRequired();
             entity.Property(c => c.HandoverEntity).HasMaxLength(300);
             entity.Property(c => c.HandoverContactName).HasMaxLength(200);
             entity.Property(c => c.HandoverContactPhone).HasMaxLength(30);
             entity.Property(c => c.HandoverNotes).HasMaxLength(1000);
+            entity.Property(c => c.SignatureUrl).HasMaxLength(1000);
+            entity.Property(c => c.SignerName).HasMaxLength(200);
             entity.ToTable(t => t.HasCheckConstraint("CK_CompletionReports_Victims", "\"VictimsAssistedCount\" >= 0"));
 
-            entity.HasOne(c => c.Assignment)
-                  .WithOne(a => a.CompletionReport)
-                  .HasForeignKey<CompletionReport>(c => c.AssignmentId)
+            entity.HasOne(c => c.Incident)
+                  .WithMany()
+                  .HasForeignKey(c => c.IncidentId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(c => c.StationTeam)
+                  .WithMany()
+                  .HasForeignKey(c => c.StationTeamId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            // Một báo cáo của tổ hoàn tất nhiều lượt điều phối (mọi xe của tổ trong sự cố)
+            entity.HasMany(c => c.Assignments)
+                  .WithOne(a => a.CompletionReport)
+                  .HasForeignKey(a => a.CompletionReportId)
+                  .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(c => c.SubmittedByUser)
                   .WithMany()
@@ -662,7 +680,6 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(t => t.Id);
             entity.HasIndex(t => new { t.StationId, t.Name }).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("UQ_StationTeams_Station_Name");
-            entity.HasIndex(t => t.RescueUnitId).IsUnique().HasFilter("\"RescueUnitId\" IS NOT NULL AND \"IsDeleted\" = false").HasDatabaseName("UQ_StationTeams_RescueUnit");
             entity.Property(t => t.Name).HasMaxLength(100).IsRequired();
 
             entity.HasOne(t => t.Station)
@@ -670,9 +687,10 @@ public class ApplicationDbContext : DbContext
                   .HasForeignKey(t => t.StationId)
                   .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(t => t.RescueUnit)
-                  .WithMany()
-                  .HasForeignKey(t => t.RescueUnitId)
+            // Một tổ phụ trách nhiều xe; xóa tổ thì xe về trạng thái chưa gán tổ
+            entity.HasMany(t => t.RescueUnits)
+                  .WithOne(r => r.StationTeam)
+                  .HasForeignKey(r => r.StationTeamId)
                   .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasQueryFilter(t => !t.IsDeleted);

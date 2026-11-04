@@ -5,10 +5,12 @@ using EmergencyDispatch.Application.DTOs.Dispatch;
 using EmergencyDispatch.Application.DTOs.Notification;
 using EmergencyDispatch.Application.DTOs.RescueUnit;
 using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Application.Validators;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Exceptions;
 using EmergencyDispatch.Domain.Interfaces;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace EmergencyDispatch.Application.Services;
@@ -37,6 +39,8 @@ public class DispatchService : IDispatchService
     private readonly IEscalationRepository _escalationRepository;
     private readonly IIncidentFollowUpService _followUpService;
     private readonly IFieldRequestService _fieldRequestService;
+    private readonly IConfiguration _configuration;
+    private readonly IStationTeamRepository _teamRepository;
 
     public DispatchService(
         IDispatchAssignmentRepository assignmentRepository,
@@ -51,8 +55,12 @@ public class DispatchService : IDispatchService
         ICurrentUserContext currentUser,
         IEscalationRepository escalationRepository,
         IIncidentFollowUpService followUpService,
-        IFieldRequestService fieldRequestService)
+        IFieldRequestService fieldRequestService,
+        IConfiguration configuration,
+        IStationTeamRepository teamRepository)
     {
+        _configuration = configuration;
+        _teamRepository = teamRepository;
         _followUpService = followUpService;
         _fieldRequestService = fieldRequestService;
         _escalationRepository = escalationRepository;
@@ -896,6 +904,13 @@ public class DispatchService : IDispatchService
             LocalizationHelper.Localize("Cập nhật trạng thái nhiệm vụ thành '{0}' thành công.", dto.Status));
     }
 
+    public const string SignatureRequiredMessage = "Cần chữ ký xác nhận của thành viên tổ trước khi nộp báo cáo nghiệm thu.";
+
+    /// <summary>
+    /// Nghiệm thu theo tổ: một thành viên bất kỳ của tổ (đại diện) chụp ảnh + ký → hoàn tất mọi xe của tổ đang làm sự cố này,
+    /// không phân biệt xe đã tới hiện trường hay chưa. Xe chưa gán tổ thì nghiệm thu riêng xe đó.
+    /// Sự cố nhiều tổ: mỗi tổ tự nộp; sự cố chỉ đóng khi tổ (xe) cuối cùng nộp (BR-14).
+    /// </summary>
     public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> ResolveAssignmentAsync(
         Guid id,
         ResolveDispatchDto dto,
@@ -908,7 +923,7 @@ public class DispatchService : IDispatchService
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy thông tin phân công.");
         }
 
-        // BR-14: khóa sự cố TRƯỚC khi đọc để các xe cùng sự cố nghiệm thu tuần tự —
+        // BR-14: khóa sự cố TRƯỚC khi đọc để các tổ cùng sự cố nghiệm thu tuần tự —
         // đếm đúng số xe còn lại, đóng sự cố đúng một lần, bấm nghiệm thu hai lần thì lần sau thấy Completed
         await using var lockScope = await _incidentRepository.BeginLockedTransactionAsync(incidentId.Value, cancellationToken);
 
@@ -916,6 +931,12 @@ public class DispatchService : IDispatchService
         if (assignment == null)
         {
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy thông tin phân công.");
+        }
+
+        // Đại diện tổ đã nghiệm thu → thành viên bấm sau nhận thông báo rõ ràng thay vì lỗi trạng thái
+        if (assignment.Status == DispatchAssignmentStatus.Completed && assignment.CompletionReport != null)
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.ConflictResult("Nhiệm vụ này đã được một thành viên trong tổ nghiệm thu. Không cần nộp lại.");
         }
 
         if (!assignment.IsActive)
@@ -934,6 +955,9 @@ public class DispatchService : IDispatchService
         var actorRole = rescuer?.Role.ToString() ?? UserRole.RescueStaff.ToString();
         var isCommandCenter = rescuer?.Role is UserRole.Operator or UserRole.Admin;
 
+        // Tổ phụ trách xe (một tổ có thể nhiều xe)
+        var crewTeam = unit?.StationTeamId is Guid teamId ? await _teamRepository.GetByIdAsync(teamId, cancellationToken) : null;
+
         if (!isCommandCenter)
         {
             if (unit == null || rescuer?.StationId != unit.StationId)
@@ -941,11 +965,11 @@ public class DispatchService : IDispatchService
                 return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn chỉ được nghiệm thu nhiệm vụ của xe thuộc trạm mình.");
             }
 
-            // BR-24: đội cứu hộ chỉ nghiệm thu được sau khi đã có mặt tại hiện trường
-            if (!assignment.CanTransitionTo(DispatchAssignmentStatus.Completed))
+            // Xe đã có tổ phụ trách → chỉ thành viên tổ đó; xe chưa gán tổ → nhân viên trạm
+            if (crewTeam != null && crewTeam.Members.All(m => m.StaffId != rescuerUserId))
             {
-                return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(
-                    LocalizationHelper.Localize("Nhiệm vụ đang ở trạng thái '{0}'. Chỉ nghiệm thu được sau khi xác nhận OnScene.", assignment.Status));
+                return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult(
+                    LocalizationHelper.Localize("Chỉ thành viên tổ \"{0}\" phụ trách xe {1} được nghiệm thu nhiệm vụ này.", crewTeam.Name, unit.PlateNumber));
             }
         }
 
@@ -959,16 +983,33 @@ public class DispatchService : IDispatchService
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Cần ít nhất một ảnh hiện trường sau xử lý (MSG42).");
         }
 
-        // 1. Hoàn tất lượt phân công của xe này
-        var oldAssignmentStatus = assignment.Status;
-        assignment.Status = DispatchAssignmentStatus.Completed;
-        assignment.CompletedAt = now;
-        assignment.UpdatedAt = now;
+        // Chữ ký đại diện tổ (bắt buộc): chỉ nhận ảnh do hệ thống upload, không nhận dataURL / link ngoài
+        var signatureUrl = dto.SignatureUrl?.Trim();
+        if (string.IsNullOrEmpty(signatureUrl))
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult(SignatureRequiredMessage);
+        }
+        if (!MediaUrlPolicy.IsTrusted(signatureUrl, _configuration))
+        {
+            return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Ảnh chữ ký không hợp lệ. Vui lòng tải chữ ký lên qua hệ thống trước khi nộp báo cáo.");
+        }
 
-        // FR-RS-03 / BR-25 / BR-26: lưu báo cáo nghiệm thu kèm ảnh bằng chứng và thông tin bàn giao
+        // 1. Các lượt được hoàn tất: mọi xe của tổ đang làm sự cố này (kể cả xe chưa tới), hoặc riêng xe này nếu chưa gán tổ
+        var siblingAssignments = await _assignmentRepository.GetByIncidentIdAsync(incident.Id);
+        var toComplete = crewTeam == null
+            ? new List<DispatchAssignment> { assignment }
+            : siblingAssignments.Where(a => a.IsActive && a.RescueUnit?.StationTeamId == crewTeam.Id).ToList();
+        if (!toComplete.Contains(assignment))
+        {
+            toComplete.Insert(0, assignment);
+        }
+
+        // FR-RS-03 / BR-25 / BR-26: một báo cáo (ảnh, chữ ký đại diện, bàn giao) dùng chung cho các xe của tổ
         var report = new CompletionReport
         {
-            AssignmentId = assignment.Id,
+            IncidentId = incident.Id,
+            StationTeamId = crewTeam?.Id,
+            StationTeam = crewTeam,
             SubmittedByUserId = rescuerUserId,
             ActionsSummary = dto.ResolutionSummary.Trim(),
             VictimsAssistedCount = dto.VictimsAssistedCount ?? 0,
@@ -977,6 +1018,9 @@ public class DispatchService : IDispatchService
             HandoverContactName = dto.HandoverContactName?.Trim(),
             HandoverContactPhone = dto.HandoverContactPhone?.Trim(),
             HandoverNotes = dto.HandoverNotes?.Trim(),
+            SignatureUrl = signatureUrl,
+            SignerName = rescuer?.FullName,
+            SignedAt = now,
             SubmittedAt = now
         };
         foreach (var url in evidenceUrls)
@@ -984,33 +1028,48 @@ public class DispatchService : IDispatchService
             report.MediaItems.Add(new CompletionReportMedia { MediaUrl = url, MediaType = MediaType.Photo });
         }
         await _assignmentRepository.AddCompletionReportAsync(report);
-        assignment.CompletionReport = report;
 
-        await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
+        var dispatchSettings = await _settingsService.GetDispatchSettingsAsync(cancellationToken);
+        var completedPlates = new List<string>();
+        foreach (var item in toComplete)
         {
-            AssignmentId = assignment.Id,
-            OldStatus = oldAssignmentStatus,
-            NewStatus = DispatchAssignmentStatus.Completed,
-            ChangedByUserId = rescuerUserId,
-            Notes = "Nộp báo cáo nghiệm thu",
-            ChangedAt = now
-        });
-        await _assignmentRepository.UpdateAsync(assignment);
+            var oldStatus = item.Status;
+            item.Status = DispatchAssignmentStatus.Completed;
+            item.CompletedAt = now;
+            item.UpdatedAt = now;
+            item.CompletionReportId = report.Id;
+            item.CompletionReport = report;
 
-        // 2. BR-27: xe hồi sức (CoolDown) trước khi quay lại nhận lệnh mới
-        if (unit != null)
-        {
-            var dispatchSettings = await _settingsService.GetDispatchSettingsAsync(cancellationToken);
-            unit.Status = RescueUnitStatus.CoolDown;
-            unit.CoolDownUntil = now.AddMinutes(dispatchSettings.RecoveryMinutes);
-            unit.UpdatedAt = now;
-            await SaveUnitAsync(unit, cancellationToken);
+            await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
+            {
+                AssignmentId = item.Id,
+                OldStatus = oldStatus,
+                NewStatus = DispatchAssignmentStatus.Completed,
+                ChangedByUserId = rescuerUserId,
+                Notes = crewTeam == null ? "Nộp báo cáo nghiệm thu" : $"Tổ {crewTeam.Name} nộp báo cáo nghiệm thu (đại diện: {rescuer?.FullName})",
+                ChangedAt = now
+            });
+            await _assignmentRepository.UpdateAsync(item);
+
+            // 2. BR-27: xe hồi sức (CoolDown) trước khi quay lại nhận lệnh mới
+            var itemUnit = item.Id == assignment.Id ? unit : item.RescueUnit ?? await _rescueUnitRepository.GetByIdAsync(item.RescueUnitId);
+            if (itemUnit != null)
+            {
+                itemUnit.Status = RescueUnitStatus.CoolDown;
+                itemUnit.CoolDownUntil = now.AddMinutes(dispatchSettings.RecoveryMinutes);
+                itemUnit.UpdatedAt = now;
+                await SaveUnitAsync(itemUnit, cancellationToken);
+                completedPlates.Add(itemUnit.PlateNumber);
+            }
         }
 
-
-        // 3. BR-14: sự cố nhiều xe chỉ đóng khi mọi xe còn hiệu lực đều đã nghiệm thu
-        var siblingAssignments = await _assignmentRepository.GetByIncidentIdAsync(incident.Id);
-        var remainingActive = siblingAssignments.Count(a => a.Id != assignment.Id && a.IsActive);
+        // 3. BR-14: sự cố chỉ đóng khi mọi xe còn hiệu lực đều đã nghiệm thu (tổ nào cũng phải tự nộp)
+        var completedIds = toComplete.Select(a => a.Id).ToHashSet();
+        var pendingPlates = siblingAssignments
+            .Where(a => !completedIds.Contains(a.Id) && a.IsActive)
+            .Select(a => a.RescueUnit?.PlateNumber ?? a.RescueUnitId.ToString())
+            .ToList();
+        var remainingActive = pendingPlates.Count;
         var incidentClosed = remainingActive == 0;
         var oldIncidentStatus = incident.Status;
 
@@ -1035,6 +1094,9 @@ public class DispatchService : IDispatchService
             incident.UpdatedAt = DateTime.UtcNow;
         }
 
+        var who = crewTeam == null
+            ? $"Xe {string.Join(", ", completedPlates)}"
+            : $"Tổ {crewTeam.Name} (xe {string.Join(", ", completedPlates)})";
         await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
         {
             IncidentId = incident.Id,
@@ -1042,11 +1104,13 @@ public class DispatchService : IDispatchService
             ActorRole = actorRole,
             Action = incidentClosed ? AuditAction.Completed : AuditAction.StatusChanged,
             Description = incidentClosed
-                ? "Nghiệm thu hiện trường và hoàn tất sự cố"
-                : $"Xe {unit?.PlateNumber} nghiệm thu xong, còn {remainingActive} xe đang xử lý",
+                ? $"{who} nghiệm thu hiện trường và hoàn tất sự cố"
+                : $"{who} nghiệm thu xong, chờ các xe còn lại nghiệm thu: {string.Join(", ", pendingPlates)}",
             NewStateJson = JsonSerializer.Serialize(new
             {
-                assignmentId = assignment.Id,
+                completionReportId = report.Id,
+                stationTeamId = crewTeam?.Id,
+                completedAssignmentIds = completedIds,
                 incidentClosed,
                 remainingActiveAssignments = remainingActive,
                 resolutionTimeMs = incident.ResolutionTimeMs,
@@ -1060,14 +1124,34 @@ public class DispatchService : IDispatchService
         await lockScope.CommitAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Nhiệm vụ {AssignmentId} nghiệm thu xong. Sự cố {IncidentId} {State} (T_Response={Ms}ms)",
-            assignment.Id, incident.Id, incidentClosed ? "đã đóng" : $"còn {remainingActive} xe", incident.ResolutionTimeMs);
+            "Nghiệm thu {Count} xe ({Plates}) của sự cố {IncidentId}. Sự cố {State} (T_Response={Ms}ms)",
+            toComplete.Count, string.Join(", ", completedPlates), incident.Id, incidentClosed ? "đã đóng" : $"còn {remainingActive} xe", incident.ResolutionTimeMs);
 
-        var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
-
-        // Bắn SignalR
-        await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, cancellationToken);
+        // Bắn SignalR cho từng xe được hoàn tất
+        DispatchAssignmentResponseDto? assignmentDto = null;
+        foreach (var item in toComplete)
+        {
+            var itemDto = MapToAssignmentDto(item, incident, item.Id == assignment.Id ? unit : item.RescueUnit);
+            await _realtimeNotifier.AssignmentStatusChangedAsync(itemDto, cancellationToken);
+            if (item.Id == assignment.Id)
+            {
+                assignmentDto = itemDto;
+            }
+        }
         await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
+
+        // Đại diện nghiệm thu = cả tổ hoàn thành: báo các thành viên còn lại để app đóng nhiệm vụ (kể cả khi đang offline)
+        var otherCrew = crewTeam?.Members.Select(m => m.StaffId).Where(staffId => staffId != rescuerUserId).Distinct().ToList();
+        if (crewTeam != null && otherCrew is { Count: > 0 })
+        {
+            await _notificationService.NotifyUsersAsync(otherCrew, new NotificationRequest
+            {
+                Type = NotificationType.StatusUpdate,
+                Title = "TỔ ĐÃ NGHIỆM THU NHIỆM VỤ",
+                Message = $"{rescuer?.FullName ?? "Thành viên tổ"} đã chụp ảnh và ký xác nhận thay tổ {crewTeam.Name}, hoàn tất nhiệm vụ tại {incident.LocationAddress} (xe {string.Join(", ", completedPlates)}).",
+                IncidentId = incident.Id
+            }, cancellationToken);
+        }
 
         // BR-07: sự cố gốc hoàn tất → đóng các báo cáo đã gom (lý do Duplicate)
         if (incidentClosed && incident.LinkedReportCount > 0)
@@ -1088,10 +1172,11 @@ public class DispatchService : IDispatchService
         }
 
         return ApiResponseDto<DispatchAssignmentResponseDto>.SuccessResult(
-            assignmentDto,
+            assignmentDto!,
             incidentClosed
                 ? "Nghiệm thu hiện trường thành công. Hồ sơ sự cố đã được đóng và ghi nhận KPI phản hồi."
-                : $"Nghiệm thu xe thành công. Sự cố vẫn mở vì còn {remainingActive} xe đang xử lý.");
+                : LocalizationHelper.Localize("Nghiệm thu thành công cho xe {0}. Sự cố vẫn mở, chờ tổ của các xe còn lại chụp ảnh và ký nghiệm thu: {1}.",
+                    string.Join(", ", completedPlates), string.Join(", ", pendingPlates)));
     }
 
     public async Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
@@ -1293,6 +1378,8 @@ public class DispatchService : IDispatchService
             CompletionReport = assignment.CompletionReport == null ? null : new CompletionReportDto
             {
                 Id = assignment.CompletionReport.Id,
+                StationTeamId = assignment.CompletionReport.StationTeamId,
+                StationTeamName = assignment.CompletionReport.StationTeam?.Name,
                 ActionsSummary = assignment.CompletionReport.ActionsSummary,
                 VictimsAssistedCount = assignment.CompletionReport.VictimsAssistedCount,
                 EquipmentUsed = assignment.CompletionReport.EquipmentUsed,
@@ -1301,6 +1388,9 @@ public class DispatchService : IDispatchService
                 HandoverContactName = assignment.CompletionReport.HandoverContactName,
                 HandoverContactPhone = assignment.CompletionReport.HandoverContactPhone,
                 HandoverNotes = assignment.CompletionReport.HandoverNotes,
+                SignatureUrl = assignment.CompletionReport.SignatureUrl,
+                SignerName = assignment.CompletionReport.SignerName,
+                SignedAt = assignment.CompletionReport.SignedAt,
                 SubmittedByUserId = assignment.CompletionReport.SubmittedByUserId,
                 SubmittedAt = assignment.CompletionReport.SubmittedAt
             }

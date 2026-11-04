@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.DTOs.Notification;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Dispatch;
 using EmergencyDispatch.Application.DTOs.Settings;
@@ -27,6 +28,8 @@ public class DispatchServiceTests
     private readonly Mock<IIncidentFollowUpService> _followUp = new();
     private readonly Mock<IFieldRequestService> _fieldRequests = new();
     private readonly Mock<IIncidentLockScope> _lock = new();
+    private readonly Mock<IStationTeamRepository> _teams = new();
+    private readonly List<StationTeam> _crews = new();
     private readonly List<RescueUnit> _fleet = new();
     private readonly List<DispatchAssignment> _active = new();
     private readonly Guid _stationA = Guid.NewGuid();
@@ -49,10 +52,12 @@ public class DispatchServiceTests
         _units.Setup(u => u.GetByIdWithDetailsAsync(It.IsAny<Guid>())).ReturnsAsync((Guid id) => _fleet.FirstOrDefault(f => f.Id == id));
         _users.Setup(u => u.GetActiveByRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>())).ReturnsAsync(new List<User>());
         _incidents.Setup(i => i.BeginLockedTransactionAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(_lock.Object);
+        _teams.Setup(t => t.GetByStationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<StationTeam>());
         _me.SetupGet(m => m.Role).Returns(UserRole.Operator);
         _me.SetupGet(m => m.StationId).Returns(_stationA);
         _svc = new DispatchService(_assign.Object, _units.Object, _incidents.Object, _users.Object, _rt.Object, _settings.Object,
-            _notify.Object, NullLogger<DispatchService>.Instance, _routing.Object, _me.Object, _esc.Object, _followUp.Object, _fieldRequests.Object);
+            _notify.Object, NullLogger<DispatchService>.Instance, _routing.Object, _me.Object, _esc.Object, _followUp.Object, _fieldRequests.Object,
+            TestHelpers.Config(("Cloudinary:CloudName", "demo")), _teams.Object);
     }
 
     private RescueUnit Unit(RescueUnitType type, double kmNorth, RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null)
@@ -466,8 +471,36 @@ public class DispatchServiceTests
     {
         ResolutionSummary = "Đã dập tắt đám cháy",
         EvidenceMediaUrls = evidence.ToList(),
-        VictimsAssistedCount = 1
+        VictimsAssistedCount = 1,
+        SignatureUrl = Signature
     };
+
+    private const string Signature = "https://res.cloudinary.com/demo/image/upload/sig.png";
+
+    /// <summary>
+    /// Tạo tổ phụ trách một xe; trả về tổ (đã có staff là thành viên nếu truyền vào)
+    /// </summary>
+    private StationTeam CrewOf(RescueUnit u, params User[] members) => CrewOfUnits(new[] { u }, members);
+
+    /// <summary>
+    /// Tạo tổ phụ trách nhiều xe (RescueUnit.StationTeamId)
+    /// </summary>
+    private StationTeam CrewOfUnits(RescueUnit[] units, params User[] members)
+    {
+        var team = new StationTeam { Name = $"Tổ {_crews.Count + 1}", StationId = units[0].StationId };
+        foreach (var unit in units)
+        {
+            unit.StationTeamId = team.Id;
+            team.RescueUnits.Add(unit);
+        }
+        foreach (var m in members)
+        {
+            team.Members.Add(new StationTeamMember { TeamId = team.Id, StaffId = m.Id, Staff = m });
+        }
+        _crews.Add(team);
+        _teams.Setup(t => t.GetByIdAsync(team.Id, It.IsAny<CancellationToken>())).ReturnsAsync(team);
+        return team;
+    }
 
     [Fact]
     public async Task Resolve_LastActiveUnit_CompletesIncidentAndStartsCoolDown()
@@ -497,6 +530,209 @@ public class DispatchServiceTests
     }
 
     [Fact]
+    public async Task Resolve_StoresSignatureWithSubmittingMemberAsSigner()
+    {
+        var (a, _, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        var dto = Report("https://x/a.jpg");
+        dto.SignatureUrl = $" {Signature} ";
+        dto.HandoverContactName = "BS. Lan";
+        CompletionReport? saved = null;
+        _assign.Setup(x => x.AddCompletionReportAsync(It.IsAny<CompletionReport>())).Callback<CompletionReport>(c => saved = c);
+
+        var r = await _svc.ResolveAssignmentAsync(a.Id, dto, staff.Id);
+
+        Assert.True(r.Success);
+        Assert.Equal(Signature, saved!.SignatureUrl);
+        Assert.Equal(staff.FullName, saved.SignerName);
+        Assert.Equal(staff.Id, saved.SubmittedByUserId);
+        Assert.NotNull(saved.SignedAt);
+        Assert.Equal(Signature, r.Data!.CompletionReport!.SignatureUrl);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public async Task Resolve_WithoutSignature_IsRejectedWithoutCompleting(string? signature)
+    {
+        var (a, inc, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        var dto = Report("https://x/a.jpg");
+        dto.SignatureUrl = signature;
+
+        var r = await _svc.ResolveAssignmentAsync(a.Id, dto, staff.Id);
+
+        Assert.False(r.Success);
+        Assert.Equal(EmergencyDispatch.Application.Localization.LocalizationHelper.Localize(DispatchService.SignatureRequiredMessage), r.Message);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a.Status);
+        Assert.Equal(IncidentStatus.InProgress, inc.Status);
+        _assign.Verify(x => x.AddCompletionReportAsync(It.IsAny<CompletionReport>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Resolve_AnyCrewMember_CompletesForWholeCrewAndNotifiesOthers()
+    {
+        var (a, inc, u, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        var driver = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = "Tài xế" };
+        var medic = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = "Y tá" };
+        CrewOf(u, driver, staff, medic);
+        IReadOnlyCollection<Guid>? notified = null;
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.Is<NotificationRequest>(r => r.Title == "TỔ ĐÃ NGHIỆM THU NHIỆM VỤ"), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<Guid>, NotificationRequest, CancellationToken>((ids, _, _) => notified = ids);
+
+        var r = await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id);
+
+        Assert.True(r.Success);
+        Assert.Equal(DispatchAssignmentStatus.Completed, a.Status);
+        Assert.Equal(IncidentStatus.Completed, inc.Status);
+        Assert.Equal(new[] { driver.Id, medic.Id }.OrderBy(x => x), notified!.OrderBy(x => x));
+        _rt.Verify(x => x.AssignmentStatusChangedAsync(It.Is<DispatchAssignmentResponseDto>(d => d.Status == DispatchAssignmentStatus.Completed), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Resolve_StationStaffOutsideVehicleCrew_IsForbidden()
+    {
+        var (a, _, u, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        CrewOf(u, new User { Role = UserRole.RescueStaff, StationId = _stationA });
+
+        var r = await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id);
+
+        Assert.Equal(ApiErrorCodes.Forbidden, r.ErrorCode);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a.Status);
+    }
+
+    [Fact]
+    public async Task Resolve_VehicleWithoutCrew_StationStaffStillAllowed()
+    {
+        var (a, _, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+
+        Assert.True((await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id)).Success);
+        _notify.Verify(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.Is<NotificationRequest>(r => r.Title == "TỔ ĐÃ NGHIỆM THU NHIỆM VỤ"), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Resolve_CrewWithTwoUnits_OneSignatureClosesAllItsUnits_OtherCrewStillPending()
+    {
+        // Tổ 1 có 2 xe: xe chữa cháy đã tới (OnScene), xe thang còn trên đường (EnRoute). Tổ 2 có 1 xe cấp cứu.
+        var (a1, inc, u1, leader) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        DispatchAssignment AddUnit(RescueUnitType type, DispatchAssignmentStatus status, out RescueUnit unit)
+        {
+            unit = Unit(type, 3, RescueUnitStatus.Dispatched);
+            var a = new DispatchAssignment { IncidentId = inc.Id, Incident = inc, RescueUnitId = unit.Id, RescueUnit = unit, Status = status };
+            inc.DispatchAssignments.Add(a);
+            _assign.Setup(x => x.GetByIdWithDetailsAsync(a.Id)).ReturnsAsync(a);
+            _assign.Setup(x => x.GetIncidentIdAsync(a.Id, It.IsAny<CancellationToken>())).ReturnsAsync(inc.Id);
+            return a;
+        }
+        var a2 = AddUnit(RescueUnitType.LadderTruck, DispatchAssignmentStatus.EnRoute, out var u2);
+        var a3 = AddUnit(RescueUnitType.Ambulance, DispatchAssignmentStatus.OnScene, out var u3);
+        var crew1Member = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = "Lái xe tổ 1" };
+        var crew2Member = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = "Y tá tổ 2" };
+        _users.Setup(x => x.GetByIdAsync(crew1Member.Id)).ReturnsAsync(crew1Member);
+        _users.Setup(x => x.GetByIdAsync(crew2Member.Id)).ReturnsAsync(crew2Member);
+        var crew1 = CrewOfUnits(new[] { u1, u2 }, leader, crew1Member);
+        var crew2 = CrewOf(u3, crew2Member);
+        var reports = new List<CompletionReport>();
+        _assign.Setup(x => x.AddCompletionReportAsync(It.IsAny<CompletionReport>())).Callback<CompletionReport>(reports.Add);
+
+        // Đại diện tổ 1 ký một lần → cả 2 xe của tổ 1 hoàn tất (kể cả xe còn EnRoute), dùng chung một báo cáo
+        var first = await _svc.ResolveAssignmentAsync(a1.Id, Report("https://x/a.jpg"), leader.Id);
+
+        Assert.True(first.Success);
+        Assert.Equal(DispatchAssignmentStatus.Completed, a1.Status);
+        Assert.Equal(DispatchAssignmentStatus.Completed, a2.Status);
+        Assert.Same(a1.CompletionReport, a2.CompletionReport);
+        Assert.Equal(crew1.Id, reports.Single().StationTeamId);
+        Assert.Equal(inc.Id, reports.Single().IncidentId);
+        Assert.Equal(RescueUnitStatus.CoolDown, u2.Status);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a3.Status);
+        Assert.Equal(IncidentStatus.InProgress, inc.Status);
+        Assert.Contains(u3.PlateNumber, first.Message);
+        _rt.Verify(x => x.AssignmentStatusChangedAsync(It.Is<DispatchAssignmentResponseDto>(d => d.Status == DispatchAssignmentStatus.Completed), It.IsAny<CancellationToken>()), Times.Exactly(2));
+
+        // Thành viên khác của tổ 1 bấm nộp trên xe thứ hai → đã nghiệm thu rồi
+        Assert.Equal(ApiErrorCodes.Conflict, (await _svc.ResolveAssignmentAsync(a2.Id, Report("https://x/b.jpg"), crew1Member.Id)).ErrorCode);
+
+        // Tổ 2 tự ký → sự cố đóng
+        var last = await _svc.ResolveAssignmentAsync(a3.Id, Report("https://x/c.jpg"), crew2Member.Id);
+        Assert.True(last.Success);
+        Assert.Equal(IncidentStatus.Completed, inc.Status);
+        Assert.Equal(new Guid?[] { crew1.Id, crew2.Id }, reports.Select(r => r.StationTeamId));
+    }
+
+    [Fact]
+    public async Task Resolve_MultipleCrewsOnOneIncident_EachCrewMustSignOff_IncidentClosesAfterLast()
+    {
+        // Tổ 1 (xe chữa cháy) và Tổ 2 (xe cấp cứu) cùng xử lý một hiện trường
+        var (a1, inc, u1, crew1Member) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        var u2 = Unit(RescueUnitType.Ambulance, 3, RescueUnitStatus.OnScene);
+        var a2 = new DispatchAssignment { IncidentId = inc.Id, Incident = inc, RescueUnitId = u2.Id, RescueUnit = u2, Status = DispatchAssignmentStatus.OnScene };
+        inc.DispatchAssignments.Add(a2);
+        _assign.Setup(x => x.GetByIdWithDetailsAsync(a2.Id)).ReturnsAsync(a2);
+        _assign.Setup(x => x.GetIncidentIdAsync(a2.Id, It.IsAny<CancellationToken>())).ReturnsAsync(inc.Id);
+        var crew2Member = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = "Y tá tổ 2" };
+        _users.Setup(x => x.GetByIdAsync(crew2Member.Id)).ReturnsAsync(crew2Member);
+        CrewOf(u1, crew1Member);
+        CrewOf(u2, crew2Member);
+        var reports = new List<CompletionReport>();
+        _assign.Setup(x => x.AddCompletionReportAsync(It.IsAny<CompletionReport>())).Callback<CompletionReport>(reports.Add);
+
+        // Tổ 1 nộp: chỉ xe của tổ 1 hoàn tất, sự cố còn mở và báo đang chờ xe của tổ 2
+        var first = await _svc.ResolveAssignmentAsync(a1.Id, Report("https://x/a.jpg"), crew1Member.Id);
+        Assert.True(first.Success);
+        Assert.Contains(u2.PlateNumber, first.Message);
+        Assert.Equal(DispatchAssignmentStatus.Completed, a1.Status);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a2.Status);
+        Assert.Equal(IncidentStatus.InProgress, inc.Status);
+
+        // Thành viên tổ 1 không nộp thay được tổ 2
+        var crossCrew = await _svc.ResolveAssignmentAsync(a2.Id, Report("https://x/b.jpg"), crew1Member.Id);
+        Assert.Equal(ApiErrorCodes.Forbidden, crossCrew.ErrorCode);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a2.Status);
+
+        // Tổ 2 tự chụp ảnh + ký → sự cố đóng
+        var last = await _svc.ResolveAssignmentAsync(a2.Id, Report("https://x/c.jpg"), crew2Member.Id);
+        Assert.True(last.Success);
+        Assert.Equal(DispatchAssignmentStatus.Completed, a2.Status);
+        Assert.Equal(IncidentStatus.Completed, inc.Status);
+
+        Assert.Equal(2, reports.Count);
+        Assert.Equal(new[] { crew1Member.FullName, crew2Member.FullName }, reports.Select(r => r.SignerName));
+        Assert.All(reports, r => Assert.Equal(Signature, r.SignatureUrl));
+    }
+
+    [Fact]
+    public async Task Resolve_SecondCrewMemberAfterCompletion_GetsConflictAndNothingChanges()
+    {
+        var (a, _, u, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        var other = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = "Khác" };
+        _users.Setup(x => x.GetByIdAsync(other.Id)).ReturnsAsync(other);
+        CrewOf(u, staff, other);
+
+        Assert.True((await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id)).Success);
+        var second = await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/b.jpg"), other.Id);
+
+        Assert.Equal(ApiErrorCodes.Conflict, second.ErrorCode);
+        _assign.Verify(x => x.AddCompletionReportAsync(It.IsAny<CompletionReport>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("data:image/png;base64,iVBORw0KGgo=")]
+    [InlineData("https://evil.example.com/sig.png")]
+    [InlineData("http://res.cloudinary.com/demo/image/upload/sig.png")]
+    [InlineData("https://res.cloudinary.com/other-cloud/image/upload/sig.png")]
+    public async Task Resolve_UntrustedSignatureUrl_IsRejectedWithoutCompleting(string url)
+    {
+        var (a, _, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        var dto = Report("https://x/a.jpg");
+        dto.SignatureUrl = url;
+
+        var r = await _svc.ResolveAssignmentAsync(a.Id, dto, staff.Id);
+
+        Assert.False(r.Success);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a.Status);
+        _assign.Verify(x => x.AddCompletionReportAsync(It.IsAny<CompletionReport>()), Times.Never);
+    }
+
+    [Fact]
     public async Task Resolve_WithoutEvidence_IsRejected()
     {
         var (a, _, _, staff) = Mission(DispatchAssignmentStatus.OnScene);
@@ -506,11 +742,13 @@ public class DispatchServiceTests
     }
 
     [Fact]
-    public async Task Resolve_StaffBeforeOnScene_IsRejected()
+    public async Task Resolve_BeforeOnScene_IsAllowed_SignOffDoesNotDependOnArrival()
     {
+        // Chữ ký là bản nộp khi sự cố đã giải quyết, không phụ thuộc xe đã xác nhận OnScene hay chưa
         var (a, _, _, staff) = Mission(DispatchAssignmentStatus.EnRoute);
 
-        Assert.False((await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id)).Success);
+        Assert.True((await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id)).Success);
+        Assert.Equal(DispatchAssignmentStatus.Completed, a.Status);
     }
 
     [Fact]

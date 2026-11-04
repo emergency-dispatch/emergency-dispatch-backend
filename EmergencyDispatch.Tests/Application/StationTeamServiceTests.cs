@@ -63,7 +63,7 @@ public class StationTeamServiceTests
         var r = await _svc.CreateAsync(_station.Id, Input(" Tổ 1 ", v.Id, (a.Id, CrewRole.Commander), (b.Id, CrewRole.Driver)));
 
         Assert.True(r.Success);
-        _teams.Verify(t => t.AddAsync(It.Is<StationTeam>(x => x.Name == "Tổ 1" && x.Members.Count == 2 && x.RescueUnitId == v.Id), It.IsAny<CancellationToken>()), Times.Once);
+        _teams.Verify(t => t.AddAsync(It.Is<StationTeam>(x => x.Name == "Tổ 1" && x.Members.Count == 2 && x.RescueUnits.Single().Id == v.Id), It.IsAny<CancellationToken>()), Times.Once);
         _rt.Verify(n => n.TeamChangedAsync(It.Is<TeamChangedEventDto>(e => e.Action == "Created"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -151,11 +151,73 @@ public class StationTeamServiceTests
     }
 
     [Fact]
+    public async Task Create_TeamWithSeveralVehicles_LinksEveryVehicle()
+    {
+        var a = Staff();
+        var b = Staff();
+        var fireTruck = Vehicle();
+        var ladder = Vehicle();
+        var dto = Input("Tổ 1", null, (a.Id, CrewRole.Commander), (b.Id, CrewRole.Driver));
+        dto.RescueUnitIds = new List<Guid> { fireTruck.Id, ladder.Id };
+
+        var r = await _svc.CreateAsync(_station.Id, dto);
+
+        Assert.True(r.Success);
+        Assert.Equal(2, r.Data!.RescueUnitIds.Count);
+        Assert.Contains(fireTruck.Id, r.Data.RescueUnitIds);
+        Assert.Contains(ladder.Id, r.Data.RescueUnitIds);
+        Assert.NotNull(fireTruck.StationTeamId);
+        Assert.Equal(fireTruck.StationTeamId, ladder.StationTeamId);
+    }
+
+    [Fact]
+    public async Task Update_VehicleList_DetachesRemovedAndAttachesNew()
+    {
+        var keep = Vehicle();
+        var drop = Vehicle();
+        var add = Vehicle();
+        var team = new StationTeam { StationId = _station.Id, Name = "Tổ 1" };
+        foreach (var v in new[] { keep, drop })
+        {
+            v.StationTeamId = team.Id;
+            team.RescueUnits.Add(v);
+        }
+        _existing.Add(team);
+        var dto = Input("Tổ 1", null);
+        dto.RescueUnitIds = new List<Guid> { keep.Id, add.Id };
+
+        var r = await _svc.UpdateAsync(_station.Id, team.Id, dto);
+
+        Assert.True(r.Success);
+        Assert.Equal(team.Id, keep.StationTeamId);
+        Assert.Equal(team.Id, add.StationTeamId);
+        Assert.Null(drop.StationTeamId);
+        Assert.DoesNotContain(drop, team.RescueUnits);
+    }
+
+    [Fact]
+    public async Task Update_LegacySingleRescueUnitId_StillAccepted()
+    {
+        var v = Vehicle();
+        var team = new StationTeam { StationId = _station.Id, Name = "Tổ 1" };
+        _existing.Add(team);
+
+        var r = await _svc.UpdateAsync(_station.Id, team.Id, Input("Tổ 1", v.Id));
+
+        Assert.True(r.Success);
+        Assert.Equal(v.Id, r.Data!.RescueUnitId);
+        Assert.Equal(new[] { v.Id }, r.Data.RescueUnitIds);
+    }
+
+    [Fact]
     public async Task Create_VehicleOfOtherStationOrAlreadyTaken_Fails()
     {
         var foreign = Vehicle(Guid.NewGuid());
         var taken = Vehicle();
-        _existing.Add(new StationTeam { StationId = _station.Id, Name = "Tổ A", RescueUnitId = taken.Id });
+        var owner = new StationTeam { StationId = _station.Id, Name = "Tổ A" };
+        owner.RescueUnits.Add(taken);
+        taken.StationTeamId = owner.Id;
+        _existing.Add(owner);
 
         Assert.False((await _svc.CreateAsync(_station.Id, Input("x", foreign.Id))).Success);
         Assert.Equal(ApiErrorCodes.Conflict, (await _svc.CreateAsync(_station.Id, Input("y", taken.Id))).ErrorCode);

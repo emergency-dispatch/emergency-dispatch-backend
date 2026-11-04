@@ -3,7 +3,8 @@ using EmergencyDispatch.Domain.Enums;
 namespace EmergencyDispatch.Domain.Entities;
 
 /// <summary>
-/// Tổ làm việc cố định của trạm cứu hộ (Operator thêm nhân viên vào trạm và tổ). Mỗi xe có tối đa 1 tổ phụ trách.
+/// Tổ làm việc cố định của trạm cứu hộ (Operator thêm nhân viên vào trạm và tổ).
+/// Một tổ phụ trách nhiều xe (RescueUnit.StationTeamId); mỗi xe thuộc tối đa 1 tổ. Tổ không có xe = tổ trực tại trạm.
 /// </summary>
 public class StationTeam : BaseEntity
 {
@@ -13,10 +14,9 @@ public class StationTeam : BaseEntity
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Xe tổ phụ trách; null = tổ trực tại trạm
+    /// Các xe tổ phụ trách; rỗng = tổ trực tại trạm
     /// </summary>
-    public Guid? RescueUnitId { get; set; }
-    public RescueUnit? RescueUnit { get; set; }
+    public ICollection<RescueUnit> RescueUnits { get; set; } = new List<RescueUnit>();
 
     public ICollection<StationTeamMember> Members { get; set; } = new List<StationTeamMember>();
 }

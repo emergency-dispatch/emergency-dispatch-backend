@@ -83,6 +83,10 @@ public class DispatchAssignment : BaseEntity
     public string? RejectionNotes { get; set; }
     public DateTime? RejectedAt { get; set; }
 
+    /// <summary>
+    /// Báo cáo nghiệm thu đã hoàn tất lượt này (dùng chung cho mọi xe cùng tổ trong sự cố)
+    /// </summary>
+    public Guid? CompletionReportId { get; set; }
     public CompletionReport? CompletionReport { get; set; }
     public ICollection<AssignmentStatusHistory> StatusHistories { get; set; } = new List<AssignmentStatusHistory>();
 

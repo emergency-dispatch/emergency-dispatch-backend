@@ -1175,3 +1175,45 @@ Mọi thao tác ghi system audit với `entityType = "Equipment"` (Created / Upd
 | Thay `mockEquipmentList` bằng `GET /api/equipment` (trạm mình); nút **"Báo hỏng"** → `PUT /status` với `Maintenance` + lý do | Web `/staff` (`StaffEquipmentView.tsx`), mobile staff (`MedicalEquipmentModal.tsx`) | Có thể lọc `rescueUnitId` = xe của tổ để hiện "thiết bị trên xe" |
 | Trang audit hệ thống: nhãn cho `entityType = Equipment` | Web Admin — Audit trail | |
 | TypeScript: type `Equipment`, enum `EquipmentCategory`, `EquipmentStatus` | Web + mobile | |
+
+## 26. Cập nhật 04/11/2026: tổ nhiều xe; nghiệm thu theo tổ, bắt buộc chữ ký đại diện (SR-02)
+
+### 26.1. Một tổ phụ trách nhiều xe
+
+Backend: quan hệ tổ – xe đổi từ 1–1 sang **1–nhiều** (mỗi xe thuộc tối đa 1 tổ, một tổ có nhiều xe). Migration `Team_Vehicles_And_Team_Completion` giữ nguyên liên kết đang có.
+
+* `StationTeamDto` (`GET /api/stations/{id}/teams`, tạo / sửa tổ): thêm **`rescueUnitIds: string[]`**, **`rescueUnitPlates: string[]`**. `rescueUnitId` / `rescueUnitPlate` cũ vẫn trả (xe đầu tiên) để màn hình cũ không vỡ — sẽ bỏ sau.
+* `POST /api/stations/{id}/teams`, `PUT /api/stations/{id}/teams/{teamId}`: gửi **`rescueUnitIds`** (danh sách). Không gửi `rescueUnitIds` thì backend dùng `rescueUnitId` cũ (một xe). Xe khác trạm → 400; xe đã thuộc tổ khác → 409 *"Xe {biển số} đã có {tổ} phụ trách."*
+* `GET /api/users/my-team`: thêm `myTeamRescueUnitIds`, `myTeamRescueUnitPlates`; `myTeamRescueUnitId` / `myTeamRescueUnitPlate` cũ = xe đầu tiên.
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Form tổ: đổi ô chọn **một xe** thành **chọn nhiều xe** (multi-select), gửi `rescueUnitIds` | Web Operator — Station Teams (`TeamFormDrawer.tsx`), Web Admin — Stations | Ẩn xe đã thuộc tổ khác hoặc hiện tên tổ đó |
+| Thẻ tổ / danh sách tổ: hiện tất cả biển số trong `rescueUnitPlates` | `TeamCard.tsx`, `DispatchTeamLabel.tsx` | |
+| Staff: hiện các xe của tổ mình (`myTeamRescueUnitPlates`) | Web `/staff`, mobile staff | |
+| TypeScript: `rescueUnitIds: string[]`, `rescueUnitPlates: string[]` trong `StationTeam`; `rescueUnitIds?: string[]` trong payload | Web + mobile | |
+
+### 26.2. Nghiệm thu theo tổ, bắt buộc chữ ký đại diện
+
+Luồng `POST /api/dispatch/assignments/{id}/resolve` (gọi trên **bất kỳ** lượt điều phối nào của tổ trong sự cố):
+1. Xử lý xong, **một thành viên bất kỳ của tổ** (đại diện) chụp ảnh hiện trường và ký xác nhận rồi nộp.
+2. Backend tạo **một báo cáo nghiệm thu cho tổ** và hoàn tất **mọi xe của tổ đang làm sự cố này** — không phân biệt xe đã tới hiện trường hay chưa. Mỗi xe phát `ReceiveAssignmentStatus` (`Completed`), xe vào hồi sức (CoolDown).
+3. Các thành viên còn lại của tổ nhận push **"TỔ ĐÃ NGHIỆM THU NHIỆM VỤ"** (`type = StatusUpdate`, `incidentId`).
+4. Thành viên khác bấm nộp sau (trên bất kỳ xe nào của tổ) → **409** *"Nhiệm vụ này đã được một thành viên trong tổ nghiệm thu. Không cần nộp lại."*
+5. **Nhiều tổ cùng hiện trường:** mỗi tổ tự nộp một lần. Tổ nộp trước chỉ hoàn tất xe của tổ mình; `message` liệt kê xe còn chờ, vd *"Nghiệm thu thành công cho xe 51A-001, 51A-002. Sự cố vẫn mở, chờ tổ của các xe còn lại chụp ảnh và ký nghiệm thu: 51A-003."*. Sự cố chỉ `Completed` khi tổ cuối cùng nộp. Thành viên tổ này không nộp thay tổ khác (403).
+6. Xe chưa gán tổ: nghiệm thu riêng xe đó (nhân viên trạm của xe nộp). Operator / Admin vẫn nộp thay được (ghi audit).
+7. Không còn yêu cầu xe phải xác nhận OnScene trước khi nghiệm thu.
+
+Thay đổi API:
+* `signatureUrl` **bắt buộc** — URL ảnh chữ ký đã upload qua `POST /api/media/upload`. Thiếu → 400 *"Cần chữ ký xác nhận của thành viên tổ trước khi nộp báo cáo nghiệm thu."*; dataURL / link ngoài → 400 *"Ảnh chữ ký không hợp lệ…"*.
+* Người ký = tài khoản nộp báo cáo (không có trường `signerName`).
+* `completionReport` trong `DispatchAssignmentResponseDto`: thêm `stationTeamId`, `stationTeamName`, `signatureUrl`, `signerName`, `signedAt`. Các xe cùng tổ trả **cùng một** `completionReport.id`.
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Màn nghiệm thu: ghi rõ "Nghiệm thu cho cả tổ {tên tổ} — các xe: …". Bắt buộc ký trước khi bấm nộp. Khi nộp: `signatureDataUrl` → `Blob` PNG → `POST /api/media/upload` (multipart, field `file`) → lấy `data.url` gửi vào `signatureUrl` | Web `/staff` (`StaffClosureReportModal.tsx` ~dòng 230, `dispatchService.resolveAssignment`) | Hiện modal giữ `signatureDataUrl` ở client, không gửi lên server |
+| Mobile staff: thêm khung ký (vd `react-native-signature-canvas`), upload PNG như trên | Mobile staff | Chưa có khung ký — **không có thì staff mobile không nghiệm thu được** |
+| Khi nhận `ReceiveAssignmentStatus` (`Completed`) cho xe của tổ mình hoặc push "TỔ ĐÃ NGHIỆM THU NHIỆM VỤ": đóng màn nhiệm vụ / nghiệm thu đang mở, chuyển sang lịch sử | Web `/staff`, mobile staff | Một tổ nhiều xe → nhận nhiều event, xử lý idempotent |
+| Xử lý 409 khi nộp: hiện thông báo của server rồi làm mới `GET /api/dispatch/my-assignments` | Web `/staff`, mobile staff | |
+| Chi tiết sự cố (Operator): nhóm các xe theo `completionReport.stationTeamName`, hiện ảnh, chữ ký, người ký, thời điểm ký; xe chưa nghiệm thu đánh dấu "Chờ tổ nghiệm thu" | Web Operator | |
+| TypeScript: `signatureUrl: string` (bắt buộc) trong payload resolve; thêm các trường mới vào `CompletionReport` type | Web + mobile | |

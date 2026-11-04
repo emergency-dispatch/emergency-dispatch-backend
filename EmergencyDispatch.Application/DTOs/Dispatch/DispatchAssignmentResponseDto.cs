@@ -89,6 +89,13 @@ public class DispatchAssignmentResponseDto
 public class CompletionReportDto
 {
     public Guid Id { get; set; }
+
+    /// <summary>
+    /// Tổ nộp báo cáo (một báo cáo dùng chung cho mọi xe của tổ trong sự cố); null = xe chưa gán tổ
+    /// </summary>
+    public Guid? StationTeamId { get; set; }
+    public string? StationTeamName { get; set; }
+
     public string ActionsSummary { get; set; } = string.Empty;
     public int VictimsAssistedCount { get; set; }
     public List<string> EquipmentUsed { get; set; } = new();
@@ -97,6 +104,9 @@ public class CompletionReportDto
     public string? HandoverContactName { get; set; }
     public string? HandoverContactPhone { get; set; }
     public string? HandoverNotes { get; set; }
+    public string? SignatureUrl { get; set; }
+    public string? SignerName { get; set; }
+    public DateTime? SignedAt { get; set; }
     public Guid? SubmittedByUserId { get; set; }
     public DateTime SubmittedAt { get; set; }
 }
