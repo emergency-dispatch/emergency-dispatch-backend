@@ -166,14 +166,50 @@ public class IncidentServiceTests
         Assert.Equal("Dân", user.Data.ReporterName);
     }
 
-    [Fact]
-    public async Task Create_OutsideServiceArea_IsAcceptedButFlaggedAndAlerted()
+    private void EnableAreaFarFromSos(bool rejectOutside)
     {
         _area.Enabled = true;
+        _area.RejectOutside = rejectOutside;
         _area.Name = "HCM";
         _area.CenterLat = 10.0;
         _area.CenterLng = 106.0;
         _area.RadiusKm = 5;
+    }
+
+    [Fact]
+    public async Task Create_OutsideServiceArea_RejectEnabled_IsRejectedWithoutSaving()
+    {
+        EnableAreaFarFromSos(rejectOutside: true);
+
+        var r = await _svc.CreateIncidentAsync(Sos());
+
+        Assert.False(r.Success);
+        Assert.Equal(ApiErrorCodes.OutOfServiceArea, r.ErrorCode);
+        Assert.Contains("\"HCM\"", r.Message);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+        _rt.Verify(n => n.IncidentCreatedAsync(It.IsAny<IncidentResponseDto>(), It.IsAny<CancellationToken>()), Times.Never);
+        _queue.Verify(q => q.EnqueueAsync(It.IsAny<AiAnalysisJob>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_InsideServiceArea_RejectEnabled_IsAccepted()
+    {
+        _area.Enabled = true;
+        _area.Name = "Q7";
+        _area.CenterLat = 10.7335;
+        _area.CenterLng = 106.7192;
+        _area.RadiusKm = 5;
+
+        var r = await _svc.CreateIncidentAsync(Sos());
+
+        Assert.True(r.Success);
+        Assert.False(r.Data!.IsOutOfServiceArea);
+    }
+
+    [Fact]
+    public async Task Create_OutsideServiceArea_RejectDisabled_IsAcceptedButFlaggedAndAlerted()
+    {
+        EnableAreaFarFromSos(rejectOutside: false);
         Incident? saved = null;
         _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
 

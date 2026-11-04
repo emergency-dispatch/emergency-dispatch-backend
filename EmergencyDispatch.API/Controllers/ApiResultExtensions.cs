@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace EmergencyDispatch.API.Controllers;
 
 /// <summary>
-/// Ánh xạ kết quả nghiệp vụ sang mã HTTP tương ứng (200 / 400 / 403 / 404 / 409)
+/// Ánh xạ kết quả nghiệp vụ sang mã HTTP tương ứng (200 / 400 / 403 / 404 / 409 / 422 / 429)
 /// </summary>
 internal static class ApiResultExtensions
 {
@@ -21,6 +21,7 @@ internal static class ApiResultExtensions
             ApiErrorCodes.Forbidden => controller.StatusCode(StatusCodes.Status403Forbidden, result),
             ApiErrorCodes.NotFound => controller.NotFound(result),
             ApiErrorCodes.TooManyRequests => controller.StatusCode(StatusCodes.Status429TooManyRequests, result),
+            ApiErrorCodes.OutOfServiceArea => controller.UnprocessableEntity(result),
             _ => controller.BadRequest(result)
         };
     }

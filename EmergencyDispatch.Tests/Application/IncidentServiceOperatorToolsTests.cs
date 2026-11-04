@@ -86,6 +86,22 @@ public class IncidentServiceOperatorToolsTests
     }
 
     [Fact]
+    public async Task CreateByOperator_OutsideServiceAreaWithRejectEnabled_IsStillAccepted()
+    {
+        _settings.Setup(s => s.GetServiceAreaAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new ServiceAreaSettingsDto
+        {
+            Enabled = true, RejectOutside = true, Name = "HCM", CenterLat = 10.0, CenterLng = 106.0, RadiusKm = 5
+        });
+        Incident? saved = null;
+        _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
+
+        var r = await _svc.CreateByOperatorAsync(PhoneCall(), Guid.NewGuid());
+
+        Assert.True(r.Success);
+        Assert.True(saved!.IsOutOfServiceArea);
+    }
+
+    [Fact]
     public async Task CreateByOperator_Invalid_ReturnsErrors()
     {
         var dto = PhoneCall();

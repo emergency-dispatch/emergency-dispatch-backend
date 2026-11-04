@@ -118,7 +118,7 @@ public class SystemSettingsService : ISystemSettingsService
         var before = await GetServiceAreaAsync(cancellationToken);
         await _repository.UpsertAsync(ServiceAreaKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, ServiceAreaKey,
-            $"Cập nhật khu vực phục vụ \"{values.Name}\" (bán kính {values.RadiusKm} km, {(values.Enabled ? "bật" : "tắt")} kiểm tra)", before, values, cancellationToken);
+            $"Cập nhật khu vực phục vụ \"{values.Name}\" (bán kính {values.RadiusKm} km, {(values.Enabled ? "bật" : "tắt")} kiểm tra, {(values.RejectOutside ? "từ chối" : "chỉ gắn cờ")} SOS ngoài vùng)", before, values, cancellationToken);
 
         var areaRecord = await GetServiceAreaRecordAsync(cancellationToken);
         await PublishSettingsAsync(ServiceAreaKey, areaRecord.UpdatedAt, areaRecord.UpdatedByName, cancellationToken);

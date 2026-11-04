@@ -102,6 +102,7 @@ public class IncidentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentResponseDto>), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> CreateIncident([FromBody] CreateIncidentDto dto, CancellationToken cancellationToken)
     {

@@ -73,6 +73,13 @@ public class ApiResponseDto<T>
         result.ErrorCode = ApiErrorCodes.NotFound;
         return result;
     }
+
+    public static ApiResponseDto<T> OutOfServiceAreaResult(string message)
+    {
+        var result = Fail(message);
+        result.ErrorCode = ApiErrorCodes.OutOfServiceArea;
+        return result;
+    }
 }
 
 /// <summary>
@@ -91,4 +98,7 @@ public static class ApiErrorCodes
 
     /// <summary>Gửi quá nhiều yêu cầu trong thời gian ngắn — BR-CIT-01 (HTTP 429)</summary>
     public const string TooManyRequests = "TOO_MANY_REQUESTS";
+
+    /// <summary>Vị trí SOS nằm ngoài khu vực phục vụ đang bật chặn (HTTP 422)</summary>
+    public const string OutOfServiceArea = "OUT_OF_SERVICE_AREA";
 }

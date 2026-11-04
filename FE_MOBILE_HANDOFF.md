@@ -1100,3 +1100,18 @@ Lưu ý triển khai: kiểm tra nhanh ảnh của báo cáo gom dùng YOLO (`Yo
 * Trang audit trail sự cố: thêm nhãn / icon cho `AuditAction` 19–30 (`SeverityChanged`, `FieldRequestCreated`, `FieldRequestAcknowledged`, `FieldRequestFulfilled`, `FieldRequestDeclined`, `FieldRequestCancelled`, `FieldRequestEscalated`, `ReportLinked`, `ReportUnlinked`, `DuplicateConfirmed`, `SupplementAdded`, `LinkedReportsRestored`).
 * Enum mới cho TypeScript: `FieldRequestType { Backup, Other }`, `FieldRequestStatus { Open, Acknowledged, Fulfilled, Declined, Cancelled }`, `IncidentStatus.Linked`.
 * Sự kiện SignalR mới trên `/hubs/incidents`: `ReceiveFieldRequest`, `ReceiveIncidentSupplement`.
+
+## 22. Cập nhật 04/11/2026: chặn SOS ngoài khu vực phục vụ ở server
+
+Backend: cấu hình khu vực phục vụ có thêm `rejectOutside` (mặc định `true`). Khi khu vực đang bật (`enabled = true`) và `rejectOutside = true`, `POST /api/incidents` (và `/api/incidents/sos`) của người dân / khách ở ngoài bán kính bị từ chối, **không tạo sự cố**:
+
+* HTTP **422**, `errorCode = "OUT_OF_SERVICE_AREA"`, `message` song ngữ, ví dụ: *"Vị trí của bạn nằm ngoài khu vực phục vụ "Khu Công nghệ cao" khoảng 2.3 km nên không thể gửi SOS qua ứng dụng. Nếu khẩn cấp, vui lòng gọi trực tiếp 114 / 115."*
+* `rejectOutside = false` → giữ hành vi cũ: vẫn tiếp nhận, gắn cờ `isOutOfServiceArea`, báo Operator qua `ReceiveOutOfAreaAlert`.
+* Sự cố do Operator tạo (`POST /api/incidents/operator`, gọi điện / bộ đàm) **không bị chặn**.
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Xử lý response 422 + `errorCode = "OUT_OF_SERVICE_AREA"` khi gửi SOS: hiện modal báo ngoài khu vực bằng `message` của server + nút gọi 114 / 115 | Web citizen (`SosModal.tsx`), mobile citizen | Web hiện đã tự chặn ở client (`SosModal.tsx` ~dòng 475–495); vẫn cần xử lý 422 vì tọa độ client có thể lệch với server |
+| **Mobile:** nối nút SOS với API thật (upload ảnh `POST /api/media/upload` → `POST /api/incidents`). Trước khi gửi gọi `GET /api/settings/service-area` (không cần đăng nhập) để kiểm tra sớm; nếu `enabled && rejectOutside` mà ngoài bán kính thì hiện thông báo *"Emergency SOS is only available within High-Tech Park"* (DS-02) | Mobile citizen (`HomeScreen.tsx`, `MediaReportModal.tsx`) | Hiện `handleSosTriggered` chỉ mở `SosSuccessModal`, chưa gọi API |
+| Admin: thêm công tắc **"Từ chối SOS ngoài khu vực"** = `rejectOutside` trong form `PUT /api/settings/service-area` | Web Admin — Settings (Service area) | Tắt = chỉ gắn cờ và cảnh báo Operator |
+| TypeScript: thêm `rejectOutside: boolean` vào `ServiceAreaDto`; thêm `OUT_OF_SERVICE_AREA` vào danh sách mã lỗi | Web + mobile | |

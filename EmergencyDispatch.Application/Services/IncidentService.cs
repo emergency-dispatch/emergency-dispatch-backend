@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Ai;
@@ -130,11 +131,21 @@ public class IncidentService : IIncidentService
                 "Bạn vừa gửi một yêu cầu cứu hộ đang được xử lý. Vui lòng chờ 3 phút hoặc gọi trực tiếp 114 / 115 nếu cần hỗ trợ thêm.");
         }
 
-        // Trạm phụ trách theo vị trí (mỗi Operator xử lý sự cố của trạm mình) + kiểm tra khu vực phục vụ
-        var responsibleStation = StationAssignment.PickResponsibleStation(
-            await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
+        // Kiểm tra khu vực phục vụ ở server (client có thể bị bỏ qua khi gọi thẳng API)
         var serviceArea = await _settingsService.GetServiceAreaAsync(cancellationToken);
         var outsideKm = StationAssignment.DistanceOutsideArea(serviceArea, dto.Latitude, dto.Longitude);
+        if (outsideKm > 0 && serviceArea.RejectOutside)
+        {
+            _logger.LogWarning("Từ chối SOS ngoài khu vực phục vụ \"{Area}\" {OutsideKm} km (user={UserId}).",
+                serviceArea.Name, outsideKm, userId);
+            return ApiResponseDto<IncidentResponseDto>.OutOfServiceAreaResult(LocalizationHelper.Localize(
+                "Vị trí của bạn nằm ngoài khu vực phục vụ \"{0}\" khoảng {1} km nên không thể gửi SOS qua ứng dụng. Nếu khẩn cấp, vui lòng gọi trực tiếp 114 / 115.",
+                serviceArea.Name, outsideKm.ToString("0.#", CultureInfo.InvariantCulture)));
+        }
+
+        // Trạm phụ trách theo vị trí (mỗi Operator xử lý sự cố của trạm mình)
+        var responsibleStation = StationAssignment.PickResponsibleStation(
+            await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
 
         var incident = new Incident
         {
