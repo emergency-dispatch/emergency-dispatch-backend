@@ -242,6 +242,32 @@ public static partial class LocalizationCatalog
         { "Cấu hình leo thang không hợp lệ.", "Invalid escalation settings." },
         { "Đã lưu cấu hình leo thang.", "Escalation settings saved." },
         { "Cấu hình khu vực phục vụ không hợp lệ.", "Invalid service area settings." },
+<<<<<<< Updated upstream
+=======
+        { "Mã trạm \"{0}\" đã tồn tại trong hệ thống.", "Station code \"{0}\" already exists in the system." },
+
+        // Thiết bị cứu hộ (Equipment)
+        { "Không tìm thấy thiết bị.", "Equipment not found." },
+        { "Bạn chỉ được thao tác thiết bị của trạm mình.", "You can only manage equipment of your own station." },
+        { "Không tìm thấy xe cứu hộ được chọn.", "The selected rescue unit was not found." },
+        { "Xe được chọn không thuộc trạm sở hữu thiết bị.", "The selected rescue unit does not belong to the equipment's station." },
+        { "Chỉ Admin được chuyển thiết bị sang trạm khác.", "Only Admin can move equipment to another station." },
+        { "Vui lòng nhập lý do bảo trì (tối thiểu 5 ký tự).", "Please enter a maintenance reason (at least 5 characters)." },
+        { "Lấy danh sách thiết bị thành công.", "Equipment list retrieved successfully." },
+        { "Lấy thông tin thiết bị thành công.", "Equipment retrieved successfully." },
+        { "Thêm thiết bị thành công.", "Equipment added successfully." },
+        { "Cập nhật thiết bị thành công.", "Equipment updated successfully." },
+        { "Trạng thái thiết bị không thay đổi.", "Equipment status unchanged." },
+        { "Cập nhật trạng thái thiết bị thành công.", "Equipment status updated successfully." },
+        { "Xóa thiết bị thành công.", "Equipment deleted successfully." },
+        { "Tên thiết bị không được để trống.", "Equipment name is required." },
+        { "Tên thiết bị tối đa 200 ký tự.", "Equipment name must be at most 200 characters." },
+        { "Số lượng phải từ 1 đến 1000.", "Quantity must be between 1 and 1000." },
+        { "Vui lòng chọn trạm sở hữu thiết bị.", "Please select the station that owns the equipment." },
+        { "Ghi chú tối đa 500 ký tự.", "Notes must be at most 500 characters." },
+        { "Tên trạm \"{0}\" đã tồn tại trong hệ thống.", "Station name \"{0}\" already exists in the system." },
+        { "Mã trạm gồm 2–20 ký tự: chữ, số, dấu gạch ngang hoặc gạch dưới.", "Station code must be 2–20 characters: letters, digits, hyphens or underscores." },
+>>>>>>> Stashed changes
         { "Đã lưu khu vực phục vụ.", "Service area saved." },
         { "Mỗi trọng số Load-Aware phải lớn hơn 0.", "Each Load-Aware weight must be greater than 0." },
         { "Tổng ba trọng số Load-Aware phải bằng 1.", "The three Load-Aware weights must sum to 1." },

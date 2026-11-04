@@ -1115,3 +1115,66 @@ Backend: cấu hình khu vực phục vụ có thêm `rejectOutside` (mặc đ�
 | **Mobile:** nối nút SOS với API thật (upload ảnh `POST /api/media/upload` → `POST /api/incidents`). Trước khi gửi gọi `GET /api/settings/service-area` (không cần đăng nhập) để kiểm tra sớm; nếu `enabled && rejectOutside` mà ngoài bán kính thì hiện thông báo *"Emergency SOS is only available within High-Tech Park"* (DS-02) | Mobile citizen (`HomeScreen.tsx`, `MediaReportModal.tsx`) | Hiện `handleSosTriggered` chỉ mở `SosSuccessModal`, chưa gọi API |
 | Admin: thêm công tắc **"Từ chối SOS ngoài khu vực"** = `rejectOutside` trong form `PUT /api/settings/service-area` | Web Admin — Settings (Service area) | Tắt = chỉ gắn cờ và cảnh báo Operator |
 | TypeScript: thêm `rejectOutside: boolean` vào `ServiceAreaDto`; thêm `OUT_OF_SERVICE_AREA` vào danh sách mã lỗi | Web + mobile | |
+<<<<<<< Updated upstream
+=======
+
+## 23. Cập nhật 04/11/2026: mã trạm (Station Code) và chặn trùng tên / mã trạm
+
+Backend: trạm có thêm `code` (VD `ST-001`), duy nhất trong các trạm chưa xóa, lưu chữ in hoa. Migration `Station_Code` tự gán `ST-001`, `ST-002`… cho trạm đang có (theo thứ tự tạo).
+
+* `GET /api/stations`, `GET /api/stations/{id}`: response có thêm `code`.
+* `POST /api/stations`: `code` **tùy chọn** — bỏ trống thì backend tự sinh `ST-xxx` nhỏ nhất chưa dùng. Định dạng 2–20 ký tự `[A-Za-z0-9_-]`, không bắt đầu bằng `-` / `_`; không phân biệt hoa thường.
+* `PUT /api/stations/{id}`: `code` tùy chọn — bỏ trống thì giữ mã cũ.
+* Trùng mã → **400**, `message` *"Mã trạm "ST-001" đã tồn tại trong hệ thống."* / *"Station code "ST-001" already exists in the system."*
+* Trùng tên → **400**, `message` *"Tên trạm "…" đã tồn tại trong hệ thống."* (trước đây trả 500).
+* Trạm đã xóa không giữ chỗ tên / mã: có thể tạo lại trạm cùng tên hoặc mã.
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Form tạo / sửa trạm: thêm ô **"Mã trạm"** (placeholder "Để trống để tự sinh"), validate client cùng regex `^[A-Za-z0-9][A-Za-z0-9_-]{1,19}$` | Web Admin — Stations (`StationFormDrawer.tsx`) | Khi lưu lỗi 400 hiện toast bằng `message` của server (kịch bản DS-06) |
+| Bảng trạm: thêm cột **Mã** và cho tìm kiếm theo mã | Web Admin — Stations (`StationsTable.tsx`) | |
+| Hiện mã trạm cạnh tên ở các chỗ chọn trạm (giao Operator phụ trách, thêm xe, thêm nhân viên) | Web Admin / Operator | Tùy chọn |
+| TypeScript: thêm `code: string` vào `Station` type; `code?: string` vào payload tạo / sửa | Web | |
+
+## 24. Cập nhật 04/11/2026: leo thang điểm nghẽn tê liệt (Blocked) chưa có đội giải tỏa
+
+Backend: `EscalationWorker` (30 giây / lần) quét thêm điểm nghẽn `congestionLevel = Blocked`, `status = Active` (chưa giao đội), chưa hết hạn, đã quá ngưỡng chờ (dùng chung ngưỡng sự cố: `dayThresholdMinutes` / `nightThresholdMinutes` trong `/api/settings/escalation`, mặc định 5 / 2.5 phút). Mỗi điểm nghẽn leo thang **tối đa 1 lần**.
+
+Khi leo thang:
+* SignalR mới trên `/hubs/incidents`: **`ReceiveTrafficHotspotEscalation`** (payload `TrafficHotspotResponseDto`) → Operator trạm phụ trách + Admin (điểm nghẽn chưa có trạm → mọi Operator).
+* Notification `type = Escalation`, `highPriority = true` (push có còi), tiêu đề "ĐIỂM NGHẼN TÊ LIỆT CHƯA CÓ ĐỘI GIẢI TỎA", `data.trafficHotspotId`.
+* `TrafficHotspotResponseDto` có thêm **`escalatedAt`** (null = chưa leo thang) ở mọi API / event điểm nghẽn.
+* System audit: `SystemAuditAction.TrafficEscalated` (14).
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Lắng nghe `ReceiveTrafficHotspotEscalation`: bíp + toast đỏ "Điểm nghẽn tê liệt chưa có đội giải tỏa", bấm vào thì mở popup điểm nghẽn trên Live Map (có nút giao đội) | Web Operator (`DispatchContext.tsx`, Live Map) | Giống cảnh báo leo thang sự cố cấp 1 (`playPriorityBeep`) |
+| Marker điểm nghẽn có `escalatedAt != null` và còn `Active`: viền đỏ nhấp nháy / badge "Quá hạn" | Web Operator — Live Map | Hết nhấp nháy khi chuyển `Assigned` |
+| Chạm notification có `data.trafficHotspotId` → mở điểm nghẽn | Web + mobile (Operator / Admin) | |
+| Trang audit hệ thống: nhãn cho `TrafficEscalated` (vi "Leo thang điểm nghẽn" / en "Traffic hotspot escalated") | Web Admin — Audit trail | |
+| TypeScript: `escalatedAt?: string` trong `TrafficHotspot` type; thêm event vào `HubEvents` | Web | |
+
+## 25. Cập nhật 04/11/2026: quản lý thiết bị cứu hộ (Equipment)
+
+Backend: module mới `api/equipment` (Phiếu đăng ký §3.2.c — thiết bị cứu hộ, trạng thái Available / Maintenance). Migration `Equipment` tạo bảng mới.
+
+| Endpoint | Quyền | Ghi chú |
+|---|---|---|
+| `GET /api/equipment?stationId&rescueUnitId&status&category` | Admin, Operator, RescueStaff | Operator / Staff bỏ trống `stationId` → tự lấy trạm mình; hỏi trạm khác → 403 |
+| `GET /api/equipment/{id}` | Admin, Operator, RescueStaff | Trạm khác → 403 |
+| `POST /api/equipment` | Admin, Operator (trạm mình) | Body: `name` (≤200), `category`, `quantity` (1–1000), `stationId`, `rescueUnitId?` (xe cùng trạm), `notes?` (≤500). Tạo ra luôn `Available` |
+| `PUT /api/equipment/{id}` | Admin, Operator (trạm mình) | Cùng body; chỉ Admin được đổi `stationId` |
+| `PUT /api/equipment/{id}/status` | Admin, Operator, RescueStaff (trạm mình) | Body `{ status, note? }`. Chuyển `Maintenance` bắt buộc `note` ≥ 5 ký tự (lý do hỏng / bảo trì); về `Available` thì xóa ghi chú |
+| `DELETE /api/equipment/{id}` | Admin, Operator (trạm mình) | Xóa mềm |
+
+Response `EquipmentDto`: `id, name, category, status, quantity, stationId, stationName, rescueUnitId, rescueUnitPlate, notes, statusNote, statusChangedAt, createdAt, updatedAt`.
+Enum: `EquipmentCategory { FireFighting, Medical, Rescue, Protective, Communication, Other }`, `EquipmentStatus { Available, Maintenance }` (JSON dạng chuỗi).
+Mọi thao tác ghi system audit với `entityType = "Equipment"` (Created / Updated / StatusChanged / Deleted).
+
+| Việc | Màn hình | Ghi chú |
+|---|---|---|
+| Trang **"Thiết bị"**: bảng (tên, nhóm, số lượng, trạm, xe, trạng thái, ghi chú bảo trì), lọc theo trạm / nhóm / trạng thái, nút thêm / sửa / xóa, nút đổi trạng thái (Maintenance hỏi lý do) | Web Admin (menu mới), Web Operator (trạm mình) | Ô chọn xe chỉ hiện xe của trạm đã chọn |
+| Thay `mockEquipmentList` bằng `GET /api/equipment` (trạm mình); nút **"Báo hỏng"** → `PUT /status` với `Maintenance` + lý do | Web `/staff` (`StaffEquipmentView.tsx`), mobile staff (`MedicalEquipmentModal.tsx`) | Có thể lọc `rescueUnitId` = xe của tổ để hiện "thiết bị trên xe" |
+| Trang audit hệ thống: nhãn cho `entityType = Equipment` | Web Admin — Audit trail | |
+| TypeScript: type `Equipment`, enum `EquipmentCategory`, `EquipmentStatus` | Web + mobile | |
+>>>>>>> Stashed changes

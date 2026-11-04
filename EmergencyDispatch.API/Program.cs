@@ -154,6 +154,7 @@ builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<ISystemAuditLogRepository, SystemAuditLogRepository>();
 builder.Services.AddScoped<IFieldRequestRepository, FieldRequestRepository>();
 builder.Services.AddScoped<IIncidentSupplementRepository, IncidentSupplementRepository>();
+builder.Services.AddScoped<IEquipmentRepository, EquipmentRepository>();
 
 // 6. Đăng ký FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<EmergencyDispatch.Application.Validators.CreateIncidentDtoValidator>();
@@ -191,6 +192,7 @@ builder.Services.AddScoped<IMediaUploadService, EmergencyDispatch.Infrastructure
 builder.Services.AddScoped<IIncidentService, IncidentService>();
 builder.Services.AddScoped<IIncidentFollowUpService, IncidentFollowUpService>();
 builder.Services.AddScoped<IFieldRequestService, FieldRequestService>();
+builder.Services.AddScoped<IEquipmentService, EquipmentService>();
 builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();
 builder.Services.AddScoped<ITrafficService, TrafficService>();

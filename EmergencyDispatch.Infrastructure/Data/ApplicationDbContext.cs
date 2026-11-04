@@ -104,6 +104,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<StationTeamMember> StationTeamMembers => Set<StationTeamMember>();
     public DbSet<FieldRequest> FieldRequests => Set<FieldRequest>();
     public DbSet<IncidentSupplement> IncidentSupplements => Set<IncidentSupplement>();
+    public DbSet<Equipment> Equipment => Set<Equipment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -567,6 +568,21 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(s => s.IncidentId).HasDatabaseName("IX_IncidentSupplements_IncidentId");
             entity.HasOne(s => s.Incident).WithMany(i => i.Supplements).HasForeignKey(s => s.IncidentId).OnDelete(DeleteBehavior.Cascade);
             entity.HasQueryFilter(s => !s.IsDeleted);
+        });
+
+        modelBuilder.Entity<Equipment>(entity =>
+        {
+            entity.ToTable("Equipment");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Notes).HasMaxLength(500);
+            entity.Property(e => e.StatusNote).HasMaxLength(500);
+            entity.HasIndex(e => new { e.StationId, e.Status }).HasDatabaseName("IX_Equipment_Station_Status");
+            entity.HasIndex(e => e.RescueUnitId).HasDatabaseName("IX_Equipment_RescueUnitId");
+            entity.HasOne(e => e.Station).WithMany().HasForeignKey(e => e.StationId).OnDelete(DeleteBehavior.Restrict);
+            // Xóa cứng xe thì thiết bị về kho trạm
+            entity.HasOne(e => e.RescueUnit).WithMany().HasForeignKey(e => e.RescueUnitId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasQueryFilter(e => !e.IsDeleted);
         });
 
         modelBuilder.Entity<TrafficHotspot>(entity =>

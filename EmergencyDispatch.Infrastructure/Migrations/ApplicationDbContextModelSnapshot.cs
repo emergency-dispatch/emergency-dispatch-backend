@@ -446,6 +446,62 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.ToTable("DispatchAssignments");
                 });
 
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Equipment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("RescueUnitId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("StatusChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StatusNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RescueUnitId")
+                        .HasDatabaseName("IX_Equipment_RescueUnitId");
+
+                    b.HasIndex("StationId", "Status")
+                        .HasDatabaseName("IX_Equipment_Station_Status");
+
+                    b.ToTable("Equipment", (string)null);
+                });
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.EscalationLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1840,6 +1896,24 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Incident");
 
                     b.Navigation("RescueUnit");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Equipment", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.RescueUnit", "RescueUnit")
+                        .WithMany()
+                        .HasForeignKey("RescueUnitId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Station", "Station")
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RescueUnit");
+
+                    b.Navigation("Station");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.EscalationLog", b =>

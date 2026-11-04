@@ -51,4 +51,5 @@ public static class AuditEntityTypes
     public const string BlockedNumber = "BlockedNumber";
     public const string Report = "Report";
     public const string TrafficHotspot = "TrafficHotspot";
+    public const string Equipment = "Equipment";
 }
