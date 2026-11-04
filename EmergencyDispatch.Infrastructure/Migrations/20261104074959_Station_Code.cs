@@ -10,9 +10,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_Stations_Name",
-                table: "Stations");
+            // DB thực tế có thể không có IX_Stations_Name (schema lệch snapshot) → không được để DROP INDEX làm hỏng cả lô migration
+            migrationBuilder.Sql("""DROP INDEX IF EXISTS "IX_Stations_Name";""");
 
             migrationBuilder.AddColumn<string>(
                 name: "Code",
