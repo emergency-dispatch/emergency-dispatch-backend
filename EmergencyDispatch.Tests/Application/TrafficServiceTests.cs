@@ -137,9 +137,9 @@ public class TrafficServiceTests
         Assert.Equal(RescueUnitStatus.Dispatched, u.Status);
         _units.Verify(x => x.TryReserveForDispatchAsync(u.Id, It.IsAny<CancellationToken>()), Times.Once);
         _repo.Verify(x => x.TryMarkAssignedAsync(h.Id, u.Id, _opId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
-        _rt.Verify(n => n.TrafficTaskChangedAsync(It.Is<TrafficTaskEventDto>(e => e.Action == "Assigned" && e.UnitStationId == _q7.Id && e.Notes == "Phân luồng container"), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(n => n.TrafficTaskChangedAsync(It.Is<TrafficTaskEventDto>(e => e.Action == "Assigned" && e.UnitStationId == _q7.Id && e.Notes == "Phân luồng container"), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
         _rt.Verify(n => n.RescueUnitStatusChangedAsync(It.Is<RescueUnitStatusEventDto>(e => e.Status == RescueUnitStatus.Dispatched), It.IsAny<CancellationToken>()), Times.Once);
-        _notify.Verify(n => n.NotifyStationStaffAsync(_q7.Id, It.Is<NotificationRequest>(q => q.Type == NotificationType.TrafficTask && q.HighPriority), It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyCrewAsync(_q7.Id, It.IsAny<Guid?>(), It.Is<NotificationRequest>(q => q.Type == NotificationType.TrafficTask && q.HighPriority), It.IsAny<CancellationToken>()), Times.Once);
         _audit.Verify(a => a.LogAsync(SystemAuditAction.TrafficTaskAssigned, "TrafficHotspot", h.Id, It.IsAny<string?>(), It.IsAny<string>(),
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -254,7 +254,7 @@ public class TrafficServiceTests
 
         Assert.Equal(ApiErrorCodes.Conflict, r.ErrorCode);
         _units.Verify(x => x.ReleaseReservationAsync(u.Id, It.IsAny<CancellationToken>()), Times.Once);
-        _rt.Verify(n => n.TrafficTaskChangedAsync(It.IsAny<TrafficTaskEventDto>(), It.IsAny<CancellationToken>()), Times.Never);
+        _rt.Verify(n => n.TrafficTaskChangedAsync(It.IsAny<TrafficTaskEventDto>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ===================== Unassign =====================
@@ -282,7 +282,7 @@ public class TrafficServiceTests
         Assert.Null(h.AssignedRescueUnitId);
         Assert.Equal(RescueUnitStatus.Available, u.Status);
         _units.Verify(x => x.ReleaseReservationAsync(u.Id, It.IsAny<CancellationToken>()), Times.Once);
-        _rt.Verify(n => n.TrafficTaskChangedAsync(It.Is<TrafficTaskEventDto>(e => e.Action == "Unassigned"), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(n => n.TrafficTaskChangedAsync(It.Is<TrafficTaskEventDto>(e => e.Action == "Unassigned"), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
         _audit.Verify(a => a.LogAsync(SystemAuditAction.TrafficTaskUnassigned, It.IsAny<string>(), h.Id, It.IsAny<string?>(), It.IsAny<string>(),
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -321,7 +321,7 @@ public class TrafficServiceTests
         Assert.Equal(staff.Id, h.ResolvedByUserId);
         Assert.Equal(RescueUnitStatus.Available, u.Status);
         _units.Verify(x => x.ReleaseReservationAsync(u.Id, It.IsAny<CancellationToken>()), Times.Once);
-        _rt.Verify(n => n.TrafficTaskChangedAsync(It.Is<TrafficTaskEventDto>(e => e.Action == "Resolved"), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(n => n.TrafficTaskChangedAsync(It.Is<TrafficTaskEventDto>(e => e.Action == "Resolved"), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
         _audit.Verify(a => a.LogAsync(SystemAuditAction.TrafficResolved, It.IsAny<string>(), h.Id, It.IsAny<string?>(), It.IsAny<string>(),
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
     }

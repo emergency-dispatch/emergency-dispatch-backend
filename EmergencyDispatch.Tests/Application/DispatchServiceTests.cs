@@ -213,8 +213,8 @@ public class DispatchServiceTests
         Assert.Equal(DispatchAssignmentStatus.Dispatched, a.Status);
         Assert.InRange(a.EstimatedArrivalMinutes ?? 0, 5.4, 5.5); // 2 km / 35 km/h + 2 min prep
         Assert.NotNull(inc.DispatchTimeMs);
-        _rt.Verify(n => n.JobAssignedAsync(It.IsAny<DispatchAssignmentResponseDto>(), It.IsAny<CancellationToken>()), Times.Once);
-        _notify.Verify(n => n.NotifyStationStaffAsync(_stationA, It.IsAny<EmergencyDispatch.Application.DTOs.Notification.NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(n => n.JobAssignedAsync(It.IsAny<DispatchAssignmentResponseDto>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyCrewAsync(_stationA, It.IsAny<Guid?>(), It.IsAny<EmergencyDispatch.Application.DTOs.Notification.NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -496,6 +496,7 @@ public class DispatchServiceTests
         foreach (var m in members)
         {
             team.Members.Add(new StationTeamMember { TeamId = team.Id, StaffId = m.Id, Staff = m });
+            _users.Setup(x => x.GetTeamIdAsync(m.Id, It.IsAny<CancellationToken>())).ReturnsAsync(team.Id);
         }
         _crews.Add(team);
         _teams.Setup(t => t.GetByIdAsync(team.Id, It.IsAny<CancellationToken>())).ReturnsAsync(team);
@@ -584,7 +585,7 @@ public class DispatchServiceTests
         Assert.Equal(DispatchAssignmentStatus.Completed, a.Status);
         Assert.Equal(IncidentStatus.Completed, inc.Status);
         Assert.Equal(new[] { driver.Id, medic.Id }.OrderBy(x => x), notified!.OrderBy(x => x));
-        _rt.Verify(x => x.AssignmentStatusChangedAsync(It.Is<DispatchAssignmentResponseDto>(d => d.Status == DispatchAssignmentStatus.Completed), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(x => x.AssignmentStatusChangedAsync(It.Is<DispatchAssignmentResponseDto>(d => d.Status == DispatchAssignmentStatus.Completed), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -646,7 +647,7 @@ public class DispatchServiceTests
         Assert.Equal(DispatchAssignmentStatus.OnScene, a3.Status);
         Assert.Equal(IncidentStatus.InProgress, inc.Status);
         Assert.Contains(u3.PlateNumber, first.Message);
-        _rt.Verify(x => x.AssignmentStatusChangedAsync(It.Is<DispatchAssignmentResponseDto>(d => d.Status == DispatchAssignmentStatus.Completed), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _rt.Verify(x => x.AssignmentStatusChangedAsync(It.Is<DispatchAssignmentResponseDto>(d => d.Status == DispatchAssignmentStatus.Completed), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
 
         // Thành viên khác của tổ 1 bấm nộp trên xe thứ hai → đã nghiệm thu rồi
         Assert.Equal(ApiErrorCodes.Conflict, (await _svc.ResolveAssignmentAsync(a2.Id, Report("https://x/b.jpg"), crew1Member.Id)).ErrorCode);
@@ -804,5 +805,168 @@ public class DispatchServiceTests
         var (a, _, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
         await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id);
         _followUp.Verify(f => f.CloseLinkedReportsAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ===================== Phạm vi theo tổ (SR-02): tổ khác cùng trạm không thấy / không thao tác =====================
+    private User Staff(string name = "Staff")
+    {
+        var staff = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = name, Status = UserStatus.Active };
+        _users.Setup(x => x.GetByIdAsync(staff.Id)).ReturnsAsync(staff);
+        return staff;
+    }
+
+    private void CrewIds(Guid? teamId, params User[] crew)
+        => _notify.Setup(n => n.GetCrewUserIdsAsync(_stationA, teamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(crew.Select(c => c.Id).ToList());
+
+    [Fact]
+    public async Task Assign_TeamUnit_PushAndRealtimeOnlyToThatTeam()
+    {
+        var inc = Incident();
+        var u1 = Unit(RescueUnitType.FireTruck, 2);
+        var u2 = Unit(RescueUnitType.FireTruck, 3);
+        var m1 = Staff("Tổ 1");
+        var m2 = Staff("Tổ 2");
+        var team1 = CrewOf(u1, m1);
+        var team2 = CrewOf(u2, m2);
+        CrewIds(team1.Id, m1);
+        CrewIds(team2.Id, m2);
+        IReadOnlyCollection<Guid>? realtimeCrew = null;
+        _rt.Setup(x => x.JobAssignedAsync(It.IsAny<DispatchAssignmentResponseDto>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .Callback<DispatchAssignmentResponseDto, IReadOnlyCollection<Guid>, CancellationToken>((_, ids, _) => realtimeCrew = ids);
+
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = u1.Id }, _operatorId);
+
+        Assert.True(r.Success);
+        Assert.Equal(new[] { m1.Id }, realtimeCrew);
+        _notify.Verify(n => n.NotifyCrewAsync(_stationA, team1.Id, It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyCrewAsync(It.IsAny<Guid>(), team2.Id, It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _notify.Verify(n => n.NotifyStationStaffAsync(It.IsAny<Guid>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Assign_TwoTeams_EachTeamGetsOnlyItsOwnOrder()
+    {
+        var inc = Incident(SeverityLevel.Level3);
+        var u1 = Unit(RescueUnitType.FireTruck, 2);
+        var u2 = Unit(RescueUnitType.FireTruck, 3);
+        var u3 = Unit(RescueUnitType.FireTruck, 4);
+        var m1 = Staff("Tổ 1");
+        var m2 = Staff("Tổ 2");
+        var m3 = Staff("Tổ 3");
+        var team1 = CrewOf(u1, m1);
+        var team2 = CrewOf(u2, m2);
+        var team3 = CrewOf(u3, m3);
+        CrewIds(team1.Id, m1);
+        CrewIds(team2.Id, m2);
+        CrewIds(team3.Id, m3);
+        var sent = new List<(Guid Unit, IReadOnlyCollection<Guid> Crew)>();
+        _rt.Setup(x => x.JobAssignedAsync(It.IsAny<DispatchAssignmentResponseDto>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .Callback<DispatchAssignmentResponseDto, IReadOnlyCollection<Guid>, CancellationToken>((d, ids, _) => sent.Add((d.RescueUnitId, ids)));
+
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitIds = new List<Guid> { u1.Id, u2.Id } }, _operatorId);
+
+        Assert.True(r.Success);
+        Assert.Equal(new[] { m1.Id }, sent.Single(s => s.Unit == u1.Id).Crew);
+        Assert.Equal(new[] { m2.Id }, sent.Single(s => s.Unit == u2.Id).Crew);
+        Assert.DoesNotContain(sent, s => s.Crew.Contains(m3.Id));
+        _notify.Verify(n => n.NotifyCrewAsync(It.IsAny<Guid>(), team3.Id, It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MyAssignments_OnlyOwnTeamAndUnteamedUnits()
+    {
+        var inc = Incident(status: IncidentStatus.Dispatched);
+        var u1 = Unit(RescueUnitType.FireTruck, 2, RescueUnitStatus.Dispatched);
+        var u2 = Unit(RescueUnitType.FireTruck, 3, RescueUnitStatus.Dispatched);
+        var u3 = Unit(RescueUnitType.Ambulance, 4, RescueUnitStatus.Dispatched);   // xe chưa gán tổ
+        var m1 = Staff("Tổ 1");
+        var m2 = Staff("Tổ 2");
+        var loner = Staff("Chưa vào tổ");
+        CrewOf(u1, m1);
+        CrewOf(u2, m2);
+        _units.Setup(x => x.GetByStationIdAsync(_stationA)).ReturnsAsync(new List<RescueUnit> { u1, u2, u3 });
+        foreach (var unit in new[] { u1, u2, u3 })
+        {
+            var a = new DispatchAssignment { IncidentId = inc.Id, Incident = inc, RescueUnitId = unit.Id, RescueUnit = unit, Status = DispatchAssignmentStatus.Dispatched };
+            _assign.Setup(x => x.GetByRescueUnitIdAsync(unit.Id)).ReturnsAsync(new List<DispatchAssignment> { a });
+        }
+
+        var mine = (await _svc.GetMyAssignmentsAsync(m1.Id)).Data!.Select(d => d.RescueUnitId).ToList();
+        var lonerView = (await _svc.GetMyAssignmentsAsync(loner.Id)).Data!.Select(d => d.RescueUnitId).ToList();
+
+        Assert.Equal(new[] { u1.Id, u3.Id }.OrderBy(x => x), mine.OrderBy(x => x));
+        Assert.DoesNotContain(u2.Id, mine);
+        Assert.Equal(new[] { u3.Id }, lonerView);
+    }
+
+    [Fact]
+    public async Task Status_OtherTeamOfSameStation_IsForbidden_ForUpdateAndReject()
+    {
+        var (a, _, u, _) = Mission(DispatchAssignmentStatus.Dispatched);
+        CrewOf(u, Staff("Tổ 1"));
+        var otherTeamMember = Staff("Tổ 2");
+        CrewOf(Unit(RescueUnitType.FireTruck, 5), otherTeamMember);
+        var loner = Staff("Chưa vào tổ");
+
+        var update = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Accepted }, otherTeamMember.Id);
+        var reject = await _svc.RejectAssignmentAsync(a.Id, new RejectAssignmentDto { Reason = RejectionReason.VehicleBreakdown }, otherTeamMember.Id);
+        var byLoner = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Accepted }, loner.Id);
+
+        Assert.Equal(ApiErrorCodes.Forbidden, update.ErrorCode);
+        Assert.Equal(ApiErrorCodes.Forbidden, reject.ErrorCode);
+        Assert.Equal(ApiErrorCodes.Forbidden, byLoner.ErrorCode);
+        Assert.Equal(DispatchAssignmentStatus.Dispatched, a.Status);
+    }
+
+    [Fact]
+    public async Task Status_OneMemberUpdates_WholeTeamProgresses_AndOnlyTeamIsNotified()
+    {
+        var (a1, inc, u1, leader) = Mission(DispatchAssignmentStatus.Accepted, IncidentStatus.InProgress);
+        var u2 = Unit(RescueUnitType.LadderTruck, 3, RescueUnitStatus.Dispatched);
+        var a2 = new DispatchAssignment { IncidentId = inc.Id, Incident = inc, RescueUnitId = u2.Id, RescueUnit = u2, Status = DispatchAssignmentStatus.Accepted };
+        inc.DispatchAssignments.Add(a2);
+        _assign.Setup(x => x.GetByIdWithDetailsAsync(a2.Id)).ReturnsAsync(a2);
+        var u3 = Unit(RescueUnitType.Ambulance, 4, RescueUnitStatus.Dispatched);
+        var a3 = new DispatchAssignment { IncidentId = inc.Id, Incident = inc, RescueUnitId = u3.Id, RescueUnit = u3, Status = DispatchAssignmentStatus.Accepted };
+        inc.DispatchAssignments.Add(a3);
+        var teammate = Staff("Đồng đội");
+        var team1 = CrewOfUnits(new[] { u1, u2 }, leader, teammate);
+        var otherTeam = CrewOf(u3, Staff("Tổ 2"));
+        CrewIds(team1.Id, leader, teammate);
+        var sent = new List<(Guid Assignment, IReadOnlyCollection<Guid> Crew)>();
+        _rt.Setup(x => x.AssignmentStatusChangedAsync(It.IsAny<DispatchAssignmentResponseDto>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .Callback<DispatchAssignmentResponseDto, IReadOnlyCollection<Guid>, CancellationToken>((d, ids, _) => sent.Add((d.Id, ids)));
+
+        var r = await _svc.UpdateAssignmentStatusAsync(a1.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.EnRoute }, leader.Id);
+
+        Assert.True(r.Success);
+        Assert.Equal(DispatchAssignmentStatus.EnRoute, a1.Status);
+        Assert.Equal(DispatchAssignmentStatus.EnRoute, a2.Status);                 // xe thứ hai của tổ cùng chuyển
+        Assert.Equal(DispatchAssignmentStatus.Accepted, a3.Status);                // tổ khác không bị ảnh hưởng
+        Assert.Equal(new[] { a1.Id, a2.Id }.OrderBy(x => x), sent.Select(s => s.Assignment).OrderBy(x => x));
+        Assert.All(sent, s => Assert.Equal(new[] { leader.Id, teammate.Id }.OrderBy(x => x), s.Crew.OrderBy(x => x)));
+        _notify.Verify(n => n.GetCrewUserIdsAsync(It.IsAny<Guid>(), otherTeam.Id, It.IsAny<CancellationToken>()), Times.Never);
+
+        // Đồng đội mở app thấy trạng thái mới và cập nhật tiếp được
+        Assert.True((await _svc.UpdateAssignmentStatusAsync(a2.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.OnScene }, teammate.Id)).Success);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a1.Status);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, a2.Status);
+    }
+
+    [Fact]
+    public void CrewScope_Rules()
+    {
+        var team = Guid.NewGuid();
+        var teamUnit = new RescueUnit { StationId = _stationA, StationTeamId = team };
+        var freeUnit = new RescueUnit { StationId = _stationA };
+
+        Assert.True(CrewScope.CanWorkOn(_stationA, team, teamUnit));
+        Assert.False(CrewScope.CanWorkOn(_stationA, Guid.NewGuid(), teamUnit));   // tổ khác cùng trạm
+        Assert.False(CrewScope.CanWorkOn(_stationA, null, teamUnit));             // chưa vào tổ
+        Assert.True(CrewScope.CanWorkOn(_stationA, team, freeUnit));              // xe chưa gán tổ: cả trạm
+        Assert.True(CrewScope.CanWorkOn(_stationA, null, freeUnit));
+        Assert.False(CrewScope.CanWorkOn(_stationB, null, freeUnit));             // trạm khác
+        Assert.False(CrewScope.CanWorkOn(null, null, freeUnit));
     }
 }

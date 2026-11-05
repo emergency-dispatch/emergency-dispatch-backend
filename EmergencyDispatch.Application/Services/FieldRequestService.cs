@@ -98,9 +98,10 @@ public class FieldRequestService : IFieldRequestService
         }
 
         var staff = await _userRepository.GetByIdAsync(staffUserId);
-        if (staff == null || staff.Role != UserRole.RescueStaff || assignment.RescueUnit == null || staff.StationId != assignment.RescueUnit.StationId)
+        if (staff == null || staff.Role != UserRole.RescueStaff || assignment.RescueUnit == null
+            || !CrewScope.CanWorkOn(staff.StationId, await _userRepository.GetTeamIdAsync(staff.Id, cancellationToken), assignment.RescueUnit))
         {
-            return ApiResponseDto<FieldRequestDto>.ForbiddenResult("Chỉ nhân sự thuộc trạm của xe được gửi yêu cầu cho lượt điều phối này.");
+            return ApiResponseDto<FieldRequestDto>.ForbiddenResult("Chỉ đội nhận lệnh của xe (tổ phụ trách xe) được gửi yêu cầu cho lượt điều phối này.");
         }
 
         if (assignment.Status is not (DispatchAssignmentStatus.Accepted or DispatchAssignmentStatus.EnRoute or DispatchAssignmentStatus.OnScene))
@@ -196,10 +197,11 @@ public class FieldRequestService : IFieldRequestService
 
         if (_currentUser.Role == UserRole.RescueStaff)
         {
-            // Staff chỉ thấy yêu cầu của xe thuộc trạm mình
+            // Staff chỉ thấy yêu cầu của xe thuộc tổ mình (xe chưa gán tổ: xe trạm mình)
             var staffStation = _currentUser.StationId;
-            requests = requests.Where(r => staffStation.HasValue && r.RescueUnit?.StationId == staffStation).ToList();
-            if (requests.Count == 0 && !incident.DispatchAssignments.Any(a => a.RescueUnit?.StationId == staffStation))
+            var staffTeam = _currentUser.UserId is Guid currentId ? await _userRepository.GetTeamIdAsync(currentId, cancellationToken) : null;
+            requests = requests.Where(r => CrewScope.CanWorkOn(staffStation, staffTeam, r.RescueUnit)).ToList();
+            if (requests.Count == 0 && !incident.DispatchAssignments.Any(a => CrewScope.CanWorkOn(staffStation, staffTeam, a.RescueUnit)))
             {
                 return ApiResponseDto<List<FieldRequestDto>>.ForbiddenResult("Bạn không có quyền xem yêu cầu của sự cố này.");
             }
@@ -315,9 +317,10 @@ public class FieldRequestService : IFieldRequestService
         }
 
         var staff = await _userRepository.GetByIdAsync(staffUserId);
-        if (staff == null || staff.Role != UserRole.RescueStaff || staff.StationId == null || staff.StationId != request.RescueUnit?.StationId)
+        if (staff == null || staff.Role != UserRole.RescueStaff
+            || !CrewScope.CanWorkOn(staff.StationId, await _userRepository.GetTeamIdAsync(staff.Id, cancellationToken), request.RescueUnit))
         {
-            return ApiResponseDto<FieldRequestDto>.ForbiddenResult("Chỉ nhân sự thuộc trạm của xe được hủy yêu cầu này.");
+            return ApiResponseDto<FieldRequestDto>.ForbiddenResult("Chỉ đội nhận lệnh của xe (tổ phụ trách xe) được hủy yêu cầu này.");
         }
 
         if (!request.IsOpen)
@@ -516,7 +519,13 @@ public class FieldRequestService : IFieldRequestService
         }, cancellationToken);
 
     private async Task PublishAsync(string action, FieldRequestDto dto, CancellationToken cancellationToken)
-        => await _realtimeNotifier.FieldRequestChangedAsync(new FieldRequestEventDto { Action = action, Request = dto, ChangedAt = DateTime.UtcNow }, cancellationToken);
+    {
+        // Chỉ đội nhận lệnh của xe gửi yêu cầu (tổ khác cùng trạm không nhận)
+        var crewIds = dto.UnitStationId == Guid.Empty
+            ? Array.Empty<Guid>()
+            : await _notificationService.GetCrewUserIdsAsync(dto.UnitStationId, dto.UnitTeamId, cancellationToken) ?? (IReadOnlyCollection<Guid>)Array.Empty<Guid>();
+        await _realtimeNotifier.FieldRequestChangedAsync(new FieldRequestEventDto { Action = action, Request = dto, ChangedAt = DateTime.UtcNow }, crewIds, cancellationToken);
+    }
 
     private async Task NotifyOperatorsAsync(FieldRequest request, NotificationRequest notification, CancellationToken cancellationToken)
     {
@@ -567,6 +576,7 @@ public class FieldRequestService : IFieldRequestService
         RescueUnitId = r.RescueUnitId,
         PlateNumber = r.RescueUnit?.PlateNumber,
         UnitStationId = r.RescueUnit?.StationId ?? Guid.Empty,
+        UnitTeamId = r.RescueUnit?.StationTeamId,
         RequestedByUserId = r.RequestedByUserId,
         RequestedByName = r.RequestedByUser?.FullName,
         Type = r.Type,

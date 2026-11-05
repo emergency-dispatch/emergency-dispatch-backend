@@ -13,6 +13,16 @@ public interface INotificationService
     Task NotifyRolesAsync(IReadOnlyCollection<UserRole> roles, NotificationRequest request, CancellationToken cancellationToken = default);
     Task NotifyStationStaffAsync(Guid stationId, NotificationRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Đội nhận lệnh của một xe: xe có tổ → thành viên tổ; xe chưa gán tổ → nhân viên cứu hộ của trạm (CrewScope)
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetCrewUserIdsAsync(Guid stationId, Guid? teamId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gửi thông báo cho đội nhận lệnh của một xe (xem GetCrewUserIdsAsync)
+    /// </summary>
+    Task NotifyCrewAsync(Guid stationId, Guid? teamId, NotificationRequest request, CancellationToken cancellationToken = default);
+
     Task<PaginatedResultDto<NotificationDto>> GetMyNotificationsAsync(Guid userId, bool unreadOnly, int pageIndex, int pageSize, CancellationToken cancellationToken = default);
     Task<int> GetUnreadCountAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<bool> MarkReadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken = default);

@@ -472,7 +472,8 @@ public class DispatchService : IDispatchService
 
         foreach (var assignmentDto in dtos)
         {
-            await _realtimeNotifier.JobAssignedAsync(assignmentDto, cancellationToken);
+            var assignedUnit = units.First(u => u.Id == assignmentDto.RescueUnitId);
+            await _realtimeNotifier.JobAssignedAsync(assignmentDto, await CrewIdsAsync(assignedUnit, cancellationToken), cancellationToken);
         }
         foreach (var unit in units)
         {
@@ -480,16 +481,16 @@ public class DispatchService : IDispatchService
         }
         await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
 
-        // FR-RS-01 / BR-21: còi hú tới đội cứu hộ của từng trạm; FR-CIT-04 (MSG37): báo người dân
-        foreach (var stationGroup in units.GroupBy(u => u.StationId))
+        // FR-RS-01 / BR-21: còi hú chỉ tới tổ được giao (xe chưa gán tổ → nhân viên trạm); FR-CIT-04 (MSG37): báo người dân
+        foreach (var crewGroup in units.GroupBy(u => (u.StationId, u.StationTeamId)))
         {
-            await _notificationService.NotifyStationStaffAsync(stationGroup.Key, new NotificationRequest
+            await _notificationService.NotifyCrewAsync(crewGroup.Key.StationId, crewGroup.Key.StationTeamId, new NotificationRequest
             {
                 Type = NotificationType.JobAssigned,
                 Title = $"LỆNH ĐIỀU PHỐI {incident.Severity}",
-                Message = $"{incident.Title} — {incident.LocationAddress}. Xe: {string.Join(", ", stationGroup.Select(u => u.PlateNumber))}.",
+                Message = $"{incident.Title} — {incident.LocationAddress}. Xe: {string.Join(", ", crewGroup.Select(u => u.PlateNumber))}.",
                 IncidentId = incident.Id,
-                Data = new { assignmentIds = assignments.Where(a => stationGroup.Any(u => u.Id == a.RescueUnitId)).Select(a => a.Id) },
+                Data = new { assignmentIds = assignments.Where(a => crewGroup.Any(u => u.Id == a.RescueUnitId)).Select(a => a.Id) },
                 HighPriority = true
             }, cancellationToken);
         }
@@ -562,9 +563,9 @@ public class DispatchService : IDispatchService
         var unit = assignment.RescueUnit ?? await _rescueUnitRepository.GetByIdWithDetailsAsync(assignment.RescueUnitId);
         var incident = assignment.Incident ?? await _incidentRepository.GetByIdAsync(assignment.IncidentId);
 
-        if (!isCommandCenter && (unit == null || rescuer?.StationId != unit.StationId))
+        if (!isCommandCenter && !await IsCrewOfAsync(rescuer, unit, cancellationToken))
         {
-            return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn chỉ được từ chối nhiệm vụ của xe thuộc trạm mình.");
+            return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult(CrewForbiddenMessage(unit));
         }
 
         if (!assignment.CanTransitionTo(DispatchAssignmentStatus.Rejected))
@@ -647,7 +648,7 @@ public class DispatchService : IDispatchService
         _logger.LogWarning("Nhiệm vụ {AssignmentId} bị từ chối bởi {User}: {Reason}", assignment.Id, rescuer?.FullName, dto.Reason);
 
         var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
-        await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, cancellationToken);
+        await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, await CrewIdsAsync(unit, cancellationToken), cancellationToken);
         if (incident != null)
         {
             await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
@@ -709,9 +710,10 @@ public class DispatchService : IDispatchService
         IReadOnlyList<DispatchAssignment> list;
         if (rescuer.StationId.HasValue)
         {
-            // Nếu là tài khoản gắn với một trạm, lấy tất cả nhiệm vụ thuộc các xe trong trạm đó
+            // Chỉ nhiệm vụ của xe thuộc tổ mình (xe chưa gán tổ: mọi nhân viên trạm), không thấy nhiệm vụ của tổ khác
+            var teamId = await _userRepository.GetTeamIdAsync(rescuer.Id, cancellationToken);
             var stationUnits = await _rescueUnitRepository.GetByStationIdAsync(rescuer.StationId.Value);
-            var unitIds = stationUnits.Select(u => u.Id).ToHashSet();
+            var unitIds = stationUnits.Where(u => CrewScope.CanWorkOn(rescuer.StationId, teamId, u)).Select(u => u.Id).ToHashSet();
 
             var allActive = new List<DispatchAssignment>();
             foreach (var uid in unitIds)
@@ -766,9 +768,9 @@ public class DispatchService : IDispatchService
 
         if (!isCommandCenter)
         {
-            if (unit == null || rescuer?.StationId != unit.StationId)
+            if (!await IsCrewOfAsync(rescuer, unit, cancellationToken))
             {
-                return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn chỉ được cập nhật nhiệm vụ của xe thuộc trạm mình.");
+                return ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult(CrewForbiddenMessage(unit));
             }
 
             if (dto.Status == DispatchAssignmentStatus.Cancelled)
@@ -784,101 +786,128 @@ public class DispatchService : IDispatchService
                 LocalizationHelper.Localize("Không thể chuyển nhiệm vụ từ '{0}' sang '{1}'. Thứ tự hợp lệ: Dispatched → Accepted → EnRoute → OnScene.", assignment.Status, dto.Status));
         }
 
-        var oldStatus = assignment.Status;
-        assignment.Status = dto.Status;
-        assignment.UpdatedAt = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(dto.Notes))
+        // Tiến độ theo tổ: một thành viên cập nhật → mọi xe của tổ đang làm sự cố này (cùng trạng thái) cùng chuyển,
+        // các thành viên khác chỉ cần xem. Xe chưa gán tổ → chỉ xe này.
+        var crewItems = new List<(DispatchAssignment Item, RescueUnit? Unit)> { (assignment, unit) };
+        if (unit?.StationTeamId is Guid crewTeamId && incident != null)
         {
-            assignment.Notes = dto.Notes.Trim();
+            var siblings = await _assignmentRepository.GetByIncidentIdAsync(incident.Id) ?? new List<DispatchAssignment>();
+            crewItems.AddRange(siblings
+                .Where(a => a.Id != assignment.Id && a.IsActive && a.RescueUnit?.StationTeamId == crewTeamId
+                            && a.Status == assignment.Status && a.CanTransitionTo(dto.Status))
+                .Select(a => (a, a.RescueUnit)));
         }
 
-        switch (dto.Status)
+        foreach (var (item, itemUnit) in crewItems)
         {
-            case DispatchAssignmentStatus.Accepted:
-                assignment.AcceptedAt = DateTime.UtcNow;
-                // FR-RS-01: đội đã nhận lệnh → sự cố chuyển sang đang xử lý
-                if (incident != null && incident.Status is IncidentStatus.Dispatched or IncidentStatus.Escalated)
-                {
-                    if (incident.Status == IncidentStatus.Escalated)
+            await ApplyStatusAsync(item, itemUnit);
+        }
+
+        async Task ApplyStatusAsync(DispatchAssignment item, RescueUnit? itemUnit)
+        {
+            var oldStatus = item.Status;
+            item.Status = dto.Status;
+            item.UpdatedAt = DateTime.UtcNow;
+            if (!string.IsNullOrWhiteSpace(dto.Notes))
+            {
+                item.Notes = dto.Notes.Trim();
+            }
+
+            switch (dto.Status)
+            {
+                case DispatchAssignmentStatus.Accepted:
+                    item.AcceptedAt = DateTime.UtcNow;
+                    // FR-RS-01: đội đã nhận lệnh → sự cố chuyển sang đang xử lý
+                    if (incident != null && incident.Status is IncidentStatus.Dispatched or IncidentStatus.Escalated)
+                    {
+                        if (incident.Status == IncidentStatus.Escalated)
+                        {
+                            incident.Status = IncidentStatus.InProgress;
+                            await DeEscalateAsync(incident, rescuerUserId, $"xe {itemUnit?.PlateNumber} đã nhận lệnh", cancellationToken);
+                        }
+                        incident.Status = IncidentStatus.InProgress;
+                        incident.UpdatedAt = DateTime.UtcNow;
+                        await _incidentRepository.UpdateAsync(incident);
+                    }
+                    break;
+
+                case DispatchAssignmentStatus.Cancelled:
+                    if (itemUnit != null)
+                    {
+                        itemUnit.Status = RescueUnitStatus.Available;
+                        itemUnit.UpdatedAt = DateTime.UtcNow;
+                        await SaveUnitAsync(itemUnit, cancellationToken);
+                    }
+                    break;
+
+                case DispatchAssignmentStatus.EnRoute:
+                    item.EnRouteAt = DateTime.UtcNow;
+                    if (itemUnit != null)
+                    {
+                        itemUnit.Status = RescueUnitStatus.Dispatched;
+                        itemUnit.UpdatedAt = DateTime.UtcNow;
+                        await SaveUnitAsync(itemUnit, cancellationToken);
+                    }
+                    break;
+
+                case DispatchAssignmentStatus.OnScene:
+                    item.ArrivedAt = DateTime.UtcNow;
+                    if (itemUnit != null)
+                    {
+                        itemUnit.Status = RescueUnitStatus.OnScene;
+                        itemUnit.UpdatedAt = DateTime.UtcNow;
+                        await SaveUnitAsync(itemUnit, cancellationToken);
+                    }
+                    if (incident != null && incident.Status != IncidentStatus.InProgress)
                     {
                         incident.Status = IncidentStatus.InProgress;
-                        await DeEscalateAsync(incident, rescuerUserId, $"xe {unit?.PlateNumber} đã nhận lệnh", cancellationToken);
+                        incident.UpdatedAt = DateTime.UtcNow;
+                        await _incidentRepository.UpdateAsync(incident);
                     }
-                    incident.Status = IncidentStatus.InProgress;
-                    incident.UpdatedAt = DateTime.UtcNow;
-                    await _incidentRepository.UpdateAsync(incident);
-                }
-                break;
+                    break;
+            }
 
-            case DispatchAssignmentStatus.Cancelled:
-                if (unit != null)
-                {
-                    unit.Status = RescueUnitStatus.Available;
-                    unit.UpdatedAt = DateTime.UtcNow;
-                    await SaveUnitAsync(unit, cancellationToken);
-                }
-                break;
-
-            case DispatchAssignmentStatus.EnRoute:
-                assignment.EnRouteAt = DateTime.UtcNow;
-                if (unit != null)
-                {
-                    unit.Status = RescueUnitStatus.Dispatched;
-                    unit.UpdatedAt = DateTime.UtcNow;
-                    await SaveUnitAsync(unit, cancellationToken);
-                }
-                break;
-
-            case DispatchAssignmentStatus.OnScene:
-                assignment.ArrivedAt = DateTime.UtcNow;
-                if (unit != null)
-                {
-                    unit.Status = RescueUnitStatus.OnScene;
-                    unit.UpdatedAt = DateTime.UtcNow;
-                    await SaveUnitAsync(unit, cancellationToken);
-                }
-                if (incident != null && incident.Status != IncidentStatus.InProgress)
-                {
-                    incident.Status = IncidentStatus.InProgress;
-                    incident.UpdatedAt = DateTime.UtcNow;
-                    await _incidentRepository.UpdateAsync(incident);
-                }
-                break;
-        }
-
-        await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
-        {
-            AssignmentId = assignment.Id,
-            OldStatus = oldStatus,
-            NewStatus = dto.Status,
-            ChangedByUserId = rescuerUserId,
-            Notes = dto.Notes?.Trim(),
-            ChangedAt = DateTime.UtcNow
-        });
-
-        await _assignmentRepository.UpdateAsync(assignment);
-
-        if (incident != null)
-        {
-            await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+            await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
             {
-                IncidentId = incident.Id,
-                ActorId = rescuerUserId,
-                ActorRole = rescuer?.Role.ToString() ?? UserRole.RescueStaff.ToString(),
-                Action = AuditAction.StatusChanged,
-                Description = $"Đội cứu hộ {unit?.PlateNumber} cập nhật trạng thái nhiệm vụ: {oldStatus} ➔ {dto.Status}",
-                NewStateJson = JsonSerializer.Serialize(new { assignmentId = assignment.Id, status = dto.Status.ToString() })
-            }, cancellationToken);
-            await _incidentRepository.SaveChangesAsync(cancellationToken);
+                AssignmentId = item.Id,
+                OldStatus = oldStatus,
+                NewStatus = dto.Status,
+                ChangedByUserId = rescuerUserId,
+                Notes = dto.Notes?.Trim(),
+                ChangedAt = DateTime.UtcNow
+            });
+
+            await _assignmentRepository.UpdateAsync(item);
+
+            if (incident != null)
+            {
+                await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+                {
+                    IncidentId = incident.Id,
+                    ActorId = rescuerUserId,
+                    ActorRole = rescuer?.Role.ToString() ?? UserRole.RescueStaff.ToString(),
+                    Action = AuditAction.StatusChanged,
+                    Description = item.Id == assignment.Id
+                        ? $"Đội cứu hộ {itemUnit?.PlateNumber} cập nhật trạng thái nhiệm vụ: {oldStatus} ➔ {dto.Status}"
+                        : $"Đội cứu hộ {itemUnit?.PlateNumber} cập nhật trạng thái nhiệm vụ: {oldStatus} ➔ {dto.Status} (cùng tổ với xe {unit?.PlateNumber}, do {actorName} cập nhật)",
+                    NewStateJson = JsonSerializer.Serialize(new { assignmentId = item.Id, status = dto.Status.ToString() })
+                }, cancellationToken);
+                await _incidentRepository.SaveChangesAsync(cancellationToken);
+            }
         }
 
-        _logger.LogInformation("Nhiệm vụ {AssignmentId} được {Actor} chuyển trạng thái sang {NewStatus}",
-            id, actorName, dto.Status);
+        _logger.LogInformation("Nhiệm vụ {AssignmentId} được {Actor} chuyển trạng thái sang {NewStatus} ({Count} xe của tổ)",
+            id, actorName, dto.Status, crewItems.Count);
 
         var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
 
-        // Bắn SignalR
-        await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, cancellationToken);
+        // Bắn SignalR: cả tổ thấy tiến độ mới của mọi xe vừa chuyển; tổ khác cùng trạm không nhận
+        var crewIds = await CrewIdsAsync(unit, cancellationToken);
+        foreach (var (item, itemUnit) in crewItems)
+        {
+            var itemDto = item.Id == assignment.Id ? assignmentDto : MapToAssignmentDto(item, incident, itemUnit);
+            await _realtimeNotifier.AssignmentStatusChangedAsync(itemDto, crewIds, cancellationToken);
+        }
         if (incident != null)
         {
             await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
@@ -1129,10 +1158,11 @@ public class DispatchService : IDispatchService
 
         // Bắn SignalR cho từng xe được hoàn tất
         DispatchAssignmentResponseDto? assignmentDto = null;
+        var crewIds = await CrewIdsAsync(unit, cancellationToken);
         foreach (var item in toComplete)
         {
             var itemDto = MapToAssignmentDto(item, incident, item.Id == assignment.Id ? unit : item.RescueUnit);
-            await _realtimeNotifier.AssignmentStatusChangedAsync(itemDto, cancellationToken);
+            await _realtimeNotifier.AssignmentStatusChangedAsync(itemDto, crewIds, cancellationToken);
             if (item.Id == assignment.Id)
             {
                 assignmentDto = itemDto;
@@ -1279,6 +1309,31 @@ public class DispatchService : IDispatchService
     /// <summary>
     /// Lưu xe và phát ReceiveRescueUnitStatus để live map / danh sách xe cập nhật ngay
     /// </summary>
+    /// <summary>
+    /// Đội nhận lệnh của xe (CrewScope): tổ phụ trách xe, hoặc nhân viên cứu hộ của trạm nếu xe chưa gán tổ
+    /// </summary>
+    private async Task<IReadOnlyCollection<Guid>> CrewIdsAsync(RescueUnit? unit, CancellationToken cancellationToken)
+    {
+        if (unit == null) return Array.Empty<Guid>();
+        return await _notificationService.GetCrewUserIdsAsync(unit.StationId, unit.StationTeamId, cancellationToken)
+               ?? (IReadOnlyCollection<Guid>)Array.Empty<Guid>();
+    }
+
+    /// <summary>
+    /// Nhân viên cứu hộ chỉ thao tác nhiệm vụ của xe thuộc tổ mình (xe chưa gán tổ: nhân viên cùng trạm)
+    /// </summary>
+    private async Task<bool> IsCrewOfAsync(User? staff, RescueUnit? unit, CancellationToken cancellationToken)
+    {
+        if (staff == null || unit == null) return false;
+        var teamId = unit.StationTeamId.HasValue ? await _userRepository.GetTeamIdAsync(staff.Id, cancellationToken) : null;
+        return CrewScope.CanWorkOn(staff.StationId, teamId, unit);
+    }
+
+    private static string CrewForbiddenMessage(RescueUnit? unit)
+        => unit?.StationTeamId != null
+            ? LocalizationHelper.Localize("Nhiệm vụ của xe {0} do tổ khác phụ trách.", unit.PlateNumber)
+            : "Bạn chỉ được thao tác nhiệm vụ của xe thuộc trạm mình.";
+
     private async Task SaveUnitAsync(RescueUnit unit, CancellationToken cancellationToken)
     {
         await _rescueUnitRepository.UpdateAsync(unit);

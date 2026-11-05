@@ -144,9 +144,9 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         await _realtimeNotifier.IncidentUpdatedAsync(response, cancellationToken);
 
         var raised = dto.NewSeverity > oldSeverity;
-        foreach (var stationId in ActiveUnitStations(incident))
+        foreach (var (stationId, teamId) in ActiveCrews(incident))
         {
-            await _notificationService.NotifyStationStaffAsync(stationId, new NotificationRequest
+            await _notificationService.NotifyCrewAsync(stationId, teamId, new NotificationRequest
             {
                 Type = NotificationType.StatusUpdate,
                 Title = raised ? $"NÂNG MỨC ĐỘ SỰ CỐ → {dto.NewSeverity}" : $"Điều chỉnh mức độ sự cố → {dto.NewSeverity}",
@@ -451,10 +451,16 @@ public class IncidentFollowUpService : IIncidentFollowUpService
 
         var dtoOut = MapSupplement(supplement, target.Id, incident.ReporterName);
         var stations = ActiveUnitStations(target);
-        await _realtimeNotifier.IncidentSupplementAddedAsync(dtoOut, target.ResponsibleStationId, stations, cancellationToken);
-        foreach (var stationId in stations)
+        var crews = ActiveCrews(target);
+        var crewIds = new HashSet<Guid>();
+        foreach (var (stationId, teamId) in crews)
         {
-            await _notificationService.NotifyStationStaffAsync(stationId, new NotificationRequest
+            crewIds.UnionWith(await _notificationService.GetCrewUserIdsAsync(stationId, teamId, cancellationToken) ?? Array.Empty<Guid>());
+        }
+        await _realtimeNotifier.IncidentSupplementAddedAsync(dtoOut, target.ResponsibleStationId, stations, crewIds, cancellationToken);
+        foreach (var (stationId, teamId) in crews)
+        {
+            await _notificationService.NotifyCrewAsync(stationId, teamId, new NotificationRequest
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "Người báo bổ sung thông tin hiện trường",
@@ -476,7 +482,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         }
 
         var viewer = actorUserId.HasValue ? await _userRepository.GetByIdAsync(actorUserId.Value) : null;
-        if (viewer == null || !IncidentService.CanAccess(incident, viewer))
+        if (viewer == null || !await IncidentService.CanAccessAsync(incident, viewer, _userRepository, cancellationToken))
         {
             return ApiResponseDto<List<IncidentSupplementDto>>.ForbiddenResult("Bạn không có quyền xem sự cố này.");
         }
@@ -638,6 +644,13 @@ public class IncidentFollowUpService : IIncidentFollowUpService
     private static IReadOnlyCollection<Guid> ActiveUnitStations(Incident incident)
         => incident.DispatchAssignments.Where(a => a.IsActive && a.RescueUnit != null)
             .Select(a => a.RescueUnit!.StationId).Distinct().ToList();
+
+    /// <summary>
+    /// Các đội đang xử lý sự cố (trạm, tổ của xe); tổ null = xe chưa gán tổ → nhân viên trạm (CrewScope)
+    /// </summary>
+    private static IReadOnlyCollection<(Guid StationId, Guid? TeamId)> ActiveCrews(Incident incident)
+        => incident.DispatchAssignments.Where(a => a.IsActive && a.RescueUnit != null)
+            .Select(a => (a.RescueUnit!.StationId, a.RescueUnit.StationTeamId)).Distinct().ToList();
 
     private static IncidentSupplementDto MapSupplement(IncidentSupplement s, Guid targetIncidentId, string? reporterName) => new()
     {

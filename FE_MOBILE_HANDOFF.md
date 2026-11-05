@@ -1239,3 +1239,24 @@ Sửa lỗi 500 khi tạo xe cùng biển số với xe đã xóa. Chỉ mục d
 * Trùng với bản ghi **đang hoạt động** vẫn trả 400 như trước.
 * Mới: nếu hai request tạo cùng biển số / email gần như cùng lúc, request thứ hai nhận **409 `CONFLICT`** với `message` song ngữ ("Biển số xe đã tồn tại trong hệ thống." / "Email này đã được sử dụng trong hệ thống."), thay vì 500. FE chỉ cần hiển thị `message`.
 
+
+## 29. Cập nhật 05/11/2026: nhiệm vụ chỉ hiện cho tổ được giao (không còn hiện cho cả trạm)
+
+Lỗi cũ: Operator điều xe của tổ 1 nhưng tổ 2, tổ 3 cùng trạm vẫn thấy nhiệm vụ, nhận còi hú và bấm cập nhật được.
+
+Quy tắc mới (backend đã áp dụng):
+
+| Xe được giao | Ai thấy / nhận push + SignalR / được cập nhật, từ chối, nghiệm thu |
+|---|---|
+| Xe có tổ phụ trách | Chỉ thành viên tổ đó |
+| Xe chưa gán tổ | Mọi nhân viên cứu hộ của trạm (như trước) |
+
+Nhân viên chưa vào tổ nào chỉ thấy nhiệm vụ của xe chưa gán tổ. Operator, Admin không đổi.
+
+Mobile cần biết:
+
+* `GET /api/dispatch/my-assignments` chỉ trả nhiệm vụ của tổ mình. Không cần lọc thêm ở app.
+* Các sự kiện `ReceiveJobAssigned`, `ReceiveAssignmentStatus`, `ReceiveFieldRequest`, `ReceiveIncidentSupplement`, `ReceiveTrafficTaskAssigned` giờ gửi theo từng người của tổ, không gửi cả nhóm trạm. Tên sự kiện và payload không đổi, app không phải sửa code đăng ký.
+* Người tổ khác gọi `PUT .../status`, `POST .../reject`, `POST .../resolve`, xem chi tiết sự cố, xem số điện thoại, tạo / hủy yêu cầu hiện trường → **403** với `message` song ngữ ("Nhiệm vụ của xe {biển số} do tổ khác phụ trách."). App hiển thị `message`.
+* **Tiến độ theo tổ:** một thành viên bấm Accepted / EnRoute / OnScene thì mọi xe của tổ đang làm cùng sự cố (đang cùng trạng thái) chuyển theo. Mỗi xe phát một `ReceiveAssignmentStatus` tới cả tổ. Các thành viên khác chỉ cần nghe sự kiện này để cập nhật màn hình, không phải bấm lại. Nghiệm thu đã theo tổ từ mục 26.
+* `FieldRequestDto` có thêm `unitTeamId` (null nếu xe chưa gán tổ).

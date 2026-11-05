@@ -211,7 +211,7 @@ public class TrafficService : ITrafficService
 
         await PublishTaskAsync("Assigned", unit, notes, responseDto, cancellationToken);
         await PublishUnitStatusAsync(unit, previousStatus, "Nhận nhiệm vụ giải tỏa điểm nghẽn", cancellationToken);
-        await _notificationService.NotifyStationStaffAsync(unit.StationId, new NotificationRequest
+        await _notificationService.NotifyCrewAsync(unit.StationId, unit.StationTeamId, new NotificationRequest
         {
             Type = NotificationType.TrafficTask,
             Title = "NHIỆM VỤ GIẢI TỎA ÙN TẮC",
@@ -284,7 +284,7 @@ public class TrafficService : ITrafficService
         if (unit != null)
         {
             await PublishTaskAsync("Unassigned", unit, reason, responseDto, cancellationToken);
-            await _notificationService.NotifyStationStaffAsync(unit.StationId, new NotificationRequest
+            await _notificationService.NotifyCrewAsync(unit.StationId, unit.StationTeamId, new NotificationRequest
             {
                 Type = NotificationType.TrafficTask,
                 Title = "RÚT LỆNH GIẢI TỎA ÙN TẮC",
@@ -324,9 +324,11 @@ public class TrafficService : ITrafficService
             }
         }
         else if (hotspot.Status == TrafficHotspotStatus.Assigned
-                 && (unit == null || resolver?.StationId == null || resolver.StationId != unit.StationId))
+                 && (resolver == null
+                     || !CrewScope.CanWorkOn(resolver.StationId,
+                         unit?.StationTeamId != null ? await _userRepository.GetTeamIdAsync(resolver.Id, cancellationToken) : null, unit)))
         {
-            // Điểm nghẽn đã có đội: chỉ nhân viên trạm của xe được giao mới xác nhận giải tỏa
+            // Điểm nghẽn đã có đội: chỉ đội nhận lệnh của xe được giao (tổ phụ trách xe) mới xác nhận giải tỏa
             return ApiResponseDto<TrafficHotspotResponseDto>.ForbiddenResult("Chỉ đội được giao hoặc trung tâm điều phối mới được xác nhận giải tỏa điểm nghẽn này.");
         }
 
@@ -391,7 +393,7 @@ public class TrafficService : ITrafficService
             Notes = notes,
             Hotspot = hotspot,
             ChangedAt = DateTime.UtcNow
-        }, cancellationToken);
+        }, await _notificationService.GetCrewUserIdsAsync(unit.StationId, unit.StationTeamId, cancellationToken) ?? Array.Empty<Guid>(), cancellationToken);
     }
 
     private Task PublishUnitStatusAsync(RescueUnit unit, RescueUnitStatus previous, string reason, CancellationToken cancellationToken)

@@ -22,14 +22,14 @@ public interface IRealtimeNotifier
     Task IncidentUpdatedAsync(IncidentResponseDto incident, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lệnh điều phối mới → nhân viên trạm có xe, Operator trạm có xe, Operator trạm phụ trách + Admin
+    /// Lệnh điều phối mới → đội nhận lệnh của xe (crewUserIds, xem CrewScope), Operator trạm có xe, Operator trạm phụ trách + Admin
     /// </summary>
-    Task JobAssignedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default);
+    Task JobAssignedAsync(DispatchAssignmentResponseDto assignment, IReadOnlyCollection<Guid> crewUserIds, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Tiến độ phân công thay đổi → Operator liên quan, nhân viên trạm có xe và người đang theo dõi sự cố
+    /// Tiến độ phân công thay đổi → Operator liên quan, đội nhận lệnh của xe (crewUserIds) và người đang theo dõi sự cố
     /// </summary>
-    Task AssignmentStatusChangedAsync(DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default);
+    Task AssignmentStatusChangedAsync(DispatchAssignmentResponseDto assignment, IReadOnlyCollection<Guid> crewUserIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Điểm nghẽn giao thông mới được báo cáo → mọi Operator và nhân viên cứu hộ (để né kẹt xe)
@@ -42,20 +42,22 @@ public interface IRealtimeNotifier
     Task TrafficHotspotEscalatedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficHotspotResponseDto hotspot, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Giao / rút / hoàn tất nhiệm vụ giải tỏa điểm nghẽn: gửi tới nhân viên trạm của xe và trung tâm điều phối (ReceiveTrafficTaskAssigned)
-    /// </summary>
     /// <summary>
-    /// Yêu cầu từ hiện trường thay đổi (ReceiveFieldRequest): gửi trung tâm điều phối của sự cố + nhân viên trạm của xe gửi yêu cầu
+    /// Yêu cầu từ hiện trường thay đổi (ReceiveFieldRequest): gửi trung tâm điều phối của sự cố + đội nhận lệnh của xe gửi yêu cầu (crewUserIds)
     /// </summary>
-    Task FieldRequestChangedAsync(EmergencyDispatch.Application.DTOs.Incident.FieldRequestEventDto change, CancellationToken cancellationToken = default);
+    Task FieldRequestChangedAsync(EmergencyDispatch.Application.DTOs.Incident.FieldRequestEventDto change, IReadOnlyCollection<Guid> crewUserIds, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Người báo bổ sung thông tin (ReceiveIncidentSupplement): gửi trung tâm điều phối + các trạm có xe đang xử lý sự cố + người theo dõi sự cố
+    /// Người báo bổ sung thông tin (ReceiveIncidentSupplement): gửi trung tâm điều phối (kể cả Operator các trạm có xe),
+    /// đội nhận lệnh của các xe đang xử lý (crewUserIds) và người theo dõi sự cố
     /// </summary>
     Task IncidentSupplementAddedAsync(EmergencyDispatch.Application.DTOs.Incident.IncidentSupplementDto supplement, Guid? responsibleStationId,
-        IReadOnlyCollection<Guid> assignedStationIds, CancellationToken cancellationToken = default);
+        IReadOnlyCollection<Guid> assignedStationIds, IReadOnlyCollection<Guid> crewUserIds, CancellationToken cancellationToken = default);
 
-    Task TrafficTaskChangedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficTaskEventDto task, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Giao / rút / hoàn tất nhiệm vụ giải tỏa điểm nghẽn (ReceiveTrafficTaskAssigned): đội nhận lệnh của xe (crewUserIds) và trung tâm điều phối
+    /// </summary>
+    Task TrafficTaskChangedAsync(EmergencyDispatch.Application.DTOs.Traffic.TrafficTaskEventDto task, IReadOnlyCollection<Guid> crewUserIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Cảnh báo leo thang: cấp 1 → Operator trạm phụ trách + Admin; cấp 2 → mọi Operator (BR-17)

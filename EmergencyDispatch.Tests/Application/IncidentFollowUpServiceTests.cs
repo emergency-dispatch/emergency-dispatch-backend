@@ -120,7 +120,7 @@ public class IncidentFollowUpServiceTests
 
         await _svc.ChangeSeverityAsync(inc.Id, Raise(), _opId);
 
-        _notify.Verify(n => n.NotifyStationStaffAsync(unitStation, It.Is<NotificationRequest>(q => q.HighPriority), It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyCrewAsync(unitStation, It.IsAny<Guid?>(), It.Is<NotificationRequest>(q => q.HighPriority), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -433,8 +433,8 @@ public class IncidentFollowUpServiceTests
         Assert.Equal(parent.Id, r.Data.TargetIncidentId);
         Assert.Equal("Có người kẹt tầng 2", Assert.Single(_savedSupplements).Note);
         Assert.Contains(_audits, a => a.IncidentId == parent.Id && a.Action == AuditAction.SupplementAdded);
-        _notify.Verify(n => n.NotifyStationStaffAsync(unitStation, It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-        _rt.Verify(x => x.IncidentSupplementAddedAsync(It.IsAny<IncidentSupplementDto>(), parent.ResponsibleStationId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyCrewAsync(unitStation, It.IsAny<Guid?>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(x => x.IncidentSupplementAddedAsync(It.IsAny<IncidentSupplementDto>(), parent.ResponsibleStationId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

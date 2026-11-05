@@ -26,6 +26,11 @@ public interface IUserRepository : IGenericRepository<User>
     Task<IReadOnlyList<User>> GetByStationWithTeamAsync(Guid stationId);
 
     /// <summary>
+    /// Tổ làm việc của nhân viên (null = chưa vào tổ)
+    /// </summary>
+    Task<Guid?> GetTeamIdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Nhân viên cứu hộ đang hoạt động chưa được gán trạm (để Operator kéo về trạm mình)
     /// </summary>
     Task<(IReadOnlyList<User> Users, int TotalCount)> GetUnassignedRescueStaffPagedAsync(string? search, int pageIndex, int pageSize);

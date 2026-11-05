@@ -401,6 +401,10 @@ public static partial class LocalizationCatalog
         { "Tối đa {0} ảnh / video, và phải được tải lên qua hệ thống (POST /api/media/upload).", "Up to {0} photos / videos, uploaded through the system (POST /api/media/upload)." },
         { "Sự cố đã kết thúc, không thể bổ sung thông tin.", "The incident is closed; no more information can be added." },
         { "Mỗi sự cố chỉ được bổ sung tối đa {0} lần. Nếu khẩn cấp, vui lòng gọi trực tiếp 114 / 115.", "Each incident can receive at most {0} updates. In an emergency, please call 114 / 115 directly." },
-        { "Đã gửi thông tin bổ sung tới trung tâm điều phối.", "Your additional information has been sent to the dispatch center." }
+        { "Đã gửi thông tin bổ sung tới trung tâm điều phối.", "Your additional information has been sent to the dispatch center." },
+        { "Nhiệm vụ của xe {0} do tổ khác phụ trách.", "The mission of vehicle {0} belongs to another crew." },
+        { "Bạn chỉ được thao tác nhiệm vụ của xe thuộc trạm mình.", "You can only act on missions of vehicles from your own station." },
+        { "Chỉ đội nhận lệnh của xe (tổ phụ trách xe) được gửi yêu cầu cho lượt điều phối này.", "Only the crew assigned to this vehicle can send requests for this dispatch." },
+        { "Chỉ đội nhận lệnh của xe (tổ phụ trách xe) được hủy yêu cầu này.", "Only the crew assigned to this vehicle can cancel this request." }
     };
 }

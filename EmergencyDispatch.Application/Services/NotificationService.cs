@@ -74,6 +74,25 @@ public class NotificationService : INotificationService
         }
     }
 
+    public async Task<IReadOnlyList<Guid>> GetCrewUserIdsAsync(Guid stationId, Guid? teamId, CancellationToken cancellationToken = default)
+    {
+        var stationUsers = await _userRepository.GetByStationWithTeamAsync(stationId) ?? new List<User>();
+        return CrewScope.CrewOf(stationUsers, teamId).Select(u => u.Id).ToList();
+    }
+
+    public async Task NotifyCrewAsync(Guid stationId, Guid? teamId, NotificationRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var stationUsers = await _userRepository.GetByStationWithTeamAsync(stationId) ?? new List<User>();
+            await SendAsync(CrewScope.CrewOf(stationUsers, teamId).ToList(), request, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Không gửi được thông báo cho tổ {TeamId} (trạm {StationId})", teamId, stationId);
+        }
+    }
+
     public async Task<PaginatedResultDto<NotificationDto>> GetMyNotificationsAsync(
         Guid userId, bool unreadOnly, int pageIndex, int pageSize, CancellationToken cancellationToken = default)
     {

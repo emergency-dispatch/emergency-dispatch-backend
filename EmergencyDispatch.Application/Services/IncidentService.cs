@@ -618,7 +618,7 @@ public class IncidentService : IIncidentService
         if (viewerUserId.HasValue)
         {
             var viewer = await _userRepository.GetByIdAsync(viewerUserId.Value);
-            if (viewer == null || !CanAccess(incident, viewer))
+            if (viewer == null || !await CanAccessAsync(incident, viewer, _userRepository, cancellationToken))
             {
                 return ApiResponseDto<IncidentResponseDto>.ForbiddenResult("Bạn không có quyền xem sự cố này.");
             }
@@ -1319,14 +1319,15 @@ public class IncidentService : IIncidentService
         if (user.Role == UserRole.Admin) return true;
 
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
-        return incident != null && CanAccess(incident, user);
+        return incident != null && await CanAccessAsync(incident, user, _userRepository, cancellationToken);
     }
 
     /// <summary>
     /// Admin: mọi sự cố. Operator: sự cố trạm mình phụ trách (hoặc chưa xác định trạm), hoặc có xe trạm mình đang hỗ trợ.
-    /// Citizen: sự cố mình báo. RescueStaff: chỉ khi xe trạm mình đang làm nhiệm vụ (hoặc vừa hoàn tất ≤ 30 phút).
+    /// Citizen: sự cố mình báo. RescueStaff: chỉ khi xe thuộc tổ mình (xe chưa gán tổ: xe trạm mình) đang làm nhiệm vụ
+    /// (hoặc vừa hoàn tất ≤ 30 phút) — tổ khác cùng trạm không xem được (CrewScope).
     /// </summary>
-    internal static bool CanAccess(Incident incident, User user)
+    internal static bool CanAccess(Incident incident, User user, Guid? staffTeamId = null)
     {
         var now = DateTime.UtcNow;
         return user.Role switch
@@ -1336,12 +1337,20 @@ public class IncidentService : IIncidentService
                                  || incident.ResponsibleStationId == user.StationId
                                  || incident.DispatchAssignments.Any(a => a.IsActive && a.RescueUnit?.StationId == user.StationId),
             UserRole.Citizen => incident.ReportedByUserId == user.Id,
-            UserRole.RescueStaff => user.StationId.HasValue
-                                    && incident.DispatchAssignments.Any(a => a.RescueUnit?.StationId == user.StationId
+            UserRole.RescueStaff => incident.DispatchAssignments.Any(a => CrewScope.CanWorkOn(user.StationId, staffTeamId, a.RescueUnit)
                                         && (a.IsActive || (a.Status == DispatchAssignmentStatus.Completed
                                                            && a.CompletedAt >= now - StaffAccessAfterCompletion))),
             _ => false
         };
+    }
+
+    /// <summary>
+    /// CanAccess kèm tra tổ làm việc của nhân viên cứu hộ
+    /// </summary>
+    internal static async Task<bool> CanAccessAsync(Incident incident, User user, IUserRepository userRepository, CancellationToken cancellationToken = default)
+    {
+        var teamId = user.Role == UserRole.RescueStaff ? await userRepository.GetTeamIdAsync(user.Id, cancellationToken) : null;
+        return CanAccess(incident, user, teamId);
     }
 
     /// <summary>
@@ -1458,18 +1467,17 @@ public class IncidentService : IIncidentService
     /// <summary>
     /// BR-31 / BR-32: Operator, Admin và đội cứu hộ đang làm nhiệm vụ của sự cố được xem số đầy đủ (có ghi vết)
     /// </summary>
-    private Task<bool> CanSeeFullPhoneAsync(Incident incident, User actor)
+    private async Task<bool> CanSeeFullPhoneAsync(Incident incident, User actor)
     {
-        var allowed = actor.Role switch
+        var staffTeamId = actor.Role == UserRole.RescueStaff ? await _userRepository.GetTeamIdAsync(actor.Id) : null;
+        return actor.Role switch
         {
             UserRole.Admin => true,
             UserRole.Operator => CanAccess(incident, actor),
-            UserRole.RescueStaff => actor.StationId.HasValue
-                                    && incident.DispatchAssignments.Any(a => a.IsActive && a.RescueUnit?.StationId == actor.StationId),
+            UserRole.RescueStaff => incident.DispatchAssignments.Any(a => a.IsActive && CrewScope.CanWorkOn(actor.StationId, staffTeamId, a.RescueUnit)),
             UserRole.Citizen => incident.ReportedByUserId == actor.Id,
             _ => false
         };
-        return Task.FromResult(allowed);
     }
 
     public async Task<ApiResponseDto<PaginatedResultDto<MyReportDto>>> GetMyReportsAsync(

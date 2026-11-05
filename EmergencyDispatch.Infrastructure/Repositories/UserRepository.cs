@@ -130,6 +130,14 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .ToListAsync();
     }
 
+    public async Task<Guid?> GetTeamIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _context.StationTeamMembers
+            .Where(m => m.StaffId == userId && !m.IsDeleted)
+            .Select(m => (Guid?)m.TeamId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<User>> GetActiveByRolesAsync(IReadOnlyCollection<UserRole> roles)
     {
         return await _dbSet

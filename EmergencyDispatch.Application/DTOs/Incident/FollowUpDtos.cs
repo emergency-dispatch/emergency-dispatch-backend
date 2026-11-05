@@ -57,6 +57,11 @@ public class FieldRequestDto
     public Guid RescueUnitId { get; set; }
     public string? PlateNumber { get; set; }
     public Guid UnitStationId { get; set; }
+
+    /// <summary>
+    /// Tổ phụ trách xe gửi yêu cầu (null = xe chưa gán tổ)
+    /// </summary>
+    public Guid? UnitTeamId { get; set; }
     public Guid RequestedByUserId { get; set; }
     public string? RequestedByName { get; set; }
     public FieldRequestType Type { get; set; }

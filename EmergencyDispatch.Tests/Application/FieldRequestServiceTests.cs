@@ -114,7 +114,7 @@ public class FieldRequestServiceTests
         Assert.Equal("2 người bỏng", saved.Description);
         Assert.Equal(a.IncidentId, saved.IncidentId);
         Assert.Contains(_audits, x => x.Action == AuditAction.FieldRequestCreated && x.IncidentId == a.IncidentId);
-        _rt.Verify(x => x.FieldRequestChangedAsync(It.Is<FieldRequestEventDto>(e => e.Action == "Created"), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(x => x.FieldRequestChangedAsync(It.Is<FieldRequestEventDto>(e => e.Action == "Created"), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -414,7 +414,7 @@ public class FieldRequestServiceTests
         Assert.Contains(_audits, x => x.Action == AuditAction.FieldRequestEscalated && x.ActorRole == "System");
         _notify.Verify(n => n.NotifyUsersAsync(It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(admin.Id) && ids.Contains(op.Id)),
             It.Is<NotificationRequest>(q => q.Type == NotificationType.Escalation), It.IsAny<CancellationToken>()), Times.Once);
-        _rt.Verify(x => x.FieldRequestChangedAsync(It.Is<FieldRequestEventDto>(e => e.Action == "Escalated"), It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(x => x.FieldRequestChangedAsync(It.Is<FieldRequestEventDto>(e => e.Action == "Escalated"), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
