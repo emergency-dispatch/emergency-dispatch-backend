@@ -1,0 +1,18 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/node_modules/
+**/__pycache__/
+.git/
+.agents/
+EmergencyDispatch.Tests/
+UItest/
+YoloService/
+ai-service/
+*.md
+# Không đưa secret vào image: cấu hình qua biến môi trường
+**/appsettings.json
+**/appsettings.*.json
+**/*.user
+**/*.log

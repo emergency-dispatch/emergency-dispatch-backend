@@ -1217,3 +1217,25 @@ Thay đổi API:
 | Xử lý 409 khi nộp: hiện thông báo của server rồi làm mới `GET /api/dispatch/my-assignments` | Web `/staff`, mobile staff | |
 | Chi tiết sự cố (Operator): nhóm các xe theo `completionReport.stationTeamName`, hiện ảnh, chữ ký, người ký, thời điểm ký; xe chưa nghiệm thu đánh dấu "Chờ tổ nghiệm thu" | Web Operator | |
 | TypeScript: `signatureUrl: string` (bắt buộc) trong payload resolve; thêm các trường mới vào `CompletionReport` type | Web + mobile | |
+
+## 27. Cập nhật 05/11/2026: backend deploy lên Render (demo)
+
+Hướng dẫn backend: `DEPLOY_RENDER.md`. Việc phía FE / mobile:
+
+| Việc | Ghi chú |
+|---|---|
+| Đổi base URL API và SignalR sang `https://<tên-service>.onrender.com` (REST `/api/...`, hub `/hubs/incidents`, `/hubs/tracking`) qua biến môi trường build (web: biến `VITE_*` / `.env.production`; mobile: cấu hình EAS / `app.config`) | Không hard-code URL |
+| Báo backend domain web thật (ví dụ `https://<tên>.vercel.app`) để thêm vào `Cors__AllowedOrigins` | Thiếu → trình duyệt chặn CORS, SignalR không kết nối |
+| Google Sign-In: thêm domain web vào Authorized JavaScript origins của OAuth client | |
+| Gói free của Render ngủ sau ~15 phút: request đầu tiên có thể mất 30–60 s. Nên hiện trạng thái "Đang kết nối máy chủ…" thay vì báo lỗi ngay, và để SignalR tự reconnect (`withAutomaticReconnect`) | |
+| Trên Render không chạy YOLO: `trafficJamStatus` có thể chỉ là `Suspected` / `NoEvidence` / `Unverified` từ Qwen, không có `Disputed` | Không cần sửa code, chỉ lưu ý khi demo |
+
+## 28. Cập nhật 05/11/2026: tạo lại xe / tài khoản trùng biển số hoặc email của bản đã xóa
+
+Sửa lỗi 500 khi tạo xe cùng biển số với xe đã xóa. Chỉ mục duy nhất `IX_RescueUnits_PlateNumber` và `IX_Users_Email` giờ bỏ qua bản ghi đã xóa mềm (giống tên / mã trạm ở mục 23), nên:
+
+* Xóa xe rồi thêm lại cùng biển số → 201.
+* Xóa tài khoản rồi Admin tạo lại / người dân đăng ký lại cùng email → thành công. Tài khoản mới là tài khoản khác (Id mới); lịch sử sự cố, audit của tài khoản cũ vẫn gắn với tài khoản cũ.
+* Trùng với bản ghi **đang hoạt động** vẫn trả 400 như trước.
+* Mới: nếu hai request tạo cùng biển số / email gần như cùng lúc, request thứ hai nhận **409 `CONFLICT`** với `message` song ngữ ("Biển số xe đã tồn tại trong hệ thống." / "Email này đã được sử dụng trong hệ thống."), thay vì 500. FE chỉ cần hiển thị `message`.
+

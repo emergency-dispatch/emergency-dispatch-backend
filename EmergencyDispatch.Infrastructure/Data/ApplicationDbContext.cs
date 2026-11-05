@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Exceptions;
 using Microsoft.EntityFrameworkCore;
@@ -5,8 +6,13 @@ using Npgsql;
 
 namespace EmergencyDispatch.Infrastructure.Data;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 {
+    /// <summary>
+    /// Khóa Data Protection (ký mã hủy SOS của khách). Lưu DB để container khởi động lại / scale vẫn giải mã được mã cũ
+    /// </summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+
     private const string CompletionReportTeamIndex = "UQ_CompletionReports_Incident_Team";
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
@@ -116,7 +122,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasKey(u => u.Id);
-            entity.HasIndex(u => u.Email).IsUnique().HasDatabaseName("IX_Users_Email");
+            // Chỉ tài khoản chưa xóa giữ email: xóa mềm xong được đăng ký / tạo lại cùng email
+            entity.HasIndex(u => u.Email).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("IX_Users_Email");
             entity.HasIndex(u => u.Role).HasDatabaseName("IX_Users_Role");
             entity.HasIndex(u => u.StationId).HasDatabaseName("IX_Users_StationId");
             entity.HasIndex(u => new { u.IsDeleted, u.Status }).HasDatabaseName("IX_Users_Active");
@@ -207,7 +214,8 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(r => r.Id);
             entity.Property(r => r.PlateNumber).HasMaxLength(50).IsRequired();
-            entity.HasIndex(r => r.PlateNumber).IsUnique();
+            // Chỉ xe chưa xóa giữ biển số (giống IX_Stations_Name / Code)
+            entity.HasIndex(r => r.PlateNumber).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("IX_RescueUnits_PlateNumber");
 
             // Quan hệ với Station (Station -> RescueUnits: Cascade)
             entity.HasOne(r => r.Station)

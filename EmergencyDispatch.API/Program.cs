@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Globalization;
@@ -29,6 +30,8 @@ builder.Services.AddControllers(options =>
     {
         // Xung đột đồng thời (xmin) → 409 thay vì 500
         options.Filters.Add<ConcurrencyConflictExceptionFilter>();
+        // Trùng biển số / email / tên trạm ở mức DB (request đồng thời) → 409 thay vì 500
+        options.Filters.Add<UniqueConstraintExceptionFilter>();
     })
     .AddJsonOptions(options =>
     {
@@ -303,7 +306,26 @@ builder.Services.AddAuthentication(options =>
 
 // 10. Authorization
 builder.Services.AddAuthorization();
-builder.Services.AddDataProtection();
+// Khóa lưu trong Postgres: Render / container khởi động lại không làm mất hiệu lực mã hủy SOS đã cấp cho khách
+builder.Services.AddDataProtection()
+    .SetApplicationName("EmergencyDispatch")
+    .PersistKeysToDbContext<ApplicationDbContext>();
+
+// Chạy sau reverse proxy (Render, Caddy, Nginx): lấy IP thật của người dùng cho rate limit / audit và scheme https.
+// Chỉ bật khi đã chắc chắn đứng sau proxy, vì header X-Forwarded-For có thể bị giả mạo nếu gọi thẳng vào app.
+var behindProxy = builder.Configuration.GetValue("ForwardedHeaders:Enabled", false);
+if (behindProxy)
+{
+    builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+                                   | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+        // Số proxy đứng trước app (Render: 1). Tăng lên nếu IP trong audit vẫn là IP nội bộ của proxy
+        options.ForwardLimit = builder.Configuration.GetValue("ForwardedHeaders:ForwardLimit", 1);
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
 builder.Services.AddScoped<IGuestCancellationTokenService, EmergencyDispatch.API.Services.GuestCancellationTokenService>();
 
 // 11. Rate Limiting chống spam endpoint công khai (BR-CIT-01, chống dò mật khẩu)
@@ -374,6 +396,11 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Pipeline Middleware
+if (behindProxy)
+{
+    app.UseForwardedHeaders();
+}
+
 if (!corsOriginPolicy.HasExplicitOrigins)
 {
     if (corsOriginPolicy.AllowsLocalNetwork)
@@ -391,7 +418,7 @@ app.UseCors("Frontend");
 // Đặt RequestLocalization trước Authentication & Authorization để mọi middleware đều nhận đúng ngôn ngữ
 app.UseRequestLocalization(localizationOptions);
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Swagger:Enabled", false))
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>

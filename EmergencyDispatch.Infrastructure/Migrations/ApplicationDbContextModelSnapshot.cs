@@ -1244,7 +1244,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("PlateNumber")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_RescueUnits_PlateNumber")
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("StationId");
 
@@ -1783,7 +1785,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique()
-                        .HasDatabaseName("IX_Users_Email");
+                        .HasDatabaseName("IX_Users_Email")
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("Role")
                         .HasDatabaseName("IX_Users_Role");
@@ -1795,6 +1798,25 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasDatabaseName("IX_Users_Active");
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Xml")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DataProtectionKeys");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AiClassification", b =>

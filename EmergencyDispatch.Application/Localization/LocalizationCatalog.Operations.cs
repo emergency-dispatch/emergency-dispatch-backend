@@ -340,6 +340,11 @@ public static partial class LocalizationCatalog
         { "Định dạng tệp '{0}' không được hỗ trợ. Hệ thống chỉ chấp nhận ảnh (JPEG, PNG, WEBP) hoặc video (MP4, MOV).", "File format '{0}' is not supported. Only images (JPEG, PNG, WEBP) or videos (MP4, MOV) are accepted." },
         { "Lỗi upload Cloudinary: {0}", "Cloudinary upload error: {0}" },
 
+        // ===== Trùng dữ liệu (chỉ mục duy nhất) =====
+        { "Tên trạm đã tồn tại.", "Station name already exists." },
+        { "Mã trạm đã tồn tại.", "Station code already exists." },
+        { "Dữ liệu trùng với một bản ghi đã có. Vui lòng kiểm tra lại.", "This data duplicates an existing record. Please check and try again." },
+
         // ===== Yêu cầu từ hiện trường =====
         { "Loại yêu cầu chỉ nhận Backup (chi viện thêm xe) hoặc Other (vấn đề khác).", "Request type must be Backup (more units) or Other (another issue)." },
         { "Mô tả tối đa {0} ký tự.", "Description must not exceed {0} characters." },

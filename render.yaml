@@ -1,0 +1,97 @@
+# Render Blueprint — tạo service bằng: Render Dashboard → New → Blueprint → chọn repo này.
+# Các biến "sync: false" là secret: Render hỏi giá trị khi tạo, không lưu trong git. Xem DEPLOY_RENDER.md.
+services:
+  - type: web
+    name: emergency-dispatch-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/localization/info
+    autoDeploy: false
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ForwardedHeaders__Enabled
+        value: "true"
+      - key: Swagger__Enabled
+        value: "true"
+
+      # ----- Database (Neon) -----
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
+
+      # ----- JWT -----
+      - key: JwtSettings__Key
+        sync: false
+      - key: JwtSettings__Issuer
+        value: EmergencyDispatchAPI
+      - key: JwtSettings__Audience
+        value: EmergencyDispatchClient
+      - key: JwtSettings__ExpireMinutes
+        value: "60"
+
+      # ----- CORS: domain web FE (Vercel...), nhiều domain thì thêm __1, __2 -----
+      - key: Cors__AllowedOrigins__0
+        sync: false
+
+      # ----- Google login -----
+      - key: Google__ClientId
+        sync: false
+      - key: Google__ClientSecret
+        sync: false
+
+      # ----- Cloudinary -----
+      - key: Cloudinary__CloudName
+        sync: false
+      - key: Cloudinary__ApiKey
+        sync: false
+      - key: Cloudinary__ApiSecret
+        sync: false
+
+      # ----- Email (Gmail SMTP, dùng App Password) -----
+      - key: EmailSettings__SmtpHost
+        value: smtp.gmail.com
+      - key: EmailSettings__SmtpPort
+        value: "587"
+      - key: EmailSettings__SenderEmail
+        sync: false
+      - key: EmailSettings__SenderPassword
+        sync: false
+      - key: EmailSettings__SenderName
+        value: Emergency Dispatch System
+
+      # ----- AI: TriageVL trên Kaggle qua ngrok (domain tĩnh) → OpenRouter → Level 0 -----
+      - key: AiService__UseLocalModel
+        value: "true"
+      - key: AiService__LocalServiceUrl
+        sync: false
+      - key: AiService__ApiKey
+        sync: false
+      - key: AiService__LocalTimeoutSeconds
+        value: "120"
+      - key: OpenRouter__ApiKey
+        sync: false
+      - key: OpenRouter__BaseUrl
+        value: https://openrouter.ai/api/v1
+      - key: OpenRouter__Model
+        value: qwen/qwen3-vl-32b-instruct
+      - key: OpenRouter__MaxTokens
+        value: "300"
+      - key: OpenRouter__SiteUrl
+        value: https://emergencydispatch.local
+      - key: OpenRouter__SiteName
+        value: Emergency Dispatch System
+
+      # ----- YOLO: tắt trên Render free (không đủ RAM, không tự bật process Python) -----
+      - key: YoloService__Enabled
+        value: "false"
+      - key: YoloService__AutoStart
+        value: "false"
+
+      # ----- Chỉ đường -----
+      - key: Routing__OsrmBaseUrl
+        value: https://router.project-osrm.org
+      - key: Routing__TimeoutSeconds
+        value: "5"
