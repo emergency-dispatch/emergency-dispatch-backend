@@ -182,6 +182,9 @@ builder.Services.AddHttpClient("OpenRouterClient")
 // 8. Đăng ký Application Services (Scoped)
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IEmailService, EmergencyDispatch.Infrastructure.Services.EmailService>();
+// Gửi email qua Brevo HTTPS API (Render free chặn cổng SMTP)
+builder.Services.AddHttpClient(EmergencyDispatch.Infrastructure.Services.EmailService.BrevoHttpClientName,
+    client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IOtpAttemptLimiter, EmergencyDispatch.Infrastructure.Services.MemoryOtpAttemptLimiter>();
 builder.Services.AddScoped<IUserService, UserService>();

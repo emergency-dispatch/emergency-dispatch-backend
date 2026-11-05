@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.Mail;
 using EmergencyDispatch.Application.Interfaces;
 using Microsoft.Extensions.Configuration;
@@ -8,19 +9,25 @@ namespace EmergencyDispatch.Infrastructure.Services;
 
 /// <summary>
 /// Email tài khoản (tiếng Anh, mẫu tối giản). Style viết inline để Gmail / Outlook không bỏ mất định dạng.
+/// Gửi qua SMTP (local) hoặc Brevo HTTPS API khi có EmailSettings:BrevoApiKey — Render gói free chặn cổng SMTP 25/465/587.
 /// </summary>
 public class EmailService : IEmailService
 {
     private const string Brand = "Emergency Dispatch";
     private const string Footer = "© 2026 Emergency Dispatch System · Hi-Tech Park Rescue Station";
 
+    public const string BrevoHttpClientName = "BrevoEmail";
+    private const string BrevoEndpoint = "https://api.brevo.com/v3/smtp/email";
+
     private readonly IConfiguration _configuration;
     private readonly ILogger<EmailService> _logger;
+    private readonly IHttpClientFactory? _httpClientFactory;
 
-    public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
+    public EmailService(IConfiguration configuration, ILogger<EmailService> logger, IHttpClientFactory? httpClientFactory = null)
     {
         _configuration = configuration;
         _logger = logger;
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task SendVerificationEmailAsync(string toEmail, string fullName, string token, CancellationToken cancellationToken = default)
@@ -140,6 +147,14 @@ public class EmailService : IEmailService
         var fromName = _configuration["EmailSettings:FromName"] ?? _configuration["EmailSettings:SenderName"] ?? "Emergency Dispatch System";
         var enableSsl = bool.TryParse(_configuration["EmailSettings:EnableSsl"], out var ssl) ? ssl : true;
 
+        // Có khóa Brevo → gửi qua HTTPS (443), dùng được trên Render free; không có → SMTP như cũ
+        var brevoApiKey = _configuration["EmailSettings:BrevoApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey.Trim(), fromEmail, fromName, toEmail, subject, htmlBody, cancellationToken);
+            return;
+        }
+
         // Nếu chưa cấu hình mật khẩu SMTP (môi trường dev): Ghi log thông báo và mô phỏng gửi thành công
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password) || password.Contains("YOUR_"))
         {
@@ -172,6 +187,45 @@ public class EmailService : IEmailService
         {
             _logger.LogError(ex, "Lỗi khi gửi email qua SMTP tới {ToEmail}. Tiêu đề: {Subject}", toEmail, subject);
             // Không re-throw để tránh crash các luồng nghiệp vụ chính nếu SMTP bên thứ 3 gián đoạn
+        }
+    }
+
+    /// <summary>
+    /// Brevo transactional email API. Địa chỉ người gửi (SenderEmail) phải được xác minh trong Brevo → Senders.
+    /// </summary>
+    private async Task SendViaBrevoAsync(string apiKey, string fromEmail, string fromName, string toEmail, string subject,
+        string htmlBody, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory?.CreateClient(BrevoHttpClientName) ?? new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var request = new HttpRequestMessage(HttpMethod.Post, BrevoEndpoint)
+            {
+                Content = JsonContent.Create(new
+                {
+                    sender = new { name = fromName, email = fromEmail },
+                    to = new[] { new { email = toEmail } },
+                    subject,
+                    htmlContent = htmlBody
+                })
+            };
+            request.Headers.Add("api-key", apiKey);
+            request.Headers.Accept.ParseAdd("application/json");
+
+            using var response = await client.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Đã gửi email thành công tới {ToEmail} qua Brevo API", toEmail);
+                return;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogError("Brevo từ chối email tới {ToEmail} (HTTP {Status}): {Body}", toEmail, (int)response.StatusCode,
+                body.Length > 500 ? body[..500] : body);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "Lỗi khi gửi email qua Brevo tới {ToEmail}. Tiêu đề: {Subject}", toEmail, subject);
         }
     }
 }

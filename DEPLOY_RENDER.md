@@ -20,6 +20,7 @@ Render Dashboard → **New → Blueprint** → chọn repo backend → Render đ
 | `Google__ClientId`, `Google__ClientSecret` | Google Cloud Console. Thêm domain web vào Authorized JavaScript origins |
 | `Cloudinary__CloudName`, `Cloudinary__ApiKey`, `Cloudinary__ApiSecret` | Cloudinary |
 | `EmailSettings__SenderEmail`, `EmailSettings__SenderPassword` | Gmail + App Password |
+| `EmailSettings__BrevoApiKey` | **Bắt buộc trên gói free.** Render free chặn cổng SMTP 25/465/587 nên Gmail SMTP không gửi được. Tạo tài khoản Brevo (300 email/ngày miễn phí) → SMTP & API → API Keys; xác minh `SenderEmail` ở Senders. Có biến này thì backend gửi qua HTTPS, không dùng SMTP |
 | `AiService__LocalServiceUrl` | `https://<ngrok-domain>/api/analyze-incident` |
 | `AiService__ApiKey` | Trùng `AI_SERVICE_API_KEY` trên Kaggle |
 | `OpenRouter__ApiKey` | OpenRouter (dự phòng khi Kaggle tắt) |

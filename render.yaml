@@ -61,6 +61,9 @@ services:
         sync: false
       - key: EmailSettings__SenderName
         value: Emergency Dispatch System
+      # Render free chặn cổng SMTP → gửi qua Brevo HTTPS API (SenderEmail phải được xác minh trong Brevo)
+      - key: EmailSettings__BrevoApiKey
+        sync: false
 
       # ----- AI: TriageVL trên Kaggle qua ngrok (domain tĩnh) → OpenRouter → Level 0 -----
       - key: AiService__UseLocalModel
