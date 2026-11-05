@@ -6,8 +6,14 @@ using Microsoft.Extensions.Logging;
 
 namespace EmergencyDispatch.Infrastructure.Services;
 
+/// <summary>
+/// Email tài khoản (tiếng Anh, mẫu tối giản). Style viết inline để Gmail / Outlook không bỏ mất định dạng.
+/// </summary>
 public class EmailService : IEmailService
 {
+    private const string Brand = "Emergency Dispatch";
+    private const string Footer = "© 2026 Emergency Dispatch System · Hi-Tech Park Rescue Station";
+
     private readonly IConfiguration _configuration;
     private readonly ILogger<EmailService> _logger;
 
@@ -19,200 +25,107 @@ public class EmailService : IEmailService
 
     public async Task SendVerificationEmailAsync(string toEmail, string fullName, string token, CancellationToken cancellationToken = default)
     {
-        var subject = "🚨 [Emergency Dispatch] Mã xác thực đăng ký tài khoản cứu hộ";
-        var body = $@"
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='utf-8'>
-            <style>
-                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 0; }}
-                .container {{ max-width: 600px; margin: 30px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }}
-                .header {{ background: linear-gradient(135deg, #d32f2f, #b71c1c); color: white; padding: 25px 20px; text-align: center; }}
-                .header h1 {{ margin: 0; font-size: 24px; letter-spacing: 0.5px; }}
-                .content {{ padding: 30px; color: #333333; line-height: 1.6; }}
-                .otp-box {{ background: #fff3f3; border: 2px dashed #d32f2f; border-radius: 8px; text-align: center; padding: 18px; margin: 25px 0; }}
-                .otp-code {{ font-size: 36px; font-weight: bold; letter-spacing: 6px; color: #d32f2f; margin: 0; }}
-                .note {{ font-size: 13px; color: #777777; margin-top: 15px; }}
-                .footer {{ background: #f8f9fa; text-align: center; padding: 20px; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }}
-            </style>
-        </head>
-        <body>
-            <div class='container'>
-                <div class='header'>
-                    <h1>🚨 EMERGENCY DISPATCH SYSTEM</h1>
-                    <p style='margin: 5px 0 0; font-size: 14px; opacity: 0.9;'>Hệ thống Cứu nạn & Điều phối Khẩn cấp</p>
-                </div>
-                <div class='content'>
-                    <p>Xin chào <strong>{fullName}</strong>,</p>
-                    <p>Cảm ơn bạn đã đăng ký tài khoản tham gia mạng lưới cứu nạn khẩn cấp. Để hoàn tất kích hoạt tài khoản, vui lòng sử dụng mã xác thực (OTP) dưới đây:</p>
-                    <div class='otp-box'>
-                        <div class='otp-code'>{token}</div>
-                        <p class='note'>Mã xác thực có hiệu lực trong vòng <strong>15 phút</strong>. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.</p>
-                    </div>
-                    <p>Sau khi kích hoạt, bạn có thể thực hiện gửi tín hiệu SOS 1 chạm, đính kèm ảnh/video hiện trường và nhận sự hỗ trợ kịp thời từ các trạm cứu hộ gần nhất.</p>
-                </div>
-                <div class='footer'>
-                    <p>© 2026 Emergency Dispatch System. Trung tâm Điều phối Cứu nạn Cứu hộ Quốc gia.</p>
-                    <p>Hotline khẩn cấp: 114 (Cứu hỏa) | 115 (Cấp cứu y tế) | 112 (Cứu nạn)</p>
-                </div>
-            </div>
-        </body>
-        </html>";
+        const string accent = "#d32f2f";
+        var content =
+            Greeting(fullName) +
+            Paragraph("Thank you for registering with the Emergency Dispatch System. Enter the verification code below to activate your account.") +
+            OtpBox(token, "This code expires in <b>15 minutes</b>. Never share it with anyone, including our staff.") +
+            Paragraph("Once activated, you can send a one-tap SOS with photos of the scene and get help from the nearest rescue station.") +
+            Muted("If you did not create this account, you can safely ignore this email.");
 
-        await SendEmailAsync(toEmail, subject, body, cancellationToken);
+        await SendEmailAsync(toEmail, "Your Emergency Dispatch verification code",
+            Layout(accent, "Verify your account", content), cancellationToken);
     }
 
     public async Task SendWelcomeEmailAsync(string toEmail, string fullName, CancellationToken cancellationToken = default)
     {
-        var subject = "🎉 Chào mừng bạn gia nhập Hệ thống Cứu nạn Cứu hộ Khẩn cấp";
-        var body = $@"
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='utf-8'>
-            <style>
-                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 0; }}
-                .container {{ max-width: 600px; margin: 30px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }}
-                .header {{ background: linear-gradient(135deg, #1565c0, #0d47a1); color: white; padding: 25px 20px; text-align: center; }}
-                .header h1 {{ margin: 0; font-size: 22px; }}
-                .content {{ padding: 30px; color: #333333; line-height: 1.6; }}
-                .highlight-card {{ background: #e3f2fd; border-left: 4px solid #1565c0; padding: 15px 20px; border-radius: 4px; margin: 20px 0; }}
-                .footer {{ background: #f8f9fa; text-align: center; padding: 20px; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }}
-            </style>
-        </head>
-        <body>
-            <div class='container'>
-                <div class='header'>
-                    <h1>🛡️ TÀI KHOẢN ĐÃ KÍCH HOẠT THÀNH CÔNG</h1>
-                </div>
-                <div class='content'>
-                    <p>Xin chào <strong>{fullName}</strong>,</p>
-                    <p>Tài khoản của bạn đã được xác thực thành công. Bạn hiện đã kết nối trực tiếp với trung tâm chỉ huy cứu nạn khẩn cấp.</p>
-                    
-                    <div class='highlight-card'>
-                        <h4 style='margin-top:0; color:#0d47a1;'>⚠️ LƯU Ý ĐẶC THÙ CỨU HỘ:</h4>
-                        <p style='margin-bottom:0;'>Vì tính chất khẩn cấp sống còn, xin vui lòng truy cập mục <strong>Hồ sơ cá nhân</strong> để cập nhật đầy đủ:
-                        <ul style='padding-left: 20px; margin-top: 8px;'>
-                            <li><strong>Nhóm máu (Blood Type)</strong>: Phục vụ truyền máu tức thì khi có tai nạn.</li>
-                            <li><strong>Tiền sử bệnh án & Dị ứng thuốc</strong>: Bác sĩ cấp cứu cần nắm trước.</li>
-                            <li><strong>Số điện thoại người thân khẩn cấp</strong>: Để thông báo ngay cho gia đình.</li>
-                        </ul>
-                        </p>
-                    </div>
-                    <p>Chúc bạn và gia đình luôn an toàn!</p>
-                </div>
-                <div class='footer'>
-                    <p>© 2026 Emergency Dispatch System. Luôn túc trực 24/7 vì sự an toàn của người dân.</p>
-                </div>
-            </div>
-        </body>
-        </html>";
+        const string accent = "#1565c0";
+        var content =
+            Greeting(fullName) +
+            Paragraph("Your email has been verified. You can now send SOS reports and follow the rescue team in real time.") +
+            $@"<div style=""background:#f5f6f8;border-left:4px solid #111111;padding:14px 18px;border-radius:4px;margin:18px 0"">
+                <div style=""font-weight:700;color:#111111;margin-bottom:6px"">Complete your emergency profile</div>
+                <ul style=""margin:0 0 8px;padding-left:20px"">
+                    <li style=""margin:3px 0""><b>Blood type</b> — helps medics act faster.</li>
+                    <li style=""margin:3px 0""><b>Medical notes &amp; allergies</b> — known before treatment.</li>
+                    <li style=""margin:3px 0""><b>Emergency contact</b> — so we can reach your family.</li>
+                </ul>
+                <div style=""font-size:13px;color:#555555"">Open <b>Profile</b> in the app to add them.</div>
+            </div>" +
+            Paragraph("Stay safe.");
 
-        await SendEmailAsync(toEmail, subject, body, cancellationToken);
+        await SendEmailAsync(toEmail, "Welcome to Emergency Dispatch — your account is active",
+            Layout(accent, "Your account is active", content), cancellationToken);
     }
 
     public async Task SendPasswordResetEmailAsync(string toEmail, string fullName, string token, CancellationToken cancellationToken = default)
     {
-        var subject = "🔒 [Emergency Dispatch] Yêu cầu đặt lại mật khẩu tài khoản";
-        var body = $@"
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='utf-8'>
-            <style>
-                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 0; }}
-                .container {{ max-width: 600px; margin: 30px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }}
-                .header {{ background: linear-gradient(135deg, #e65100, #bf360c); color: white; padding: 25px 20px; text-align: center; }}
-                .content {{ padding: 30px; color: #333333; line-height: 1.6; }}
-                .otp-box {{ background: #fff8e1; border: 2px dashed #ff8f00; border-radius: 8px; text-align: center; padding: 18px; margin: 25px 0; }}
-                .otp-code {{ font-size: 36px; font-weight: bold; letter-spacing: 6px; color: #e65100; margin: 0; }}
-                .footer {{ background: #f8f9fa; text-align: center; padding: 20px; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }}
-            </style>
-        </head>
-        <body>
-            <div class='container'>
-                <div class='header'>
-                    <h1 style='margin:0; font-size:22px;'>🔒 ĐẶT LẠI MẬT KHẨU</h1>
-                </div>
-                <div class='content'>
-                    <p>Xin chào <strong>{fullName}</strong>,</p>
-                    <p>Hệ thống nhận được yêu cầu đặt lại mật khẩu cho tài khoản <strong>{toEmail}</strong>. Sử dụng mã OTP dưới đây để hoàn tất:</p>
-                    <div class='otp-box'>
-                        <div class='otp-code'>{token}</div>
-                        <p style='font-size:13px; color:#666; margin-top:10px;'>Mã có hiệu lực trong vòng <strong>10 phút</strong>.</p>
-                    </div>
-                    <p style='color: #c62828; font-size: 13px;'>* Nếu bạn không yêu cầu đặt lại mật khẩu, xin vui lòng bỏ qua email này hoặc liên hệ hỗ trợ ngay lập tức.</p>
-                </div>
-                <div class='footer'>
-                    <p>© 2026 Emergency Dispatch System. Trung tâm Điều phối Cứu nạn Cứu hộ Quốc gia.</p>
-                </div>
-            </div>
-        </body>
-        </html>";
+        const string accent = "#e65100";
+        var content =
+            Greeting(fullName) +
+            Paragraph($"We received a request to reset the password for <b>{Encode(toEmail)}</b>. Use the code below to continue.") +
+            OtpBox(token, "This code expires in <b>10 minutes</b>.") +
+            Muted("If you did not request a password reset, ignore this email — your password will not change.");
 
-        await SendEmailAsync(toEmail, subject, body, cancellationToken);
+        await SendEmailAsync(toEmail, "Reset your Emergency Dispatch password",
+            Layout(accent, "Password reset request", content), cancellationToken);
     }
 
     public async Task SendPasswordChangedAlertAsync(string toEmail, string fullName, DateTime changedAt, string? ipAddress = null, CancellationToken cancellationToken = default)
     {
-        var subject = "⚠️ [Cảnh báo Bảo mật] Mật khẩu tài khoản của bạn vừa được thay đổi";
-        var ipDisplay = string.IsNullOrWhiteSpace(ipAddress) ? "Không xác định" : ipAddress;
-        var timeDisplay = changedAt.ToString("HH:mm:ss dd/MM/yyyy UTC");
+        const string accent = "#c2185b";
+        var ipDisplay = string.IsNullOrWhiteSpace(ipAddress) ? "Unknown" : Encode(ipAddress);
+        var timeDisplay = changedAt.ToString("HH:mm:ss dd/MM/yyyy") + " UTC";
 
-        var body = $@"
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='utf-8'>
-            <style>
-                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 0; }}
-                .container {{ max-width: 600px; margin: 30px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }}
-                .header {{ background: linear-gradient(135deg, #c2185b, #880e4f); color: white; padding: 25px 20px; text-align: center; }}
-                .content {{ padding: 30px; color: #333333; line-height: 1.6; }}
-                .info-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-                .info-table td {{ padding: 10px; border-bottom: 1px solid #eeeeee; font-size: 14px; }}
-                .warning-box {{ background: #ffebee; border-left: 4px solid #d32f2f; padding: 15px; margin: 20px 0; color: #b71c1c; font-size: 13px; }}
-                .footer {{ background: #f8f9fa; text-align: center; padding: 20px; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }}
-            </style>
-        </head>
-        <body>
-            <div class='container'>
-                <div class='header'>
-                    <h1 style='margin:0; font-size:22px;'>⚠️ CẢNH BÁO BẢO MẬT TÀI KHOẢN</h1>
-                </div>
-                <div class='content'>
-                    <p>Xin chào <strong>{fullName}</strong>,</p>
-                    <p>Mật khẩu của tài khoản <strong>{toEmail}</strong> vừa được thay đổi thành công với thông tin chi tiết:</p>
-                    
-                    <table class='info-table'>
-                        <tr>
-                            <td><strong>Thời gian thay đổi:</strong></td>
-                            <td>{timeDisplay}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Địa chỉ IP thực hiện:</strong></td>
-                            <td>{ipDisplay}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Trạng thái bảo mật:</strong></td>
-                            <td>Toàn bộ các phiên đăng nhập cũ đã được thu hồi an toàn.</td>
-                        </tr>
-                    </table>
+        var content =
+            Greeting(fullName) +
+            Paragraph($"The password for <b>{Encode(toEmail)}</b> was changed successfully.") +
+            $@"<table style=""width:100%;border-collapse:collapse;margin:16px 0;font-size:14px"">
+                {Row("Time", timeDisplay)}
+                {Row("IP address", ipDisplay)}
+                {Row("Sessions", "All other sessions have been signed out.")}
+            </table>
+            <div style=""background:#ffebee;border-left:4px solid #d32f2f;padding:12px 14px;color:#b71c1c;font-size:13px;margin:16px 0"">
+                <b>Wasn't you?</b> Your account may be compromised. Use <b>Forgot password</b> right away or contact the administrator.
+            </div>";
 
-                    <div class='warning-box'>
-                        <strong>CHÚ Ý:</strong> Nếu bạn KHÔNG thực hiện thay đổi này, tài khoản của bạn có thể đã bị xâm phạm. Vui lòng bấm <strong>Quên mật khẩu</strong> để khôi phục ngay lập tức hoặc liên hệ quản trị viên.
-                    </div>
-                </div>
-                <div class='footer'>
-                    <p>© 2026 Emergency Dispatch System. Trung tâm Điều phối Cứu nạn Cứu hộ Quốc gia.</p>
-                </div>
-            </div>
-        </body>
-        </html>";
-
-        await SendEmailAsync(toEmail, subject, body, cancellationToken);
+        await SendEmailAsync(toEmail, "Security alert: your password was changed",
+            Layout(accent, "Your password was changed", content), cancellationToken);
     }
+
+    // ============================== Mẫu dùng chung ==============================
+
+    private static string Layout(string accent, string title, string content) => $@"<!DOCTYPE html>
+<html>
+<head><meta charset=""utf-8""><meta name=""viewport"" content=""width=device-width, initial-scale=1""></head>
+<body style=""margin:0;padding:24px 0;background:#f6f7f9;font-family:'Segoe UI',Arial,sans-serif;color:#333333;line-height:1.6"">
+    <div style=""max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e3e6ea;border-top:4px solid {accent};border-radius:6px"">
+        <div style=""padding:22px 28px 0;font-size:14px;font-weight:700;color:{accent};letter-spacing:.5px"">{Brand}</div>
+        <div style=""padding:6px 28px 0;font-size:22px;font-weight:600;color:#111111"">{title}</div>
+        <div style=""padding:16px 28px 24px;font-size:15px"">{content}</div>
+    </div>
+    <div style=""max-width:560px;margin:14px auto 0;text-align:center;font-size:12px;color:#8a929b;line-height:1.5"">
+        {Footer}<br>This is an automated message. Please do not reply.
+    </div>
+</body>
+</html>";
+
+    private static string Greeting(string fullName) => Paragraph($"Hi <b>{Encode(fullName)}</b>,");
+
+    private static string Paragraph(string html) => $@"<p style=""margin:0 0 14px"">{html}</p>";
+
+    private static string Muted(string html) => $@"<p style=""margin:0;font-size:13px;color:#888888"">{html}</p>";
+
+    private static string OtpBox(string code, string note) => $@"
+            <div style=""background:#f5f6f8;border:2px dashed #111111;border-radius:8px;text-align:center;padding:18px;margin:20px 0"">
+                <div style=""font-size:34px;font-weight:700;letter-spacing:8px;color:#111111;font-family:Consolas,monospace"">{Encode(code)}</div>
+                <div style=""font-size:13px;color:#666666;margin-top:8px"">{note}</div>
+            </div>";
+
+    private static string Row(string label, string value) =>
+        $@"<tr><td style=""padding:9px 0;border-bottom:1px solid #eeeeee;color:#666666;width:38%"">{label}</td><td style=""padding:9px 0;border-bottom:1px solid #eeeeee"">{value}</td></tr>";
+
+    private static string Encode(string value) => WebUtility.HtmlEncode(value);
 
     private async Task SendEmailAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken)
     {
