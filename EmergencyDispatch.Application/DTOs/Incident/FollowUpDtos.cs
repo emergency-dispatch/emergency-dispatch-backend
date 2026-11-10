@@ -12,8 +12,11 @@ public class ChangeSeverityDto
     /// <summary>Level1 / Level2 / Level3</summary>
     public SeverityLevel NewSeverity { get; set; }
 
-    /// <summary>Đổi loại sự cố (tùy chọn): FireExplosion / TrafficAccident</summary>
+    /// <summary>Đổi nhóm sự cố (tùy chọn): FireExplosion / TrafficAccident / Other</summary>
     public IncidentEventType? NewEventType { get; set; }
+
+    /// <summary>Đổi loại sự cố chi tiết (tùy chọn, mã từ GET /api/incident-types); có giá trị thì bỏ qua newEventType</summary>
+    public string? NewIncidentTypeCode { get; set; }
 
     public string Reason { get; set; } = string.Empty;
 }
@@ -28,7 +31,7 @@ public class CreateFieldRequestDto
     public FieldRequestType Type { get; set; }
 
     /// <summary>(Backup) loại xe cần thêm, null = để Operator quyết định</summary>
-    public RescueUnitType? RequestedUnitType { get; set; }
+    public string? RequestedUnitType { get; set; }
 
     /// <summary>(Backup) số xe cần thêm, 1–5</summary>
     public int Quantity { get; set; } = 1;
@@ -66,7 +69,7 @@ public class FieldRequestDto
     public string? RequestedByName { get; set; }
     public FieldRequestType Type { get; set; }
     public FieldRequestStatus Status { get; set; }
-    public RescueUnitType? RequestedUnitType { get; set; }
+    public string? RequestedUnitType { get; set; }
     public int Quantity { get; set; }
     public string? Description { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -31,8 +31,11 @@ public class CreateIncidentDtoValidator : AbstractValidator<CreateIncidentDto>
         });
 
         RuleFor(x => x.ReportedEventType)
-            .Must(t => t is null or Domain.Enums.IncidentEventType.FireExplosion or Domain.Enums.IncidentEventType.TrafficAccident)
-            .WithMessage("Loại sự cố tự chọn chỉ nhận FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).");
+            .Must(t => t is null or Domain.Enums.IncidentEventType.FireExplosion or Domain.Enums.IncidentEventType.TrafficAccident or Domain.Enums.IncidentEventType.Other)
+            .WithMessage("Loại sự cố tự chọn chỉ nhận FireExplosion (cháy nổ), TrafficAccident (tai nạn) hoặc Other (khác).");
+
+        RuleFor(x => x.IncidentTypeCode)
+            .MaximumLength(50).WithMessage("Mã loại sự cố không hợp lệ.");
 
         RuleFor(x => x.MediaUrls)
             .Must(urls => urls == null || urls.Count <= 5)

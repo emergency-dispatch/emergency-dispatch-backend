@@ -9,7 +9,16 @@ namespace EmergencyDispatch.Application.Validators;
 public static class MediaUrlPolicy
 {
     // URL mock CloudinaryMediaService trả về khi chưa cấu hình Cloudinary
-    private const string MockHost = "images.unsplash.com";
+    public const string MockHost = "images.unsplash.com";
+
+    /// <summary>
+    /// Đủ CloudName + ApiKey + ApiSecret thật → upload lên Cloudinary; thiếu một trong ba → upload trả URL mock.
+    /// CloudinaryMediaService và IsTrusted dùng chung điều kiện này để không nhận / từ chối lệch nhau.
+    /// </summary>
+    public static bool IsCloudinaryConfigured(IConfiguration configuration)
+        => IsReal(configuration["Cloudinary:CloudName"])
+           && IsReal(configuration["Cloudinary:ApiKey"])
+           && IsReal(configuration["Cloudinary:ApiSecret"]);
 
     public static bool IsTrusted(string? url, IConfiguration configuration)
     {
@@ -18,13 +27,22 @@ public static class MediaUrlPolicy
             return false;
         }
 
-        var cloudName = configuration["Cloudinary:CloudName"];
-        if (string.IsNullOrWhiteSpace(cloudName) || cloudName.StartsWith("YOUR_"))
+        // Upload đang chạy chế độ mock (thiếu khóa Cloudinary) → URL mock do chính hệ thống sinh ra là hợp lệ
+        if (!IsCloudinaryConfigured(configuration) && uri.Host.Equals(MockHost, StringComparison.OrdinalIgnoreCase))
         {
-            return uri.Host.Equals(MockHost, StringComparison.OrdinalIgnoreCase);
+            return true;
+        }
+
+        var cloudName = configuration["Cloudinary:CloudName"]?.Trim();
+        if (!IsReal(cloudName))
+        {
+            return false;
         }
 
         return uri.Host.Equals("res.cloudinary.com", StringComparison.OrdinalIgnoreCase)
-               && uri.AbsolutePath.StartsWith($"/{cloudName}/", StringComparison.Ordinal);
+               && uri.AbsolutePath.StartsWith($"/{cloudName}/", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsReal(string? value)
+        => !string.IsNullOrWhiteSpace(value) && !value.Trim().StartsWith("YOUR_", StringComparison.Ordinal);
 }

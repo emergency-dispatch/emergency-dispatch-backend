@@ -40,7 +40,7 @@ public class MyReportDto
 public class MyReportUnitDto
 {
     public string PlateNumber { get; set; } = string.Empty;
-    public RescueUnitType UnitType { get; set; }
+    public string UnitType { get; set; }
     public string? StationName { get; set; }
     public DispatchAssignmentStatus Status { get; set; }
 }

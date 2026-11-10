@@ -41,7 +41,7 @@ public class DispatchController : ControllerBase
     public async Task<IActionResult> GetRecommendations(
         [FromQuery] Guid incidentId,
         [FromQuery] DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
-        [FromQuery] RescueUnitType? unitType = null,
+        [FromQuery] string? unitType = null,
         [FromQuery] double? maxDistanceKm = null,
         CancellationToken cancellationToken = default)
     {

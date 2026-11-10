@@ -124,6 +124,19 @@ public class AiClassificationResultDto
     public double? ConfidenceScore { get; set; }
 
     /// <summary>
+    /// Nguồn độ tin cậy: "logprob" = xác suất token thật của TriageVL (dùng được cho AI tự điều phối);
+    /// "logprob-consensus" = TriageVL + YOLO đồng thuận; "heuristic" / "self-reported" / null = chỉ để tham khảo
+    /// </summary>
+    [JsonPropertyName("confidenceSource")]
+    public string? ConfidenceSource { get; set; }
+
+    /// <summary>
+    /// Độ tin cậy là xác suất đo được từ model (không phải giá trị gán cứng hay model tự khai)
+    /// </summary>
+    [JsonIgnore]
+    public bool HasMeasuredConfidence => ConfidenceSource?.StartsWith("logprob", StringComparison.Ordinal) == true;
+
+    /// <summary>
     /// Cờ đánh dấu phân loại thành công hay kích hoạt cơ chế Fallback
     /// </summary>
     public bool IsSuccess { get; set; } = true;

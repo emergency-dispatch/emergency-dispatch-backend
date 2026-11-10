@@ -59,6 +59,19 @@ public static class IncidentLinking
     public static bool Compatible(IncidentEventType? a, IncidentEventType? b) => a == null || b == null || a == b;
 
     /// <summary>
+    /// Nhóm "Khác" gồm nhiều loại chi tiết (đuối nước, sập công trình...): hai bên đều đã chọn loại chi tiết cụ thể
+    /// (không phải mã chung "Other") mà khác nhau thì không gom
+    /// </summary>
+    public static bool DetailedTypeCompatible(Incident candidate, string? newReportTypeCode)
+    {
+        const string generic = nameof(IncidentEventType.Other);
+        if (string.IsNullOrWhiteSpace(newReportTypeCode) || newReportTypeCode == generic) return true;
+        if (KnownType(candidate) != IncidentEventType.Other) return true;
+        var candidateCode = DispatchScoring.IncidentTypeCodeFor(candidate);
+        return string.IsNullOrWhiteSpace(candidateCode) || candidateCode == generic || candidateCode == newReportTypeCode;
+    }
+
+    /// <summary>
     /// Chọn sự cố gốc gần nhất thỏa: trong bán kính, có báo cáo từ windowStartUtc, tương thích loại. null = không gom
     /// </summary>
     public static (Incident Parent, double DistanceMeters)? PickParent(
@@ -67,12 +80,14 @@ public static class IncidentLinking
         double lng,
         IncidentEventType? newReportType,
         double radiusMeters,
-        DateTime windowStartUtc)
+        DateTime windowStartUtc,
+        string? newReportTypeCode = null)
     {
         return candidates
             .Where(c => c.Status != IncidentStatus.Linked && !c.IsDeleted)
             .Where(c => (c.LatestReportAt ?? c.CreatedAt) >= windowStartUtc)
             .Where(c => Compatible(KnownType(c), newReportType))
+            .Where(c => newReportType != IncidentEventType.Other || DetailedTypeCompatible(c, newReportTypeCode))
             .Select(c => (Parent: c, DistanceMeters: DistanceMeters(lat, lng, c.Latitude, c.Longitude)))
             .Where(x => x.DistanceMeters <= radiusMeters)
             .OrderBy(x => x.DistanceMeters)

@@ -258,6 +258,7 @@ public class DualEngineAiService : IAiClassificationService
                 IncidentType = qwen.IncidentType,
                 SeverityScore = qwen.SeverityScore,
                 ConfidenceScore = qwen.ConfidenceScore,
+                ConfidenceSource = qwen.ConfidenceSource,
                 IsTrafficJam = false, // AI chỉ dừng ở mức Suspected/Disputed, chỉ True khi con người Confirmed
                 TrafficJamStatus = jamStatus,
                 TrafficJamEvidence = jamEvidence,
@@ -367,6 +368,8 @@ public class DualEngineAiService : IAiClassificationService
             TrafficJamEvidenceEn = jamEvidenceEn,
             SeverityScore = Math.Clamp(finalSeverity, 0, 3),
             ConfidenceScore = Math.Round(finalConfidence, 4),
+            // Điểm ghép YOLO + Qwen: chỉ giữ tính "đo được" khi phần Qwen là xác suất token thật
+            ConfidenceSource = qwen.HasMeasuredConfidence ? "logprob-consensus" : qwen.ConfidenceSource,
             HazardTags = mergedTags.ToList(),
             Summary = mergedSummary,
             SummaryEn = $"[Dual-Engine | {consensusNoteEn}]\n• YOLO ({yolo.ModelName}): {yolo.GetSummary("en")}\n• Qwen-VL ({qwen.ModelName}): {qwen.GetSummary("en")}\n• Traffic assessment: {jamEvidenceEn}",

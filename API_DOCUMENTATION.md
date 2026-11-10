@@ -1583,6 +1583,59 @@ Thêm `reportedEventType`, `linkedReportCount`, `linkedToIncidentId` (khi `Linke
 
 ---
 
+## 13. DANH MỤC LOẠI SỰ CỐ / LOẠI XE, LOẠI "KHÁC", AI TỰ ĐIỀU PHỐI (đợt 09/11/2026)
+
+### 13.1 Danh mục
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| GET | `/api/incident-types` | Công khai | Loại sự cố đang dùng (kèm `unitRules`); `?includeInactive=true` (Admin) |
+| POST | `/api/incident-types` | Admin | Thêm loại: `{ code, nameVi, nameEn, description?, icon?, color?, category, isActive, displayOrder }` |
+| PUT | `/api/incident-types/{id}` | Admin | Sửa (không đổi `code`; loại hệ thống không đổi `category`) |
+| DELETE | `/api/incident-types/{id}` | Admin | Xóa loại không phải hệ thống, chưa được dùng (đang dùng → 409) |
+| PUT | `/api/incident-types/{id}/unit-rules` | Admin | Thay toàn bộ quy tắc `{ rules: [{ unitTypeCode, minSeverity, quantity (1–5), priority }] }` |
+| GET | `/api/rescue-unit-types` | Đăng nhập | Loại xe; `?includeInactive=true` (Admin) |
+| POST / PUT / DELETE | `/api/rescue-unit-types[/{id}]` | Admin | Tương tự loại sự cố (không có `category`) |
+
+Seed hệ thống:
+- 6 loại xe cũ (giữ nguyên mã).
+- 3 loại sự cố `FireExplosion`, `TrafficAccident`, `Other`.
+- Loại mẫu `FloodDrowning` (nhóm Other).
+- Quy tắc loại xe lấy từ luật BR-13 cũ.
+
+`RescueUnit.unitType` và `FieldRequest.requestedUnitType` là mã trong danh mục (JSON của 6 loại cũ không đổi).
+
+### 13.2 Loại sự cố trên sự cố
+- `CreateIncidentDto.incidentTypeCode`, `CreateOperatorIncidentDto.incidentTypeCode`, `VerifyIncidentDto.confirmedIncidentTypeCode`, `ChangeSeverityDto.newIncidentTypeCode`: mã danh mục (tùy chọn). Nhóm (`eventType`) lấy theo `category` của loại.
+- `eventType` / `reportedEventType` / `confirmedEventType` / `newEventType` nhận thêm `Other`.
+- Nhóm `Other`:
+  - AI chưa nhận diện được: nếu người báo chọn Khác mà AI không nhận ra thì giữ `eventType = Other`;
+  - không tự điều phối;
+  - chống trùng không gom hai báo cáo Khác có loại chi tiết khác nhau.
+- Gợi ý xe (`/api/dispatch/recommend`) lọc loại xe theo quy tắc của loại sự cố. Chưa có quy tắc thì dùng luật dự phòng theo nhóm và từ khóa.
+
+### 13.3 AI tự điều phối
+- Cấu hình trong `PUT /api/settings/dispatch`: `autoDispatchEnabled` (mặc định false), `autoDispatchMinConfidence` (mặc định 0.90), `autoDispatchDuplicateRadiusMeters` (500), `autoDispatchDuplicateWindowMinutes` (30).
+- Điều kiện:
+  - sự cố `AiProcessed`, chưa xác minh;
+  - không bị gom, trong khu vực phục vụ;
+  - nhóm FireExplosion / TrafficAccident, Level 1–3;
+  - người báo không chọn Khác;
+  - không Operator nào đang giữ khóa;
+  - AI thành công với `confidenceSource` bắt đầu bằng `logprob` (chỉ TriageVL bản mới, không dùng OpenRouter);
+  - độ tin cậy ≥ ngưỡng.
+- Luồng:
+  1. Khóa khu vực (advisory lock).
+  2. Kiểm tra sự cố khác đã điều xe trong bán kính nghi trùng (không xét loại). Có thì `Skipped`, ghi `suspectedDuplicateOfIncidentId`.
+  3. Chọn xe theo quy tắc + BR-14. Không còn xe thì `Skipped`.
+  4. Hệ thống xác minh (`verifiedByUserId = null`).
+  5. Phát lệnh (`assignedByUserId = null`, actor `AI_AutoDispatch`).
+  6. Audit `AutoDispatched` / `AutoDispatchSkipped`.
+  7. SignalR `ReceiveAutoDispatched` + thông báo cho Operator trạm phụ trách và Admin.
+- Tạo SOS cũng khóa theo khu vực khi tìm sự cố gốc và lưu: hai SOS gần nhau gửi cùng lúc được gom đúng.
+
+### 13.4 Độ tin cậy AI
+`ai-service/ai_service.py` trả `confidence = p(token loại) × p(token mức độ)` lấy từ `output_scores` khi sinh, `confidence_source = "logprob"`, kèm `type_probability`, `severity_probability`. Không train lại model. Bản cũ không gửi `confidence_source` nên backend coi là `heuristic` và không tự điều phối.
+
 ## Thay đổi phạm vi hồ sơ khẩn cấp (22/10/2026)
 * Đã bỏ danh sách nhiều người thân và cấu hình tin nhắn tự động; giữ một người liên hệ trong hồ sơ, Medical ID, Special Info và cơ chế song ngữ.
 * Migration `Remove_Multiple_Emergency_Contacts_And_Sms` gỡ bảng/cột của chức năng đã bỏ. Trước khi gỡ, tài khoản chưa có cả ba trường liên hệ cũ sẽ được điền từ một liên hệ còn hiệu lực, ưu tiên primary.

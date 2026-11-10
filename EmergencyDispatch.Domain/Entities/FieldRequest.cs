@@ -29,7 +29,7 @@ public class FieldRequest : BaseEntity
     /// <summary>
     /// (Backup) Loại xe cần chi viện; null = để Operator quyết định
     /// </summary>
-    public RescueUnitType? RequestedUnitType { get; set; }
+    public string? RequestedUnitType { get; set; }
 
     /// <summary>
     /// (Backup) Số xe cần thêm (1–5)

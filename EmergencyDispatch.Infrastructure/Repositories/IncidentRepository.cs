@@ -223,6 +223,40 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         }
     }
 
+    // Ô lưới khóa khu vực: 0.01° (~1.1 km). Khóa mọi ô phủ khung bán kính, theo thứ tự tăng dần để không deadlock
+    private const double AreaCellDegrees = 0.01;
+    private const long AreaLockNamespace = 0x5345_5000_0000_0000; // "SEP" ở các bit cao, tránh trùng khóa advisory khác
+
+    public async Task<IIncidentLockScope> BeginAreaLockAsync(double latitude, double longitude, double radiusMeters, CancellationToken cancellationToken = default)
+    {
+        var dLat = Math.Max(radiusMeters, 1) / 111_320.0;
+        var dLng = Math.Max(radiusMeters, 1) / (111_320.0 * Math.Max(0.01, Math.Cos(latitude * Math.PI / 180.0)));
+        var keys = new SortedSet<long>();
+        for (var cy = (long)Math.Floor((latitude - dLat) / AreaCellDegrees); cy <= (long)Math.Floor((latitude + dLat) / AreaCellDegrees); cy++)
+        {
+            for (var cx = (long)Math.Floor((longitude - dLng) / AreaCellDegrees); cx <= (long)Math.Floor((longitude + dLng) / AreaCellDegrees); cx++)
+            {
+                // cy ∈ [-9000, 9000], cx ∈ [-18000, 18000] → ghép thành một số dương duy nhất
+                keys.Add(AreaLockNamespace + (cy + 9_000) * 40_000 + (cx + 18_000));
+            }
+        }
+
+        var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            foreach (var key in keys)
+            {
+                await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({key})", cancellationToken);
+            }
+            return new IncidentLockScope(transaction);
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            throw;
+        }
+    }
+
     private sealed class IncidentLockScope : IIncidentLockScope
     {
         private readonly IDbContextTransaction _transaction;

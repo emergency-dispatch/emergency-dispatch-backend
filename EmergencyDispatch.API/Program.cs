@@ -25,6 +25,20 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Image Docker không có appsettings.json → mặc định log Information in mọi câu SQL, làm chìm log nghiệp vụ (AI, email...).
+// Ngoài Development: hạ log của EF Core / ASP.NET hạ tầng xuống Warning, trừ khi đã đặt Logging:LogLevel tương ứng.
+if (!builder.Environment.IsDevelopment())
+{
+    if (builder.Configuration["Logging:LogLevel:Microsoft.EntityFrameworkCore"] == null)
+    {
+        builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+    }
+    if (builder.Configuration["Logging:LogLevel:Microsoft.AspNetCore"] == null)
+    {
+        builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+    }
+}
+
 // 1. Controllers + JSON Enum serialize as string + SignalR
 builder.Services.AddControllers(options =>
     {
@@ -153,6 +167,7 @@ builder.Services.AddScoped<IEscalationRepository, EscalationRepository>();
 builder.Services.AddScoped<IBlockedPhoneRepository, BlockedPhoneRepository>();
 builder.Services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
 builder.Services.AddScoped<IStationTeamRepository, StationTeamRepository>();
+builder.Services.AddScoped<ITypeCatalogRepository, TypeCatalogRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<ISystemAuditLogRepository, SystemAuditLogRepository>();
 builder.Services.AddScoped<IFieldRequestRepository, FieldRequestRepository>();
@@ -199,6 +214,8 @@ builder.Services.AddScoped<IIncidentService, IncidentService>();
 builder.Services.AddScoped<IIncidentFollowUpService, IncidentFollowUpService>();
 builder.Services.AddScoped<IFieldRequestService, FieldRequestService>();
 builder.Services.AddScoped<IEquipmentService, EquipmentService>();
+builder.Services.AddScoped<ITypeCatalogService, TypeCatalogService>();
+builder.Services.AddScoped<IAutoDispatchService, AutoDispatchService>();
 builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();
 builder.Services.AddScoped<ITrafficService, TrafficService>();

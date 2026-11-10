@@ -80,6 +80,9 @@ public static class RealtimeContract
     /// <summary>Cấu hình leo thang / điều phối / khu vực phục vụ thay đổi</summary>
     public const string ReceiveSettingsChanged = "ReceiveSettingsChanged";
 
+    /// <summary>Kết quả AI tự điều phối: Dispatched (đã điều xe) hoặc Skipped (nghi trùng / hết xe → Operator)</summary>
+    public const string ReceiveAutoDispatched = "ReceiveAutoDispatched";
+
     /// <summary>Thông báo đã đọc trên thiết bị khác (đồng bộ số chưa đọc)</summary>
     public const string ReceiveNotificationRead = "ReceiveNotificationRead";
 }

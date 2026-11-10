@@ -114,6 +114,11 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<IncidentSupplement> IncidentSupplements => Set<IncidentSupplement>();
     public DbSet<Equipment> Equipment => Set<Equipment>();
 
+    // Danh mục loại xe / loại sự cố / quy tắc loại xe (Admin quản lý)
+    public DbSet<RescueUnitTypeDefinition> RescueUnitTypes => Set<RescueUnitTypeDefinition>();
+    public DbSet<IncidentTypeDefinition> IncidentTypes => Set<IncidentTypeDefinition>();
+    public DbSet<IncidentTypeUnitRule> IncidentTypeUnitRules => Set<IncidentTypeUnitRule>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -223,6 +228,14 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                   .HasForeignKey(r => r.StationId)
                   .OnDelete(DeleteBehavior.Cascade);
 
+            // Loại xe = mã trong danh mục RescueUnitTypes (không xóa được loại đang có xe dùng)
+            entity.Property(r => r.UnitType).HasMaxLength(50).IsRequired();
+            entity.HasOne<RescueUnitTypeDefinition>()
+                  .WithMany()
+                  .HasForeignKey(r => r.UnitType)
+                  .HasPrincipalKey(t => t.Code)
+                  .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasQueryFilter(r => !r.IsDeleted);
         });
 
@@ -244,6 +257,21 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(i => i.LocationAddress).HasMaxLength(500);
             entity.Property(i => i.ReporterName).HasMaxLength(200);
             entity.Property(i => i.ReporterPhone).HasMaxLength(20);
+
+            // Loại sự cố chi tiết (danh mục IncidentTypes); EventType giữ nhóm AI của loại đó
+            entity.Property(i => i.IncidentTypeCode).HasMaxLength(50);
+            entity.Property(i => i.ReportedIncidentTypeCode).HasMaxLength(50);
+            entity.Property(i => i.AutoDispatchNote).HasMaxLength(500);
+            entity.HasOne<IncidentTypeDefinition>()
+                  .WithMany()
+                  .HasForeignKey(i => i.IncidentTypeCode)
+                  .HasPrincipalKey(t => t.Code)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<IncidentTypeDefinition>()
+                  .WithMany()
+                  .HasForeignKey(i => i.ReportedIncidentTypeCode)
+                  .HasPrincipalKey(t => t.Code)
+                  .OnDelete(DeleteBehavior.Restrict);
 
             // Quan hệ ReportedByUser (Citizen báo cáo)
             entity.HasOne(i => i.ReportedByUser)
@@ -347,6 +375,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         // ==================== 10. AI CLASSIFICATION ====================
         modelBuilder.Entity<AiClassification>(entity =>
         {
+            entity.Property(a => a.ConfidenceSource).HasMaxLength(20);
             entity.Property<uint>("Version").IsRowVersion();
             entity.HasKey(a => a.Id);
             entity.ToTable(t => t.HasCheckConstraint("CK_AiClassifications_SeverityScore", "\"SeverityScore\" BETWEEN 0 AND 3"));
@@ -587,7 +616,59 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.HasOne(r => r.Assignment).WithMany().HasForeignKey(r => r.AssignmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(r => r.RescueUnit).WithMany().HasForeignKey(r => r.RescueUnitId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(r => r.RequestedByUser).WithMany().HasForeignKey(r => r.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(r => r.RequestedUnitType).HasMaxLength(50);
+            entity.HasOne<RescueUnitTypeDefinition>()
+                  .WithMany()
+                  .HasForeignKey(r => r.RequestedUnitType)
+                  .HasPrincipalKey(t => t.Code)
+                  .OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(r => !r.IsDeleted);
+        });
+
+        // ==================== DANH MỤC LOẠI XE / LOẠI SỰ CỐ ====================
+        modelBuilder.Entity<RescueUnitTypeDefinition>(entity =>
+        {
+            entity.ToTable("RescueUnitTypes");
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.Code).HasMaxLength(50).IsRequired();
+            entity.HasAlternateKey(t => t.Code).HasName("AK_RescueUnitTypes_Code");
+            entity.Property(t => t.NameVi).HasMaxLength(100).IsRequired();
+            entity.Property(t => t.NameEn).HasMaxLength(100).IsRequired();
+            entity.Property(t => t.Description).HasMaxLength(500);
+            entity.Property(t => t.Icon).HasMaxLength(50);
+            entity.Property(t => t.Color).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<IncidentTypeDefinition>(entity =>
+        {
+            entity.ToTable("IncidentTypes");
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.Code).HasMaxLength(50).IsRequired();
+            entity.HasAlternateKey(t => t.Code).HasName("AK_IncidentTypes_Code");
+            entity.Property(t => t.NameVi).HasMaxLength(100).IsRequired();
+            entity.Property(t => t.NameEn).HasMaxLength(100).IsRequired();
+            entity.Property(t => t.Description).HasMaxLength(500);
+            entity.Property(t => t.Icon).HasMaxLength(50);
+            entity.Property(t => t.Color).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<IncidentTypeUnitRule>(entity =>
+        {
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.UnitTypeCode).HasMaxLength(50).IsRequired();
+            entity.ToTable(t => t.HasCheckConstraint("CK_IncidentTypeUnitRules_Quantity", "\"Quantity\" BETWEEN 1 AND 5"));
+            entity.HasIndex(r => new { r.IncidentTypeId, r.UnitTypeCode, r.MinSeverity })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_IncidentTypeUnitRules_Type_Unit_Severity");
+            entity.HasOne(r => r.IncidentType)
+                  .WithMany(t => t.UnitRules)
+                  .HasForeignKey(r => r.IncidentTypeId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<RescueUnitTypeDefinition>()
+                  .WithMany()
+                  .HasForeignKey(r => r.UnitTypeCode)
+                  .HasPrincipalKey(t => t.Code)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<IncidentSupplement>(entity =>

@@ -1,3 +1,4 @@
+using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Application.DTOs.Settings;
 using EmergencyDispatch.Domain.Enums;
 
@@ -65,9 +66,62 @@ public static class DispatchScoring
     }
 
     /// <summary>
-    /// BR-13: Khớp loại xe theo nhánh sự cố. Trả về null khi chưa xác định được nhánh (cho phép mọi loại xe).
+    /// Mã loại sự cố dùng để tra quy tắc loại xe: loại chi tiết đã biết → nhóm (Operator xác nhận → AI → người báo).
+    /// Mã nhóm trùng mã loại hệ thống (FireExplosion / TrafficAccident / Other). null = chưa biết loại
     /// </summary>
-    public static IReadOnlySet<RescueUnitType>? MatchingUnitTypes(
+    public static string? IncidentTypeCodeFor(Incident incident)
+    {
+        if (!string.IsNullOrWhiteSpace(incident.IncidentTypeCode)) return incident.IncidentTypeCode;
+        var category = incident.EventType != IncidentEventType.None
+            ? incident.EventType
+            : incident.AiClassification is { IsSuccess: true, EventType: not IncidentEventType.None } ai
+                ? ai.EventType
+                : incident.ReportedEventType ?? IncidentEventType.None;
+        var reportedCode = string.IsNullOrWhiteSpace(incident.ReportedIncidentTypeCode) ? null : incident.ReportedIncidentTypeCode;
+        if (category == IncidentEventType.None) return reportedCode;
+        // Loại chi tiết người báo chọn còn đúng nhóm hiện tại → giữ loại chi tiết (VD "Đuối nước" thuộc Other)
+        return reportedCode != null && incident.ReportedEventType == category ? reportedCode : category.ToString();
+    }
+
+    /// <summary>
+    /// Quy tắc áp dụng ở mức độ này (sự cố chưa phân loại tính như Level 1), xếp theo ưu tiên.
+    /// Không quy tắc nào đạt mức → dùng các quy tắc ở mức thấp nhất của loại đó
+    /// </summary>
+    public static List<IncidentTypeUnitRule> ApplicableRules(IReadOnlyList<IncidentTypeUnitRule> rules, SeverityLevel severity)
+    {
+        if (rules.Count == 0) return new List<IncidentTypeUnitRule>();
+        var level = severity == SeverityLevel.Unclassified ? SeverityLevel.Level1 : severity;
+        var applicable = rules.Where(r => r.MinSeverity <= level).ToList();
+        if (applicable.Count == 0)
+        {
+            var lowest = rules.Min(r => r.MinSeverity);
+            applicable = rules.Where(r => r.MinSeverity == lowest).ToList();
+        }
+        return applicable.OrderBy(r => r.Priority).ThenBy(r => r.MinSeverity).ToList();
+    }
+
+    /// <summary>
+    /// BR-13: loại xe phù hợp. Có quy tắc của loại sự cố (bảng IncidentTypeUnitRules) → theo quy tắc;
+    /// chưa có quy tắc → luật dự phòng theo nhóm sự cố, tag AI và từ khóa mô tả. null = cho phép mọi loại xe
+    /// </summary>
+    public static IReadOnlySet<string>? MatchingUnitTypes(
+        IReadOnlyList<IncidentTypeUnitRule>? typeRules,
+        IncidentEventType eventType,
+        IEnumerable<string> hazardTags,
+        string titleAndDescription,
+        SeverityLevel severity)
+    {
+        if (typeRules is { Count: > 0 })
+        {
+            return ApplicableRules(typeRules, severity).Select(r => r.UnitTypeCode).ToHashSet(StringComparer.Ordinal);
+        }
+        return MatchingUnitTypes(eventType, hazardTags, titleAndDescription, severity);
+    }
+
+    /// <summary>
+    /// Luật dự phòng (trước khi có danh mục quy tắc). Trả về null khi chưa xác định được nhánh (cho phép mọi loại xe).
+    /// </summary>
+    public static IReadOnlySet<string>? MatchingUnitTypes(
         IncidentEventType eventType,
         IEnumerable<string> hazardTags,
         string titleAndDescription,
@@ -86,12 +140,12 @@ public static class DispatchScoring
 
         if (isWater && !isFire && !isAccident)
         {
-            return new HashSet<RescueUnitType> { RescueUnitType.RescueBoat };
+            return new HashSet<string> { RescueUnitType.RescueBoat };
         }
 
         if (isFire)
         {
-            var types = new HashSet<RescueUnitType>
+            var types = new HashSet<string>
             {
                 RescueUnitType.FireTruck,
                 RescueUnitType.LadderTruck,
@@ -104,7 +158,7 @@ public static class DispatchScoring
 
         if (isAccident)
         {
-            var types = new HashSet<RescueUnitType>
+            var types = new HashSet<string>
             {
                 RescueUnitType.Ambulance,
                 RescueUnitType.HeavyRescueVehicle

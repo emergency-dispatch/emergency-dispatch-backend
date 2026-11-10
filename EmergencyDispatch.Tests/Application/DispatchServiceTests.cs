@@ -60,7 +60,7 @@ public class DispatchServiceTests
             TestHelpers.Config(("Cloudinary:CloudName", "demo")), _teams.Object);
     }
 
-    private RescueUnit Unit(RescueUnitType type, double kmNorth, RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null)
+    private RescueUnit Unit(string type, double kmNorth, RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null)
     {
         var u = new RescueUnit
         {
@@ -614,7 +614,7 @@ public class DispatchServiceTests
     {
         // Tổ 1 có 2 xe: xe chữa cháy đã tới (OnScene), xe thang còn trên đường (EnRoute). Tổ 2 có 1 xe cấp cứu.
         var (a1, inc, u1, leader) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
-        DispatchAssignment AddUnit(RescueUnitType type, DispatchAssignmentStatus status, out RescueUnit unit)
+        DispatchAssignment AddUnit(string type, DispatchAssignmentStatus status, out RescueUnit unit)
         {
             unit = Unit(type, 3, RescueUnitStatus.Dispatched);
             var a = new DispatchAssignment { IncidentId = inc.Id, Incident = inc, RescueUnitId = unit.Id, RescueUnit = unit, Status = status };

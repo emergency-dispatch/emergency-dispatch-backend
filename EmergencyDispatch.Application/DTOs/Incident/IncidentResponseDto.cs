@@ -14,6 +14,31 @@ public class IncidentResponseDto
     /// <summary>Loại sự cố người báo tự chọn (nếu có)</summary>
     public Domain.Enums.IncidentEventType? ReportedEventType { get; set; }
 
+    /// <summary>
+    /// Loại sự cố chi tiết người báo chọn (mã danh mục IncidentTypes)
+    /// </summary>
+    public string? ReportedIncidentTypeCode { get; set; }
+
+    /// <summary>
+    /// Loại sự cố chi tiết hiện tại (mã danh mục IncidentTypes); eventType là nhóm của loại này
+    /// </summary>
+    public string? IncidentTypeCode { get; set; }
+
+    /// <summary>
+    /// AI tự động điều phối: None / Dispatched (hệ thống đã tự xác minh và điều xe) / Skipped (đủ tin cậy nhưng chuyển Operator)
+    /// </summary>
+    public Domain.Enums.AutoDispatchState AutoDispatchState { get; set; }
+
+    /// <summary>
+    /// Lý do / mô tả kết quả tự điều phối (song ngữ theo Accept-Language)
+    /// </summary>
+    public string? AutoDispatchNote { get; set; }
+
+    /// <summary>
+    /// Nghi trùng với sự cố đã được điều xe (AI tự điều phối phát hiện) → Operator kiểm tra, gộp hoặc điều thêm
+    /// </summary>
+    public Guid? SuspectedDuplicateOfIncidentId { get; set; }
+
     /// <summary>(Sự cố gốc) Số báo cáo khác đang gom vào sự cố này: hàng đợi hiện "+N người cùng báo"</summary>
     public int LinkedReportCount { get; set; }
 

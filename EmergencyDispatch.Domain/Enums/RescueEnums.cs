@@ -1,39 +1,35 @@
 namespace EmergencyDispatch.Domain.Enums;
 
 /// <summary>
-/// Loại phương tiện / đội cứu hộ
+/// Mã các loại phương tiện hệ thống (seed sẵn trong bảng RescueUnitTypes, không xóa được).
+/// Loại xe là danh mục do Admin quản lý: RescueUnit.UnitType lưu mã (Code) của một dòng RescueUnitTypes,
+/// Admin có thể thêm mã mới ngoài các mã dưới đây. Giữ đúng tên enum cũ để JSON API không đổi.
 /// </summary>
-public enum RescueUnitType
+public static class RescueUnitType
 {
-    /// <summary>
-    /// Xe cấp cứu y tế 115
-    /// </summary>
-    Ambulance = 1,
+    /// <summary>Xe cấp cứu y tế 115</summary>
+    public const string Ambulance = "Ambulance";
 
-    /// <summary>
-    /// Xe chữa cháy tiêu chuẩn
-    /// </summary>
-    FireTruck = 2,
+    /// <summary>Xe chữa cháy tiêu chuẩn</summary>
+    public const string FireTruck = "FireTruck";
 
-    /// <summary>
-    /// Xe thang chữa cháy cứu nạn nhà cao tầng
-    /// </summary>
-    LadderTruck = 3,
+    /// <summary>Xe thang chữa cháy cứu nạn nhà cao tầng</summary>
+    public const string LadderTruck = "LadderTruck";
 
-    /// <summary>
-    /// Cano / Thuyền cứu nạn đường thủy
-    /// </summary>
-    RescueBoat = 4,
+    /// <summary>Cano / Thuyền cứu nạn đường thủy</summary>
+    public const string RescueBoat = "RescueBoat";
 
-    /// <summary>
-    /// Xe cứu nạn, cứu hộ đặc chủng (cắt kim loại, cẩu nâng)
-    /// </summary>
-    HeavyRescueVehicle = 5,
+    /// <summary>Xe cứu nạn, cứu hộ đặc chủng (cắt kim loại, cẩu nâng)</summary>
+    public const string HeavyRescueVehicle = "HeavyRescueVehicle";
 
-    /// <summary>
-    /// Xe tuần tra phản ứng nhanh
-    /// </summary>
-    PolicePatrol = 6
+    /// <summary>Xe tuần tra phản ứng nhanh</summary>
+    public const string PolicePatrol = "PolicePatrol";
+
+    /// <summary>Mã số cũ (enum int trước khi chuyển sang danh mục) → mã chuỗi; dùng cho migration</summary>
+    public static readonly IReadOnlyDictionary<int, string> LegacyValues = new Dictionary<int, string>
+    {
+        [1] = Ambulance, [2] = FireTruck, [3] = LadderTruck, [4] = RescueBoat, [5] = HeavyRescueVehicle, [6] = PolicePatrol
+    };
 }
 
 /// <summary>

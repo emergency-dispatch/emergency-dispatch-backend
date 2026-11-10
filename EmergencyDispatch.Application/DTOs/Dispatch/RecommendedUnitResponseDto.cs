@@ -9,7 +9,7 @@ public class RecommendedUnitResponseDto
 {
     public Guid RescueUnitId { get; set; }
     public string PlateNumber { get; set; } = string.Empty;
-    public RescueUnitType UnitType { get; set; }
+    public string UnitType { get; set; }
     public RescueUnitStatus Status { get; set; }
     public Guid StationId { get; set; }
     public string StationName { get; set; } = string.Empty;

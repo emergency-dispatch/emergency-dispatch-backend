@@ -10,7 +10,7 @@ public class CreateRescueUnitDto
     public string PlateNumber { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Loại phương tiện cứu hộ là bắt buộc.")]
-    public RescueUnitType UnitType { get; set; } = RescueUnitType.Ambulance;
+    public string UnitType { get; set; } = RescueUnitType.Ambulance;
 
     [Required(ErrorMessage = "ID trạm trực thuộc là bắt buộc.")]
     public Guid StationId { get; set; }

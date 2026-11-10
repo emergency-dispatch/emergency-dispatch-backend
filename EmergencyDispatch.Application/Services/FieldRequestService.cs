@@ -31,6 +31,7 @@ public class FieldRequestService : IFieldRequestService
     private readonly ICurrentUserContext _currentUser;
     private readonly ISystemSettingsService _settingsService;
     private readonly ILogger<FieldRequestService> _logger;
+    private readonly ITypeCatalogRepository? _typeCatalog;
 
     public FieldRequestService(
         IFieldRequestRepository requestRepository,
@@ -41,8 +42,10 @@ public class FieldRequestService : IFieldRequestService
         INotificationService notificationService,
         ICurrentUserContext currentUser,
         ISystemSettingsService settingsService,
-        ILogger<FieldRequestService> logger)
+        ILogger<FieldRequestService> logger,
+        ITypeCatalogRepository? typeCatalog = null)
     {
+        _typeCatalog = typeCatalog;
         _requestRepository = requestRepository;
         _assignmentRepository = assignmentRepository;
         _incidentRepository = incidentRepository;
@@ -85,9 +88,14 @@ public class FieldRequestService : IFieldRequestService
                     LocalizationHelper.Localize("Số xe chi viện phải từ 1 đến {0}.", MaxBackupQuantity));
             }
 
-            if (dto.RequestedUnitType is { } unitType && !Enum.IsDefined(unitType))
+            if (!string.IsNullOrWhiteSpace(dto.RequestedUnitType))
             {
-                return ApiResponseDto<FieldRequestDto>.FailureResult("Loại xe yêu cầu không hợp lệ.");
+                dto.RequestedUnitType = dto.RequestedUnitType.Trim();
+                var requestedType = _typeCatalog == null ? null : await _typeCatalog.GetUnitTypeAsync(dto.RequestedUnitType, cancellationToken);
+                if (_typeCatalog != null && requestedType is not { IsActive: true })
+                {
+                    return ApiResponseDto<FieldRequestDto>.FailureResult("Loại xe yêu cầu không hợp lệ.");
+                }
             }
         }
 

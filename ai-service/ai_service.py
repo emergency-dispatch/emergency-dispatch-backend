@@ -163,6 +163,10 @@ class AnalyzeResponse(BaseModel):
     description_en: str = ""
     description_en_is_fallback: bool = False
     confidence: float
+    # "logprob" = xác suất token thật (p(loại) × p(mức độ)); "heuristic" = không đo được, backend không dùng để tự điều phối
+    confidence_source: str = "heuristic"
+    type_probability: Optional[float] = None
+    severity_probability: Optional[float] = None
     raw_response: str
     inference_time_ms: int
     model_name: str = "Qwen2.5-VL-3B-LoRA"
@@ -177,6 +181,24 @@ def health_check():
         "lora_adapter": LORA_ADAPTER_DIR,
         "model_ready": is_model_ready
     }
+
+def value_token_probability(output_text: str, token_ids, step_probs, pattern: str) -> Optional[float]:
+    """
+    Xác suất model gán cho token đầu tiên của giá trị khớp pattern (nhóm 1) trong output_text.
+    step_probs[i] = xác suất của token thứ i đã sinh (greedy). Không đổi model, không cần train lại.
+    """
+    match = re.search(pattern, output_text)
+    if not match:
+        return None
+    char_pos = match.start(1)
+    tokenizer = processor.tokenizer
+    # Tìm token đầu tiên mà phần văn bản giải mã tới nó vượt qua vị trí ký tự của giá trị
+    for k in range(len(token_ids)):
+        prefix = tokenizer.decode(token_ids[:k + 1], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        if len(prefix) > char_pos:
+            return float(step_probs[k])
+    return None
+
 
 def extract_json(text: str) -> dict:
     """Trích xuất và parse JSON an toàn từ kết quả sinh của mô hình"""
@@ -284,15 +306,25 @@ async def analyze_incident(
         inputs = inputs.to(DEVICE)
 
         with torch.no_grad():
-            generated_ids = model.generate(
+            generation = model.generate(
                 **inputs,
                 max_new_tokens=max(64, min(1024, int(os.getenv("AI_MAX_NEW_TOKENS", "320")))),
-                do_sample=False
+                do_sample=False,
+                output_scores=True,
+                return_dict_in_generate=True
             )
+        generated_ids = generation.sequences
 
         generated_ids_trimmed = [
             out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
+        # Xác suất (softmax) của từng token đã sinh — greedy nên token chọn là token có xác suất cao nhất ở bước đó
+        new_token_ids = generated_ids_trimmed[0].tolist()
+        step_probs = []
+        for step, scores in enumerate(generation.scores):
+            if step >= len(new_token_ids):
+                break
+            step_probs.append(torch.softmax(scores[0].float(), dim=-1)[new_token_ids[step]].item())
         output_text = processor.batch_decode(
             generated_ids_trimmed,
             skip_special_tokens=True,
@@ -316,7 +348,16 @@ async def analyze_incident(
             description_en = f"A detailed English description is unavailable. Incident: {incident_type}; severity: {severity_level}. Operator review may be required."
 
         is_emergency = incident_type in ["fire", "accident"] and severity_level > 0
-        confidence = 0.95 if is_emergency else 0.85
+
+        # Độ tin cậy thật: p(token loại sự cố) × p(token mức độ). Không tìm được vị trí → heuristic cũ, backend không tự điều phối
+        type_probability = value_token_probability(output_text, new_token_ids, step_probs, r'"incident_type"\s*:\s*"([^"]+)"')
+        severity_probability = value_token_probability(output_text, new_token_ids, step_probs, r'"severity_level"\s*:\s*"?(\d)')
+        if type_probability is not None and severity_probability is not None:
+            confidence = round(type_probability * severity_probability, 4)
+            confidence_source = "logprob"
+        else:
+            confidence = 0.95 if is_emergency else 0.85
+            confidence_source = "heuristic"
 
         return AnalyzeResponse(
             is_emergency=is_emergency,
@@ -329,6 +370,9 @@ async def analyze_incident(
             description_en=description_en,
             description_en_is_fallback=description_en_is_fallback,
             confidence=confidence,
+            confidence_source=confidence_source,
+            type_probability=type_probability,
+            severity_probability=severity_probability,
             raw_response=output_text,
             inference_time_ms=inference_time_ms,
             model_name="Qwen2.5-VL-3B-LoRA"

@@ -38,6 +38,8 @@ public class IncidentFollowUpService : IIncidentFollowUpService
     private readonly IConfiguration _configuration;
     private readonly ILogger<IncidentFollowUpService> _logger;
 
+    private readonly ITypeCatalogRepository? _typeCatalog;
+
     public IncidentFollowUpService(
         IIncidentRepository incidentRepository,
         IUserRepository userRepository,
@@ -50,8 +52,10 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         IAiAnalysisQueue aiQueue,
         IGuestCancellationTokenService guestTokens,
         IConfiguration configuration,
-        ILogger<IncidentFollowUpService> logger)
+        ILogger<IncidentFollowUpService> logger,
+        ITypeCatalogRepository? typeCatalog = null)
     {
+        _typeCatalog = typeCatalog;
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
         _supplementRepository = supplementRepository;
@@ -83,9 +87,20 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Mức độ mới phải từ Level 1 đến Level 3.");
         }
 
-        if (dto.NewEventType is { } t && t is not (IncidentEventType.FireExplosion or IncidentEventType.TrafficAccident))
+        if (dto.NewEventType is { } t && t is not (IncidentEventType.FireExplosion or IncidentEventType.TrafficAccident or IncidentEventType.Other))
         {
-            return ApiResponseDto<IncidentResponseDto>.FailureResult("Loại sự cố chỉ nhận FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).");
+            return ApiResponseDto<IncidentResponseDto>.FailureResult("Loại sự cố chỉ nhận FireExplosion (cháy nổ), TrafficAccident (tai nạn) hoặc Other (khác).");
+        }
+        var newTypeCode = (string?)null;
+        if (!string.IsNullOrWhiteSpace(dto.NewIncidentTypeCode))
+        {
+            var resolved = await IncidentService.ResolveIncidentTypeAsync(_typeCatalog, dto.NewIncidentTypeCode, cancellationToken);
+            if (resolved.Error != null)
+            {
+                return ApiResponseDto<IncidentResponseDto>.FailureResult(resolved.Error);
+            }
+            newTypeCode = resolved.Code;
+            dto.NewEventType = resolved.Category;
         }
 
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
@@ -115,7 +130,9 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         }
 
         var newType = dto.NewEventType ?? incident.EventType;
-        if (dto.NewSeverity == incident.Severity && newType == incident.EventType)
+        var oldTypeCode = incident.IncidentTypeCode ?? DispatchScoring.IncidentTypeCodeFor(incident);
+        newTypeCode ??= newType == incident.EventType ? oldTypeCode : newType.ToString();
+        if (dto.NewSeverity == incident.Severity && newType == incident.EventType && newTypeCode == oldTypeCode)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult("Mức độ và loại sự cố không thay đổi.");
         }
@@ -124,6 +141,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         var oldType = incident.EventType;
         incident.Severity = dto.NewSeverity;
         incident.EventType = newType;
+        incident.IncidentTypeCode = newTypeCode;
         incident.UpdatedAt = DateTime.UtcNow;
 
         await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
@@ -180,7 +198,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         var candidates = await _incidentRepository.FindLinkCandidatesAsync(box.MinLat, box.MaxLat, box.MinLng, box.MaxLng, windowStart, cancellationToken);
 
         return IncidentLinking.PickParent(candidates.Where(c => c.Id != newReport.Id), newReport.Latitude, newReport.Longitude,
-            IncidentLinking.KnownType(newReport), settings.RadiusMeters, windowStart);
+            IncidentLinking.KnownType(newReport), settings.RadiusMeters, windowStart, newReport.ReportedIncidentTypeCode);
     }
 
     public async Task<LinkedToIncidentDto> OnReportLinkedAsync(Incident report, Incident parent, double distanceMeters, CancellationToken cancellationToken = default)

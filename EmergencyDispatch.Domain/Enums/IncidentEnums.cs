@@ -101,7 +101,28 @@ public enum IncidentEventType
     /// <summary>
     /// Tai nạn giao thông
     /// </summary>
-    TrafficAccident = 2
+    TrafficAccident = 2,
+
+    /// <summary>
+    /// Sự cố khẩn cấp loại khác (đuối nước, ngập, sập công trình, rò rỉ hóa chất...). AI chưa nhận diện được:
+    /// chỉ Operator thẩm định, không bị AI hạ cấp, không tự động điều phối
+    /// </summary>
+    Other = 3
+}
+
+/// <summary>
+/// Kết quả AI tự động điều phối của một sự cố
+/// </summary>
+public enum AutoDispatchState
+{
+    /// <summary>Chưa xét / không áp dụng (tắt tự động, Operator đã xử lý...)</summary>
+    None = 0,
+
+    /// <summary>Hệ thống đã tự xác minh và điều xe</summary>
+    Dispatched = 1,
+
+    /// <summary>Đủ điều kiện AI nhưng bị bỏ qua (nghi trùng, hết xe...), chuyển cho Operator</summary>
+    Skipped = 2
 }
 
 /// <summary>
@@ -166,5 +187,7 @@ public enum AuditAction
     ReportUnlinked = 27,           // Tách báo cáo khỏi sự cố gốc
     DuplicateConfirmed = 28,       // Operator xác nhận báo cáo trùng
     SupplementAdded = 29,          // Người báo bổ sung ghi chú / ảnh
-    LinkedReportsRestored = 30     // Sự cố gốc bị hủy → các báo cáo đã gom quay lại hàng đợi
+    LinkedReportsRestored = 30,    // Sự cố gốc bị hủy → các báo cáo đã gom quay lại hàng đợi
+    AutoDispatched = 31,           // AI đủ tin cậy → hệ thống tự xác minh và điều xe
+    AutoDispatchSkipped = 32       // AI đủ tin cậy nhưng không tự điều (nghi trùng, hết xe...) → Operator
 }

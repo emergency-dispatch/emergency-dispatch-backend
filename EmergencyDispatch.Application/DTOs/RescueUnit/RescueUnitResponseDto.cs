@@ -6,7 +6,7 @@ public class RescueUnitResponseDto
 {
     public Guid Id { get; set; }
     public string PlateNumber { get; set; } = string.Empty;
-    public RescueUnitType UnitType { get; set; }
+    public string UnitType { get; set; }
     public string UnitTypeName => UnitType.ToString();
     public RescueUnitStatus Status { get; set; }
     public string StatusName => Status.ToString();

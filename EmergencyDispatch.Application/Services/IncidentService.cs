@@ -41,6 +41,24 @@ public class IncidentService : IIncidentService
     // Đội cứu hộ vẫn xem được sự cố trong 30 phút sau khi hoàn tất để nộp báo cáo nghiệm thu
     private static readonly TimeSpan StaffAccessAfterCompletion = TimeSpan.FromMinutes(30);
 
+    private readonly ITypeCatalogRepository? _typeCatalog;
+
+    public const string InvalidIncidentTypeMessage = "Loại sự cố '{0}' không có trong danh mục hoặc đã bị ẩn.";
+
+    /// <summary>
+    /// Tra loại sự cố chi tiết trong danh mục (phải đang dùng). Không gửi mã → (null, null, null)
+    /// </summary>
+    internal static async Task<(string? Code, IncidentEventType? Category, string? Error)> ResolveIncidentTypeAsync(
+        ITypeCatalogRepository? catalog, string? code, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return (null, null, null);
+        var trimmed = code.Trim();
+        var type = catalog == null ? null : await catalog.GetIncidentTypeAsync(trimmed, cancellationToken);
+        return type is { IsActive: true }
+            ? (type.Code, type.Category, null)
+            : (null, null, LocalizationHelper.Localize(InvalidIncidentTypeMessage, trimmed));
+    }
+
     public IncidentService(
         IIncidentRepository incidentRepository,
         IUserRepository userRepository,
@@ -56,8 +74,10 @@ public class IncidentService : IIncidentService
         IStationRepository stationRepository,
         ISystemSettingsService settingsService,
         ICurrentUserContext currentUser,
-        IIncidentFollowUpService followUpService)
+        IIncidentFollowUpService followUpService,
+        ITypeCatalogRepository? typeCatalog = null)
     {
+        _typeCatalog = typeCatalog;
         _followUpService = followUpService;
         _stationRepository = stationRepository;
         _settingsService = settingsService;
@@ -143,6 +163,20 @@ public class IncidentService : IIncidentService
                 serviceArea.Name, outsideKm.ToString("0.#", CultureInfo.InvariantCulture)));
         }
 
+        // Loại sự cố người báo chọn: mã chi tiết trong danh mục → nhóm theo danh mục; chỉ chọn nhóm → mã nhóm (loại hệ thống)
+        var reportedCategory = dto.ReportedEventType is { } chosenGroup && chosenGroup != IncidentEventType.None ? chosenGroup : (IncidentEventType?)null;
+        var reportedCode = reportedCategory?.ToString();
+        if (!string.IsNullOrWhiteSpace(dto.IncidentTypeCode))
+        {
+            var resolved = await ResolveIncidentTypeAsync(_typeCatalog, dto.IncidentTypeCode, cancellationToken);
+            if (resolved.Error != null)
+            {
+                return ApiResponseDto<IncidentResponseDto>.FailureResult(resolved.Error);
+            }
+            reportedCode = resolved.Code;
+            reportedCategory = resolved.Category;
+        }
+
         // Trạm phụ trách theo vị trí (mỗi Operator xử lý sự cố của trạm mình)
         var responsibleStation = StationAssignment.PickResponsibleStation(
             await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
@@ -164,7 +198,8 @@ public class IncidentService : IIncidentService
             ReportedByUser = reportingUser,
             Status = IncidentStatus.Pending,
             Severity = SeverityLevel.Unclassified,
-            ReportedEventType = dto.ReportedEventType,
+            ReportedEventType = reportedCategory,
+            ReportedIncidentTypeCode = reportedCode,
             CreatedAt = DateTime.UtcNow
         };
         incident.LatestReportAt = incident.CreatedAt;
@@ -194,6 +229,10 @@ public class IncidentService : IIncidentService
 
         // 4b. BR-07: gần sự cố đang mở, cùng khung thời gian, cùng loại (nếu biết) → gom vào sự cố gốc.
         // Báo cáo gom không chạy TriageVL, không vào hàng đợi Operator; ảnh chỉ kiểm tra nhanh YOLO để tự tách nếu khác loại.
+        // Khóa khu vực tới khi lưu xong: hai SOS gần nhau gửi cùng lúc chạy tuần tự, SOS sau thấy SOS trước để gom (BR-07)
+        var duplicateSettings = await _settingsService.GetDuplicateDetectionAsync(cancellationToken);
+        await using var areaLock = await _incidentRepository.BeginAreaLockAsync(incident.Latitude, incident.Longitude,
+            Math.Max(duplicateSettings?.RadiusMeters ?? 0, 100), cancellationToken);
         var link = await _followUpService.FindLinkParentAsync(incident, cancellationToken);
         var isLinked = link.HasValue;
         var willAnalyze = hasPhoto && !isLinked;
@@ -238,7 +277,8 @@ public class IncidentService : IIncidentService
                 queuedForAi = willAnalyze,
                 linkedToIncidentId = incident.DuplicateOfIncidentId,
                 linkDistanceMeters = incident.LinkDistanceMeters,
-                reportedEventType = incident.ReportedEventType?.ToString()
+                reportedEventType = incident.ReportedEventType?.ToString(),
+                reportedIncidentTypeCode = incident.ReportedIncidentTypeCode
             }),
             Timestamp = incident.CreatedAt
         });
@@ -257,6 +297,7 @@ public class IncidentService : IIncidentService
 
         // 5. Lưu vào cơ sở dữ liệu (không chờ AI → phản hồi nhanh cho người báo)
         await _incidentRepository.AddAsync(incident);
+        if (areaLock != null) await areaLock.CommitAsync(cancellationToken);
 
         // 6. Đẩy công việc AI vào hàng đợi nền (System.Threading.Channels)
         if (isLinked)
@@ -367,6 +408,19 @@ public class IncidentService : IIncidentService
         var normalizedPhone = PhoneMasking.Normalize(dto.ReporterPhone);
         var actorRole = _currentUser.Role?.ToString() ?? UserRole.Operator.ToString();
 
+        var operatorCategory = dto.EventType;
+        var operatorTypeCode = dto.EventType.ToString();
+        if (!string.IsNullOrWhiteSpace(dto.IncidentTypeCode))
+        {
+            var resolved = await ResolveIncidentTypeAsync(_typeCatalog, dto.IncidentTypeCode, cancellationToken);
+            if (resolved.Error != null)
+            {
+                return ApiResponseDto<IncidentResponseDto>.FailureResult(resolved.Error);
+            }
+            operatorCategory = resolved.Category!.Value;
+            operatorTypeCode = resolved.Code;
+        }
+
         // Không qua AI: Operator đã đánh giá loại và mức độ. Không tính T_Operator (ResponseTimeMs) vì xác minh tức thì
         var incident = new Incident
         {
@@ -382,7 +436,8 @@ public class IncidentService : IIncidentService
             ReporterName = dto.ReporterName?.Trim(),
             ReporterPhone = normalizedPhone ?? dto.ReporterPhone?.Trim(),
             Source = dto.Source,
-            EventType = dto.EventType,
+            EventType = operatorCategory,
+            IncidentTypeCode = operatorTypeCode,
             Severity = dto.Severity,
             Status = IncidentStatus.Verified,
             VerifiedByUserId = operatorId,
@@ -517,6 +572,7 @@ public class IncidentService : IIncidentService
             aiEntity.HazardTags = aiResult.HazardTags;
             aiEntity.Summary = aiResult.GetSummary("vi");
             aiEntity.ConfidenceScore = aiResult.ConfidenceScore;
+            aiEntity.ConfidenceSource = aiResult.ConfidenceSource;
             aiEntity.ModelName = aiResult.ModelName;
             aiEntity.RawResponse = AiTextLocalization.Capture(aiResult);
             aiEntity.IsSuccess = aiResult.IsSuccess;
@@ -540,8 +596,12 @@ public class IncidentService : IIncidentService
                 incident.Status = IncidentStatus.AiProcessed;
                 if (incident.EventType == IncidentEventType.None)
                 {
-                    incident.EventType = aiResult.EventType;
+                    // AI chỉ biết cháy nổ / tai nạn: người báo chọn loại Khác mà AI không nhận ra thì giữ Other để Operator thẩm định
+                    incident.EventType = aiResult.EventType != IncidentEventType.None
+                        ? aiResult.EventType
+                        : incident.ReportedEventType == IncidentEventType.Other ? IncidentEventType.Other : IncidentEventType.None;
                 }
+                incident.IncidentTypeCode = DispatchScoring.IncidentTypeCodeFor(incident);
                 incident.UpdatedAt = DateTime.UtcNow;
 
                 await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
@@ -720,16 +780,28 @@ public class IncidentService : IIncidentService
         var aiEventType = incident.AiClassification?.EventType ?? IncidentEventType.None;
         var currentEventType = incident.EventType != IncidentEventType.None ? incident.EventType : aiEventType;
         var confirmedEventType = dto.ConfirmedEventType is { } chosen && chosen != IncidentEventType.None ? chosen : currentEventType;
+        string? confirmedTypeCode = null;
+        if (!string.IsNullOrWhiteSpace(dto.ConfirmedIncidentTypeCode))
+        {
+            var resolved = await ResolveIncidentTypeAsync(_typeCatalog, dto.ConfirmedIncidentTypeCode, cancellationToken);
+            if (resolved.Error != null)
+            {
+                return ApiResponseDto<IncidentResponseDto>.FailureResult(resolved.Error);
+            }
+            confirmedTypeCode = resolved.Code;
+            confirmedEventType = resolved.Category!.Value;
+        }
         if (confirmedEventType == IncidentEventType.None)
         {
             return ApiResponseDto<IncidentResponseDto>.FailureResult(
-                "AI chưa xác định được loại sự cố. Vui lòng chọn confirmedEventType: FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).");
+                "AI chưa xác định được loại sự cố. Vui lòng chọn confirmedIncidentTypeCode hoặc confirmedEventType: FireExplosion (cháy nổ), TrafficAccident (tai nạn) hoặc Other (khác).");
         }
         var eventTypeOverridden = aiEventType != IncidentEventType.None && aiEventType != confirmedEventType;
 
         // Cập nhật thông tin xác minh bởi Operator (Human-in-the-loop)
         incident.Severity = dto.ConfirmedSeverity;
         incident.EventType = confirmedEventType;
+        incident.IncidentTypeCode = confirmedTypeCode ?? DispatchScoring.IncidentTypeCodeFor(incident);
         incident.Status = IncidentStatus.Verified;
         incident.VerifiedByUserId = operatorId;
         incident.VerifiedAt = DateTime.UtcNow;
@@ -1597,6 +1669,7 @@ public class IncidentService : IIncidentService
                 HazardTags = incident.AiClassification.HazardTags,
                 Summary = incident.AiClassification.Summary,
                 ConfidenceScore = incident.AiClassification.ConfidenceScore,
+                ConfidenceSource = incident.AiClassification.ConfidenceSource,
                 ModelName = incident.AiClassification.ModelName,
                 RawResponse = incident.AiClassification.RawResponse,
                 IsSuccess = incident.AiClassification.IsSuccess,
@@ -1677,6 +1750,11 @@ public class IncidentService : IIncidentService
                 ? incident.EventType
                 : incident.AiClassification?.EventType ?? IncidentEventType.None,
             ReportedEventType = incident.ReportedEventType,
+            ReportedIncidentTypeCode = incident.ReportedIncidentTypeCode,
+            IncidentTypeCode = incident.IncidentTypeCode ?? DispatchScoring.IncidentTypeCodeFor(incident),
+            AutoDispatchState = incident.AutoDispatchState,
+            AutoDispatchNote = string.IsNullOrWhiteSpace(incident.AutoDispatchNote) ? null : LocalizationHelper.Localize(incident.AutoDispatchNote),
+            SuspectedDuplicateOfIncidentId = incident.SuspectedDuplicateOfIncidentId,
             LinkedReportCount = incident.LinkedReportCount,
             LinkedToIncidentId = incident.Status == IncidentStatus.Linked || incident.CancellationReason == CancellationReason.Duplicate
                 ? incident.DuplicateOfIncidentId : null,

@@ -183,6 +183,10 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
         => SafeAsync(() => _incidentHub.Clients.User(userId.ToString())
             .SendAsync(RealtimeContract.ReceiveNotification, notification, cancellationToken), "thông báo", notification.Id);
 
+    public Task AutoDispatchResultAsync(AutoDispatchEventDto result, CancellationToken cancellationToken = default)
+        => SafeAsync(() => CommandCenter(result.ResponsibleStationId)
+            .SendAsync(RealtimeContract.ReceiveAutoDispatched, result, cancellationToken), "kết quả AI tự điều phối", result.IncidentId);
+
     public Task OutOfAreaAlertAsync(OutOfAreaAlertDto alert, CancellationToken cancellationToken = default)
         => SafeAsync(() => CommandCenter(alert.ResponsibleStationId)
             .SendAsync(RealtimeContract.ReceiveOutOfAreaAlert, alert, cancellationToken), "cảnh báo ngoài khu vực", alert.IncidentId);

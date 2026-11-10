@@ -218,7 +218,8 @@ public class AiClassificationService : IAiClassificationService
                 Summary = summaryField.GetString(),
                 SummaryEn = ReadText(contentRoot, "summaryEn", "summary_en", "description_en"),
                 HazardTags = tags,
-                ConfidenceScore = confidence
+                ConfidenceScore = confidence,
+                ConfidenceSource = "self-reported"
             };
 
             stopwatch.Stop();
@@ -391,6 +392,10 @@ public class AiClassificationService : IAiClassificationService
                 SummaryEn = ReadText(root, "description_en", "summary_en", "summaryEn"),
                 SummaryEnIsFallback = root.TryGetProperty("description_en_is_fallback", out var enFallback) && enFallback.ValueKind == JsonValueKind.True,
                 ConfidenceScore = confidence,
+                // Bản ai_service.py mới gửi confidence_source = "logprob" (xác suất token); bản cũ không gửi → heuristic
+                ConfidenceSource = root.TryGetProperty("confidence_source", out var srcProp) && srcProp.ValueKind == JsonValueKind.String
+                    ? srcProp.GetString()
+                    : "heuristic",
                 IsSuccess = true,
                 ModelName = "Qwen2.5-VL-3B-LoRA (Local GPU)",
                 RawResponse = content,

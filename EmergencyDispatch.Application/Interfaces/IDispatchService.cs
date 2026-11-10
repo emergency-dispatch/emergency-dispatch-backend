@@ -16,7 +16,7 @@ public interface IDispatchService
     Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetRecommendationsAsync(
         Guid incidentId,
         DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
-        RescueUnitType? unitType = null,
+        string? unitType = null,
         double? maxDistanceKm = null,
         CancellationToken cancellationToken = default);
 
@@ -35,6 +35,16 @@ public interface IDispatchService
     /// Mọi lượt phân công đang chạy (Dispatched / Accepted / EnRoute / OnScene). Operator: sự cố trạm mình hoặc xe trạm mình
     /// </summary>
     Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> GetActiveAssignmentsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AI tự điều phối: phát lệnh không có Operator thao tác (sự cố đã được hệ thống xác minh)
+    /// </summary>
+    Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AutoAssignAsync(AssignDispatchDto dto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Quy tắc loại xe áp dụng cho loại sự cố của sự cố này (rỗng = chưa có quy tắc)
+    /// </summary>
+    Task<IReadOnlyList<EmergencyDispatch.Domain.Entities.IncidentTypeUnitRule>> GetUnitRulesAsync(EmergencyDispatch.Domain.Entities.Incident incident, CancellationToken cancellationToken);
 
     Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignUnitAsync(
         AssignDispatchDto dto,

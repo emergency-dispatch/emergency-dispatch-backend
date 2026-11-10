@@ -66,7 +66,7 @@ public class TrafficServiceTests
         return h;
     }
 
-    private RescueUnit Unit(RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null, RescueUnitType type = RescueUnitType.PolicePatrol)
+    private RescueUnit Unit(RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null, string type = RescueUnitType.PolicePatrol)
     {
         var u = new RescueUnit { PlateNumber = "51A-TT1", UnitType = type, Status = status, StationId = station ?? _q7.Id };
         _units.Setup(x => x.GetByIdWithDetailsAsync(u.Id)).ReturnsAsync(u);
@@ -147,7 +147,7 @@ public class TrafficServiceTests
     [Theory]
     [InlineData(RescueUnitType.PolicePatrol)]
     [InlineData(RescueUnitType.Ambulance)]
-    public async Task Assign_AnyAvailableUnitTypeIsAccepted(RescueUnitType type)
+    public async Task Assign_AnyAvailableUnitTypeIsAccepted(string type)
     {
         var h = Hotspot();
 

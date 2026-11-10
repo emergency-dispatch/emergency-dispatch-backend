@@ -10,7 +10,7 @@ public class UpdateRescueUnitDto
     public string PlateNumber { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Loại phương tiện cứu hộ là bắt buộc.")]
-    public RescueUnitType UnitType { get; set; }
+    public string UnitType { get; set; }
 
     [Required(ErrorMessage = "Trạng thái xe là bắt buộc.")]
     public RescueUnitStatus Status { get; set; }

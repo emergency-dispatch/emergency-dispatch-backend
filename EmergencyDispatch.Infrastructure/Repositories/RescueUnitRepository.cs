@@ -29,15 +29,16 @@ public class RescueUnitRepository : GenericRepository<RescueUnit>, IRescueUnitRe
             .ToListAsync();
     }
 
-    public async Task<IReadOnlyList<RescueUnit>> GetAvailableUnitsAsync(RescueUnitType? unitType = null)
+    public async Task<IReadOnlyList<RescueUnit>> GetAvailableUnitsAsync(string? unitType = null)
     {
         var query = _dbSet
             .Include(r => r.Station)
             .Where(r => r.Status == RescueUnitStatus.Available);
 
-        if (unitType.HasValue)
+        if (!string.IsNullOrWhiteSpace(unitType))
         {
-            query = query.Where(r => r.UnitType == unitType.Value);
+            var code = unitType.Trim();
+            query = query.Where(r => r.UnitType == code);
         }
 
         return await query.ToListAsync();

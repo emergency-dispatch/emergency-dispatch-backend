@@ -97,6 +97,28 @@ public class Incident : BaseEntity
     public IncidentEventType? ReportedEventType { get; set; }
 
     /// <summary>
+    /// Loại sự cố chi tiết người báo chọn (IncidentTypes.Code, danh mục Admin quản lý). ReportedEventType = nhóm của loại này
+    /// </summary>
+    public string? ReportedIncidentTypeCode { get; set; }
+
+    /// <summary>
+    /// Loại sự cố chi tiết hiện tại (IncidentTypes.Code): người báo chọn → AI → Operator xác nhận.
+    /// EventType luôn là nhóm (Category) của loại này
+    /// </summary>
+    public string? IncidentTypeCode { get; set; }
+
+    /// <summary>
+    /// Kết quả AI tự động điều phối (None / Dispatched / Skipped) và lý do
+    /// </summary>
+    public AutoDispatchState AutoDispatchState { get; set; } = AutoDispatchState.None;
+    public string? AutoDispatchNote { get; set; }
+
+    /// <summary>
+    /// AI tự động điều phối phát hiện sự cố này có thể trùng một sự cố đã được điều xe → Operator kiểm tra
+    /// </summary>
+    public Guid? SuspectedDuplicateOfIncidentId { get; set; }
+
+    /// <summary>
     /// (Sự cố gốc) Số báo cáo khác đang được gom vào sự cố này
     /// </summary>
     public int LinkedReportCount { get; set; }

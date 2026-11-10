@@ -75,6 +75,11 @@ public interface IRealtimeNotifier
     Task OutOfAreaAlertAsync(OutOfAreaAlertDto alert, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Kết quả AI tự điều phối (ReceiveAutoDispatched) → Operator trạm phụ trách + Admin
+    /// </summary>
+    Task AutoDispatchResultAsync(AutoDispatchEventDto result, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Xe của trạm được Operator trạm khác điều đi hỗ trợ → Operator trạm có xe
     /// </summary>
     Task SupportDispatchedAsync(Guid supportingStationId, DispatchAssignmentResponseDto assignment, CancellationToken cancellationToken = default);

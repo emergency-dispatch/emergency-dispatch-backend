@@ -30,7 +30,7 @@ public class RescueUnitsController : ControllerBase
     [Authorize(Roles = StationAccess.FleetManagerRoles)]
     [ProducesResponseType(typeof(ApiResponseDto<IReadOnlyList<RescueUnitResponseDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
-        [FromQuery] RescueUnitType? unitType,
+        [FromQuery] string? unitType,
         [FromQuery] bool availableOnly = false,
         [FromQuery] Guid? stationId = null,
         [FromQuery] RescueUnitStatus? status = null)
@@ -39,9 +39,9 @@ public class RescueUnitsController : ControllerBase
             ? await _rescueUnitService.GetAvailableUnitsAsync(unitType)
             : await _rescueUnitService.GetAllAsync();
 
-        if (unitType.HasValue && !availableOnly)
+        if (!string.IsNullOrWhiteSpace(unitType) && !availableOnly)
         {
-            units = units.Where(u => u.UnitType == unitType.Value).ToList();
+            units = units.Where(u => u.UnitType == unitType.Trim()).ToList();
         }
         if (stationId.HasValue)
         {

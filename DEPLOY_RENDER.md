@@ -53,6 +53,12 @@ Lưu ý khi API ngủ: worker leo thang, hàng đợi AI và SignalR dừng. S�
 
 `autoDeploy: false` → push code không tự deploy. Muốn deploy: Render → service → **Manual Deploy → Deploy latest commit**. Đổi biến môi trường (ví dụ URL ngrok): sửa ở **Environment** → **Save changes**, Render tự khởi động lại, không cần build.
 
+## 5b. Bật AI tự điều phối
+
+1. Upload `ai-service/ai_service.py` bản mới (trả `confidence_source = "logprob"`) vào dataset Kaggle `triagevl-service`, qua **New version**. Mỗi người chạy notebook chọn version mới trong panel Input, rồi Stop Session và Run All.
+2. Admin bật trong `PUT /api/settings/dispatch`: `autoDispatchEnabled = true`, ngưỡng `autoDispatchMinConfidence` (mặc định 0.90).
+3. Chỉ kết quả TriageVL có độ tin cậy đo thật mới được tự điều phối. Khi Kaggle tắt và AI chạy bằng OpenRouter, sự cố vẫn vào hàng chờ Operator.
+
 ## 6. Giới hạn của cách deploy này
 
 - Chỉ chạy **1 instance** (hàng đợi AI trong RAM, SignalR chưa có Redis backplane).

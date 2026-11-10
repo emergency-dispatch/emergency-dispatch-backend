@@ -22,9 +22,14 @@ public class CreateOperatorIncidentDto
     public IncidentSource Source { get; set; }
 
     /// <summary>
-    /// FireExplosion hoặc TrafficAccident — quyết định loại xe được gợi ý
+    /// Nhóm sự cố: FireExplosion / TrafficAccident / Other. Gửi incidentTypeCode thì nhóm lấy theo danh mục
     /// </summary>
     public IncidentEventType EventType { get; set; }
+
+    /// <summary>
+    /// Mã loại sự cố chi tiết từ GET /api/incident-types (tùy chọn) — quyết định quy tắc loại xe được gợi ý
+    /// </summary>
+    public string? IncidentTypeCode { get; set; }
 
     /// <summary>
     /// Level1–Level3, do Operator đánh giá

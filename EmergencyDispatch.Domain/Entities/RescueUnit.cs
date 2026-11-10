@@ -13,9 +13,9 @@ public class RescueUnit : BaseEntity
     public string PlateNumber { get; set; } = string.Empty;
 
     /// <summary>
-    /// Loại phương tiện / đội cứu hộ
+    /// Mã loại phương tiện (RescueUnitTypes.Code, danh mục do Admin quản lý)
     /// </summary>
-    public RescueUnitType UnitType { get; set; } = RescueUnitType.Ambulance;
+    public string UnitType { get; set; } = RescueUnitType.Ambulance;
 
     /// <summary>
     /// Trạng thái hoạt động hiện tại

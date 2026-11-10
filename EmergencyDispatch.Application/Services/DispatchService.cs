@@ -41,6 +41,7 @@ public class DispatchService : IDispatchService
     private readonly IFieldRequestService _fieldRequestService;
     private readonly IConfiguration _configuration;
     private readonly IStationTeamRepository _teamRepository;
+    private readonly ITypeCatalogRepository? _typeCatalog;
 
     public DispatchService(
         IDispatchAssignmentRepository assignmentRepository,
@@ -57,8 +58,10 @@ public class DispatchService : IDispatchService
         IIncidentFollowUpService followUpService,
         IFieldRequestService fieldRequestService,
         IConfiguration configuration,
-        IStationTeamRepository teamRepository)
+        IStationTeamRepository teamRepository,
+        ITypeCatalogRepository? typeCatalog = null)
     {
+        _typeCatalog = typeCatalog;
         _configuration = configuration;
         _teamRepository = teamRepository;
         _followUpService = followUpService;
@@ -79,7 +82,7 @@ public class DispatchService : IDispatchService
     public async Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetRecommendationsAsync(
         Guid incidentId,
         DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
-        RescueUnitType? unitType = null,
+        string? unitType = null,
         double? maxDistanceKm = null,
         CancellationToken cancellationToken = default)
     {
@@ -98,16 +101,10 @@ public class DispatchService : IDispatchService
         var dispatchSettings = await _settingsService.GetDispatchSettingsAsync(cancellationToken);
         var escalationSettings = await _settingsService.GetEscalationSettingsAsync(cancellationToken);
 
-        // BR-13: khớp loại xe theo nhánh sự cố (hoặc theo loại Operator chỉ định)
-        var matchingTypes = unitType.HasValue
-            ? new HashSet<RescueUnitType> { unitType.Value }
-            : DispatchScoring.MatchingUnitTypes(
-                incident.EventType != IncidentEventType.None
-                    ? incident.EventType
-                    : incident.AiClassification?.EventType ?? IncidentEventType.None,
-                incident.AiClassification?.HazardTags ?? new List<string>(),
-                $"{incident.Title} {incident.Description}",
-                incident.Severity);
+        // BR-13: khớp loại xe theo quy tắc của loại sự cố (hoặc theo loại Operator chỉ định)
+        var matchingTypes = !string.IsNullOrWhiteSpace(unitType)
+            ? new HashSet<string> { unitType.Trim() }
+            : await MatchingUnitTypesAsync(incident, cancellationToken);
 
         // BR-12: nấc bán kính tự mở rộng; Operator chỉ định bán kính thì quét đúng một nấc
         var radii = maxDistanceKm.HasValue
@@ -247,7 +244,7 @@ public class DispatchService : IDispatchService
     /// <summary>
     /// FR-SYS-02: sự cố đã leo thang mà có đơn vị tiếp nhận → hạ thang (ghi audit, đóng lượt leo thang). Chưa SaveChanges.
     /// </summary>
-    private async Task DeEscalateAsync(Incident incident, Guid actorId, string reason, CancellationToken cancellationToken)
+    private async Task DeEscalateAsync(Incident incident, Guid? actorId, string reason, CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
         var resolved = await _escalationRepository.ResolveOpenLogsAsync(incident.Id, now, cancellationToken);
@@ -264,10 +261,30 @@ public class DispatchService : IDispatchService
         }, cancellationToken);
     }
 
-    public async Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignUnitAsync(
+    public Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignUnitAsync(
         AssignDispatchDto dto,
         Guid operatorId,
         CancellationToken cancellationToken = default)
+        => AssignCoreAsync(dto, operatorId, UserRole.Operator.ToString(), cancellationToken);
+
+    /// <summary>
+    /// Vai trò ghi trong lịch sử / audit khi hệ thống (AI tự điều phối) phát lệnh thay Operator
+    /// </summary>
+    public const string AutoDispatchActorRole = "AI_AutoDispatch";
+
+    /// <summary>
+    /// AI tự điều phối: phát lệnh như Operator nhưng không có người thao tác (AssignedByUserId = null)
+    /// </summary>
+    public Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AutoAssignAsync(
+        AssignDispatchDto dto,
+        CancellationToken cancellationToken = default)
+        => AssignCoreAsync(dto, null, AutoDispatchActorRole, cancellationToken);
+
+    private async Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AssignCoreAsync(
+        AssignDispatchDto dto,
+        Guid? operatorId,
+        string actorRole,
+        CancellationToken cancellationToken)
     {
         var unitIds = dto.GetUnitIds();
         if (unitIds.Count == 0)
@@ -300,7 +317,7 @@ public class DispatchService : IDispatchService
         }
 
         // BR-15: Operator khác đang giữ khóa xử lý sự cố
-        if (incident.IsLockedByOther(operatorId, DateTime.UtcNow))
+        if (incident.IsLockedByOther(operatorId ?? Guid.Empty, DateTime.UtcNow))
         {
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(
                 LocalizationHelper.Localize("Sự cố đang được xử lý bởi {0}.", incident.LockedByOperator?.FullName ?? LocalizationHelper.Localize("điều phối viên khác")));
@@ -425,7 +442,7 @@ public class DispatchService : IDispatchService
             OldStatus = oldIncidentStatus,
             NewStatus = incident.Status,
             ChangedByUserId = operatorId,
-            ChangedByRole = UserRole.Operator.ToString(),
+            ChangedByRole = actorRole,
             Notes = $"Phát lệnh điều phối {units.Count} phương tiện: {plates}."
         }, cancellationToken);
 
@@ -433,7 +450,7 @@ public class DispatchService : IDispatchService
         {
             IncidentId = incident.Id,
             ActorId = operatorId,
-            ActorRole = UserRole.Operator.ToString(),
+            ActorRole = actorRole,
             Action = activeCount > 0 ? AuditAction.ReDispatched : AuditAction.Dispatched,
             Description = $"Điều phối {units.Count} phương tiện: {plates}",
             NewStateJson = JsonSerializer.Serialize(new
@@ -522,7 +539,7 @@ public class DispatchService : IDispatchService
 
         if (dto.FieldRequestId is { } fulfilledRequestId)
         {
-            await _fieldRequestService.MarkFulfilledByDispatchAsync(fulfilledRequestId, units.Select(u => u.PlateNumber).ToList(), operatorId, cancellationToken);
+            await _fieldRequestService.MarkFulfilledByDispatchAsync(fulfilledRequestId, units.Select(u => u.PlateNumber).ToList(), operatorId ?? Guid.Empty, cancellationToken);
         }
 
         if (incident.ReportedByUserId.HasValue)
@@ -1309,6 +1326,26 @@ public class DispatchService : IDispatchService
     /// <summary>
     /// Lưu xe và phát ReceiveRescueUnitStatus để live map / danh sách xe cập nhật ngay
     /// </summary>
+    /// <summary>
+    /// Quy tắc loại xe của loại sự cố (bảng IncidentTypeUnitRules); chưa có danh mục / chưa biết loại → danh sách rỗng
+    /// </summary>
+    public async Task<IReadOnlyList<IncidentTypeUnitRule>> GetUnitRulesAsync(Incident incident, CancellationToken cancellationToken)
+    {
+        var code = DispatchScoring.IncidentTypeCodeFor(incident);
+        if (_typeCatalog == null || code == null) return Array.Empty<IncidentTypeUnitRule>();
+        return await _typeCatalog.GetUnitRulesAsync(code, cancellationToken) ?? (IReadOnlyList<IncidentTypeUnitRule>)Array.Empty<IncidentTypeUnitRule>();
+    }
+
+    private async Task<IReadOnlySet<string>?> MatchingUnitTypesAsync(Incident incident, CancellationToken cancellationToken)
+        => DispatchScoring.MatchingUnitTypes(
+            await GetUnitRulesAsync(incident, cancellationToken),
+            incident.EventType != IncidentEventType.None
+                ? incident.EventType
+                : incident.AiClassification?.EventType ?? IncidentEventType.None,
+            incident.AiClassification?.HazardTags ?? new List<string>(),
+            $"{incident.Title} {incident.Description}",
+            incident.Severity);
+
     /// <summary>
     /// Đội nhận lệnh của xe (CrewScope): tổ phụ trách xe, hoặc nhân viên cứu hộ của trạm nếu xe chưa gán tổ
     /// </summary>

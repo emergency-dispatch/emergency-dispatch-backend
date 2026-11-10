@@ -16,9 +16,28 @@ public class MediaUrlPolicyTests
     [InlineData(null, false)]
     public void IsTrusted_WithCloudinaryConfigured(string? url, bool expected)
     {
-        var cfg = TestHelpers.Config(("Cloudinary:CloudName", "demo"));
+        var cfg = TestHelpers.Config(("Cloudinary:CloudName", "demo"), ("Cloudinary:ApiKey", "k"), ("Cloudinary:ApiSecret", "s"));
 
         Assert.Equal(expected, MediaUrlPolicy.IsTrusted(url, cfg));
+    }
+
+    [Fact]
+    public void CloudNameSetButKeysMissing_AcceptsMockUrlTheUploadReturns()
+    {
+        // Render: có CloudName nhưng thiếu ApiKey/ApiSecret → upload trả URL mock; SOS không được bị 400
+        var cfg = TestHelpers.Config(("Cloudinary:CloudName", "demo"));
+
+        Assert.False(MediaUrlPolicy.IsCloudinaryConfigured(cfg));
+        Assert.True(MediaUrlPolicy.IsTrusted("https://images.unsplash.com/photo-1", cfg));
+        Assert.True(MediaUrlPolicy.IsTrusted("https://res.cloudinary.com/demo/image/upload/v1/a.jpg", cfg));
+    }
+
+    [Fact]
+    public void CloudNameWithSpacesOrCase_StillMatches()
+    {
+        var cfg = TestHelpers.Config(("Cloudinary:CloudName", " Demo "), ("Cloudinary:ApiKey", "k"), ("Cloudinary:ApiSecret", "s"));
+
+        Assert.True(MediaUrlPolicy.IsTrusted("https://res.cloudinary.com/demo/image/upload/v1/a.jpg", cfg));
     }
 
     [Theory]

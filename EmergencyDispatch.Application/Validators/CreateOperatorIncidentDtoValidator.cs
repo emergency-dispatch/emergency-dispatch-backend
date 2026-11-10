@@ -34,8 +34,9 @@ public class CreateOperatorIncidentDtoValidator : AbstractValidator<CreateOperat
             .WithMessage("Chọn kênh biết tin: PhoneCall, Radio, Cctv, FieldObservation hoặc Other.");
 
         RuleFor(x => x.EventType)
-            .Must(t => t is IncidentEventType.FireExplosion or IncidentEventType.TrafficAccident)
-            .WithMessage("Chọn loại sự cố: FireExplosion (cháy nổ) hoặc TrafficAccident (tai nạn).");
+            .Must(t => t is IncidentEventType.FireExplosion or IncidentEventType.TrafficAccident or IncidentEventType.Other)
+            .When(x => string.IsNullOrWhiteSpace(x.IncidentTypeCode))
+            .WithMessage("Chọn loại sự cố: FireExplosion (cháy nổ), TrafficAccident (tai nạn), Other (khác) hoặc gửi incidentTypeCode.");
 
         RuleFor(x => x.Severity)
             .Must(s => s is SeverityLevel.Level1 or SeverityLevel.Level2 or SeverityLevel.Level3)

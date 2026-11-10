@@ -21,6 +21,11 @@ public class AiClassification : BaseEntity
     public IncidentEventType EventType { get; set; } = IncidentEventType.None;
 
     /// <summary>
+    /// Nguồn độ tin cậy: "logprob" = xác suất thật từ TriageVL; "heuristic" / "self-reported" / null = không dùng để tự điều phối
+    /// </summary>
+    public string? ConfidenceSource { get; set; }
+
+    /// <summary>
     /// Cờ xác nhận ùn tắc giao thông chính thức.
     /// QUY ƯỚC QUAN TRỌNG: Chỉ mang giá trị true khi TrafficJamStatus == Confirmed (đã được Điều phối viên xác nhận).
     /// </summary>

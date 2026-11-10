@@ -16,6 +16,9 @@ public class RescueUnitService : IRescueUnitService
     private readonly ISystemAuditService _auditService;
     private readonly ICurrentUserContext _currentUser;
     private readonly IRealtimeNotifier _realtimeNotifier;
+    private readonly ITypeCatalogRepository? _typeCatalog;
+
+    public const string UnknownUnitTypeMessage = "Loại phương tiện '{0}' không có trong danh mục hoặc đã bị ẩn.";
 
     public RescueUnitService(
         IRescueUnitRepository rescueUnitRepository,
@@ -23,14 +26,31 @@ public class RescueUnitService : IRescueUnitService
         IDispatchAssignmentRepository assignmentRepository,
         ISystemAuditService auditService,
         ICurrentUserContext currentUser,
-        IRealtimeNotifier realtimeNotifier)
+        IRealtimeNotifier realtimeNotifier,
+        ITypeCatalogRepository? typeCatalog = null)
     {
+        _typeCatalog = typeCatalog;
         _currentUser = currentUser;
         _realtimeNotifier = realtimeNotifier;
         _rescueUnitRepository = rescueUnitRepository;
         _stationRepository = stationRepository;
         _assignmentRepository = assignmentRepository;
         _auditService = auditService;
+    }
+
+    /// <summary>
+    /// Loại xe phải có trong danh mục và đang dùng; giữ nguyên loại hiện tại của xe thì cho phép kể cả khi loại đó đã bị ẩn
+    /// </summary>
+    private async Task<string> EnsureUnitTypeAsync(string? code, string? currentCode)
+    {
+        var trimmed = code?.Trim() ?? string.Empty;
+        if (_typeCatalog == null || trimmed == currentCode) return trimmed;
+        var type = await _typeCatalog.GetUnitTypeAsync(trimmed);
+        if (type is not { IsActive: true })
+        {
+            throw new InvalidOperationException(LocalizationHelper.Localize(UnknownUnitTypeMessage, trimmed));
+        }
+        return trimmed;
     }
 
     public async Task<IReadOnlyList<RescueUnitResponseDto>> GetAllAsync()
@@ -62,7 +82,7 @@ public class RescueUnitService : IRescueUnitService
         return units.Select(MapToDto).ToList();
     }
 
-    public async Task<IReadOnlyList<RescueUnitResponseDto>> GetAvailableUnitsAsync(RescueUnitType? unitType = null)
+    public async Task<IReadOnlyList<RescueUnitResponseDto>> GetAvailableUnitsAsync(string? unitType = null)
     {
         var units = await _rescueUnitRepository.GetAvailableUnitsAsync(unitType);
         return units.Select(MapToDto).ToList();
@@ -81,6 +101,8 @@ public class RescueUnitService : IRescueUnitService
         {
             throw new InvalidOperationException(LocalizationHelper.Localize("Biển số / Mã hiệu xe '{0}' đã tồn tại trong hệ thống.", dto.PlateNumber));
         }
+
+        dto.UnitType = await EnsureUnitTypeAsync(dto.UnitType, currentCode: null);
 
         // Nếu không cung cấp tọa độ ban đầu, mặc định lấy tọa độ của trạm
         var lat = dto.InitialLat ?? station.Latitude;
@@ -141,6 +163,8 @@ public class RescueUnitService : IRescueUnitService
             throw new InvalidOperationException("Không thể đổi trạm hoặc trạng thái của xe đang thực hiện nhiệm vụ cứu nạn.");
         }
         EnsureManualStatusAllowed(dto.Status, unit.Status);
+
+        dto.UnitType = await EnsureUnitTypeAsync(dto.UnitType, currentCode: unit.UnitType);
 
         var before = Snapshot(unit);
         // Chuyển trạm: xe về đỗ tại trạm mới → cập nhật vị trí để gợi ý xe / ETA tính đúng (xe đang làm nhiệm vụ đã bị chặn ở trên)

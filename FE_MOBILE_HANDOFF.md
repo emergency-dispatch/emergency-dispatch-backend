@@ -1260,3 +1260,56 @@ Mobile cần biết:
 * Người tổ khác gọi `PUT .../status`, `POST .../reject`, `POST .../resolve`, xem chi tiết sự cố, xem số điện thoại, tạo / hủy yêu cầu hiện trường → **403** với `message` song ngữ ("Nhiệm vụ của xe {biển số} do tổ khác phụ trách."). App hiển thị `message`.
 * **Tiến độ theo tổ:** một thành viên bấm Accepted / EnRoute / OnScene thì mọi xe của tổ đang làm cùng sự cố (đang cùng trạng thái) chuyển theo. Mỗi xe phát một `ReceiveAssignmentStatus` tới cả tổ. Các thành viên khác chỉ cần nghe sự kiện này để cập nhật màn hình, không phải bấm lại. Nghiệm thu đã theo tổ từ mục 26.
 * `FieldRequestDto` có thêm `unitTeamId` (null nếu xe chưa gán tổ).
+
+## 30. Cập nhật 06/11/2026: SOS báo "Invalid incident report data" trên Render; 403 trên trang người dân
+
+* Backend: khi Render có `Cloudinary__CloudName` nhưng thiếu hoặc sai `ApiKey`/`ApiSecret`, upload trả URL ảnh mẫu (`images.unsplash.com`) nhưng validator lại từ chối URL đó, nên SOS trả 400. Đã sửa ở backend để hai bên dùng chung một điều kiện. Web không phải đổi gì.
+* Web (trang người dân, `SosModal.tsx` và `CitizenLiveTrackingMapModal.tsx`): đang gọi `GET /api/rescue-units`, mà API này chỉ dành cho Admin/Operator, nên Console báo 403 liên tục. Lỗi này không làm hỏng việc gửi SOS. Cần bỏ lời gọi này khi user là Citizen. Muốn hiện vị trí xe đang tới thì dùng `GET /api/dispatch/tracking/incident/{incidentId}`. Console còn có một request `...eports?pageSize=5` cũng bị 403 trên trang người dân, cần kiểm tra endpoint đó có cho phép Citizen hay không.
+
+## 31. Cập nhật 09/11/2026: danh mục loại sự cố / loại xe, loại "Khác", AI tự điều phối (web + mobile làm như nhau)
+
+Áp dụng cho **cả web lẫn mobile**: mọi màn hình nêu dưới đây, nền tảng nào có thì làm ở nền tảng đó.
+
+### A. Danh mục: bỏ danh sách viết cứng trong app, lấy từ API
+| API | Quyền | Ghi chú |
+|---|---|---|
+| `GET /api/incident-types` | Công khai (khách cũng gọi được) | Danh sách loại sự cố đang dùng, kèm `unitRules`. Admin thêm `?includeInactive=true` để thấy cả loại đã ẩn |
+| `GET /api/rescue-unit-types` | Đăng nhập | Danh sách loại xe. Admin thêm `?includeInactive=true` |
+
+Mỗi phần tử có `code`, `nameVi`, `nameEn`, `name` (theo `Accept-Language`), `icon`, `color`, `isSystem`, `isActive`, `displayOrder`. Loại sự cố có thêm `category` (`FireExplosion` / `TrafficAccident` / `Other`), `aiRecognizable` và `unitRules`.
+
+- **JSON không đổi với loại cũ:** `unitType` vẫn là chuỗi `"Ambulance"`, `"FireTruck"`... nhưng giờ có thể là mã mới do Admin thêm (ví dụ `"WaterTanker"`). App không được giả định chỉ có 6 loại; tên hiển thị lấy từ danh mục theo `code`.
+- Áp dụng ở mọi dropdown, bộ lọc, nhãn loại: form SOS, Operator tạo / xác minh sự cố, quản lý xe, quản lý tổ, yêu cầu chi viện (`requestedUnitType`), danh sách nhiệm vụ, dashboard.
+
+### B. Màn hình Admin (mới)
+| Màn hình | API |
+|---|---|
+| Loại xe | `POST /api/rescue-unit-types` body `{ code, nameVi, nameEn, description?, icon?, color?, isActive, displayOrder }`; `PUT /api/rescue-unit-types/{id}` (cùng body, `code` bị bỏ qua); `DELETE /api/rescue-unit-types/{id}`. Loại hệ thống → 400; loại đang được dùng → 409, gợi ý "Ẩn" (`isActive = false`) |
+| Loại sự cố | `POST/PUT/DELETE /api/incident-types[/{id}]`, body thêm `category` (`FireExplosion` / `TrafficAccident` / `Other`, mặc định `Other`). Loại hệ thống không đổi được `category` |
+| Quy tắc loại xe (tab "Xe tương ứng" của loại sự cố) | `PUT /api/incident-types/{id}/unit-rules` body `{ rules: [{ unitTypeCode, minSeverity: "Level1".."Level3", quantity: 1..5, priority }] }` (thay toàn bộ). Danh sách rỗng = không lọc loại xe |
+| Cài đặt → Điều phối | `GET/PUT /api/settings/dispatch` có thêm `autoDispatchEnabled` (mặc định `false`), `autoDispatchMinConfidence` (0.5–1, mặc định 0.90), `autoDispatchDuplicateRadiusMeters` (50–5000, mặc định 500), `autoDispatchDuplicateWindowMinutes` (1–240, mặc định 30) |
+
+`code` chỉ gồm chữ cái không dấu, số, `_`, bắt đầu bằng chữ cái, tối đa 50 ký tự; không đổi được sau khi tạo.
+
+### C. Form SOS (người dân)
+- Gửi `incidentTypeCode` (mã từ `GET /api/incident-types`) thay cho `reportedEventType`. `reportedEventType` vẫn nhận `FireExplosion` / `TrafficAccident` / `Other`.
+- Khi chọn loại thuộc nhóm `Other`, hiện gợi ý *"Trung tâm sẽ đánh giá thủ công"* và khuyến khích ghi mô tả. Loại nhóm Khác không bao giờ được AI tự điều phối.
+- Mã không có trong danh mục hoặc đã ẩn → 400, hiển thị `message`.
+
+### D. Operator: tạo / xác minh / đổi mức độ
+- `POST /api/incidents/operator` thêm `incidentTypeCode` (tùy chọn); `eventType` nhận thêm `Other`.
+- `PUT /api/incidents/{id}/verify` thêm `confirmedIncidentTypeCode` (tùy chọn); `confirmedEventType` nhận thêm `Other`.
+- Đổi mức độ sau xác minh (`ChangeSeverityDto`) thêm `newIncidentTypeCode`; `newEventType` nhận thêm `Other`.
+- `IncidentResponseDto` có thêm `incidentTypeCode`, `reportedIncidentTypeCode`, `autoDispatchState` (`None` / `Dispatched` / `Skipped`), `autoDispatchNote` (song ngữ), `suspectedDuplicateOfIncidentId`. `aiClassification.confidenceSource`: `logprob` / `logprob-consensus` là độ tin cậy đo thật; `heuristic` / `self-reported` chỉ để tham khảo.
+
+### E. AI tự điều phối (Operator / Admin)
+- Khi bật, sự cố cháy nổ / tai nạn Level 1–3 mà TriageVL có độ tin cậy ≥ ngưỡng sẽ được hệ thống tự xác minh và điều xe theo quy tắc loại xe (Level 1–2: 1 xe; Level 3: theo số lượng quy tắc, tối đa 5). Lệnh giao xe vẫn đi qua các sự kiện cũ (`ReceiveJobAssigned`...); đội cứu hộ không cần đổi gì.
+- SignalR mới **`ReceiveAutoDispatched`** (Operator trạm phụ trách + Admin), payload `{ incidentId, responsibleStationId, state, note, confidence, plates, suspectedDuplicateOfIncidentId, at }`. Kèm thông báo `ReceiveNotification` ưu tiên cao.
+- Hiển thị:
+  - `autoDispatchState = Dispatched`: nhãn **"AI tự điều phối"**, kèm % độ tin cậy và biển số xe. Operator vẫn hủy / đổi xe bằng API sẵn có.
+  - `Skipped`: hiện `autoDispatchNote`. Nếu có `suspectedDuplicateOfIncidentId` thì hiện cờ **"Nghi trùng với sự cố #..."**, bấm để mở sự cố kia, rồi Operator chọn gộp (confirm-duplicate) hoặc điều thêm xe.
+- Đội cứu hộ: nhiệm vụ do AI giao có `assignedByUserId = null` → hiện nhãn "AI tự điều phối".
+
+### F. Dashboard / báo cáo
+- Thống kê theo loại sự cố và loại xe động (theo danh mục), không cố định 2 hay 6 loại.
+- Có thể thống kê tỷ lệ tự điều phối từ `autoDispatchState` của sự cố.

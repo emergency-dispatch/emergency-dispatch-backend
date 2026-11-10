@@ -52,4 +52,6 @@ public static class AuditEntityTypes
     public const string Report = "Report";
     public const string TrafficHotspot = "TrafficHotspot";
     public const string Equipment = "Equipment";
+    public const string RescueUnitType = "RescueUnitType";
+    public const string IncidentType = "IncidentType";
 }

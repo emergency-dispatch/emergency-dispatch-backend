@@ -80,6 +80,16 @@ public sealed class AiAnalysisWorker : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var incidentService = scope.ServiceProvider.GetRequiredService<IIncidentService>();
             await incidentService.ProcessAiAnalysisAsync(job, stoppingToken);
+
+            // AI tự điều phối khi đủ tin cậy (báo cáo được gom chỉ kiểm tra nhanh → không xét)
+            if (!job.QuickCheckOnly)
+            {
+                var autoDispatch = scope.ServiceProvider.GetService<EmergencyDispatch.Application.Services.IAutoDispatchService>();
+                if (autoDispatch != null)
+                {
+                    await autoDispatch.TryAutoDispatchAsync(job.IncidentId, stoppingToken);
+                }
+            }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {

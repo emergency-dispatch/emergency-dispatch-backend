@@ -50,7 +50,7 @@ public class RescueUnitStatusEventDto
     public DateTime ChangedAt { get; set; } = DateTime.UtcNow;
 
     // Đủ thông tin để live map thêm / bỏ marker mà không cần gọi lại API
-    public RescueUnitType? UnitType { get; set; }
+    public string? UnitType { get; set; }
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
 
@@ -142,4 +142,23 @@ public class TransferIncidentDto
     [System.ComponentModel.DataAnnotations.MinLength(5, ErrorMessage = "Lý do chuyển trạm tối thiểu 5 ký tự.")]
     [System.ComponentModel.DataAnnotations.MaxLength(500)]
     public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// ReceiveAutoDispatched: kết quả AI tự điều phối (gửi Operator trạm phụ trách + Admin)
+/// </summary>
+public class AutoDispatchEventDto
+{
+    public Guid IncidentId { get; set; }
+    public Guid? ResponsibleStationId { get; set; }
+
+    /// <summary>Dispatched = hệ thống đã điều xe; Skipped = chuyển Operator (xem note / suspectedDuplicateOfIncidentId)</summary>
+    public EmergencyDispatch.Domain.Enums.AutoDispatchState State { get; set; }
+    public string? Note { get; set; }
+    public double? Confidence { get; set; }
+
+    /// <summary>Biển số các xe đã điều (khi Dispatched)</summary>
+    public string? Plates { get; set; }
+    public Guid? SuspectedDuplicateOfIncidentId { get; set; }
+    public DateTime At { get; set; }
 }

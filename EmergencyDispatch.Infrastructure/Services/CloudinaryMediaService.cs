@@ -18,18 +18,13 @@ public class CloudinaryMediaService : IMediaUploadService
     public CloudinaryMediaService(IConfiguration configuration, ILogger<CloudinaryMediaService> logger)
     {
         _logger = logger;
-        var cloudName = configuration["Cloudinary:CloudName"];
-        var apiKey = configuration["Cloudinary:ApiKey"];
-        var apiSecret = configuration["Cloudinary:ApiSecret"];
-
-        if (!string.IsNullOrWhiteSpace(cloudName) &&
-            !cloudName.StartsWith("YOUR_") &&
-            !string.IsNullOrWhiteSpace(apiKey) &&
-            !apiKey.StartsWith("YOUR_") &&
-            !string.IsNullOrWhiteSpace(apiSecret) &&
-            !apiSecret.StartsWith("YOUR_"))
+        // Cùng điều kiện với MediaUrlPolicy: thiếu một khóa → chế độ mock, validator vẫn nhận URL mock
+        if (EmergencyDispatch.Application.Validators.MediaUrlPolicy.IsCloudinaryConfigured(configuration))
         {
-            var account = new Account(cloudName, apiKey, apiSecret);
+            var account = new Account(
+                configuration["Cloudinary:CloudName"]!.Trim(),
+                configuration["Cloudinary:ApiKey"]!.Trim(),
+                configuration["Cloudinary:ApiSecret"]!.Trim());
             _cloudinary = new Cloudinary(account) { Api = { Secure = true } };
             _isConfigured = true;
         }

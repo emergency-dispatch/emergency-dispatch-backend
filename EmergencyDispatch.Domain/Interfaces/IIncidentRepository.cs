@@ -86,6 +86,12 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     Task<IIncidentLockScope> BeginLockedTransactionAsync(Guid incidentId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Mở transaction và khóa theo khu vực quanh một tọa độ (advisory lock PostgreSQL theo ô lưới phủ bán kính):
+    /// hai SOS / hai lần tự điều phối gần nhau chạy tuần tự để bước chống trùng luôn thấy bản ghi của nhau.
+    /// </summary>
+    Task<IIncidentLockScope> BeginAreaLockAsync(double latitude, double longitude, double radiusMeters, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// BR-CIT-01: người dùng / số điện thoại đã có sự cố đang hoạt động được tạo sau thời điểm since
     /// </summary>
     /// <summary>

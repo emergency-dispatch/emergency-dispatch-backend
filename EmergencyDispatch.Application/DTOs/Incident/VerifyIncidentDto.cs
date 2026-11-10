@@ -29,10 +29,15 @@ public class VerifyIncidentDto
     public string? OperatorNotes { get; set; }
 
     /// <summary>
-    /// Loại sự cố xác nhận: FireExplosion hoặc TrafficAccident. Bắt buộc khi AI chưa xác định được (eventType = None);
-    /// bỏ trống thì giữ loại AI đề xuất.
+    /// Nhóm sự cố xác nhận: FireExplosion / TrafficAccident / Other. Bắt buộc (hoặc gửi confirmedIncidentTypeCode)
+    /// khi AI chưa xác định được (eventType = None); bỏ trống thì giữ loại AI đề xuất.
     /// </summary>
     public IncidentEventType? ConfirmedEventType { get; set; }
+
+    /// <summary>
+    /// Mã loại sự cố chi tiết từ GET /api/incident-types (tùy chọn). Có giá trị thì nhóm lấy theo danh mục, bỏ qua confirmedEventType
+    /// </summary>
+    public string? ConfirmedIncidentTypeCode { get; set; }
 
     /// <summary>
     /// Thẩm định tình trạng ùn tắc giao thông: Confirmed (3: xác nhận kẹt xe), Dismissed (4: bác bỏ kẹt xe), hoặc null (giữ nguyên nhận định hiện tại)

@@ -58,7 +58,13 @@ public class CreateIncidentDto
     public List<string> MediaUrls { get; set; } = new();
 
     /// <summary>
-    /// Loại sự cố người báo chọn trên app (tùy chọn): FireExplosion / TrafficAccident. Dùng để gom báo cáo trùng trước khi AI chạy
+    /// Nhóm sự cố người báo chọn (tùy chọn): FireExplosion / TrafficAccident / Other. Dùng để gom báo cáo trùng trước khi AI chạy.
+    /// Gửi incidentTypeCode thì bỏ qua trường này (nhóm lấy theo danh mục)
     /// </summary>
     public EmergencyDispatch.Domain.Enums.IncidentEventType? ReportedEventType { get; set; }
+
+    /// <summary>
+    /// Mã loại sự cố chi tiết từ GET /api/incident-types (tùy chọn), ví dụ FireExplosion, TrafficAccident, Other hoặc loại Admin thêm
+    /// </summary>
+    public string? IncidentTypeCode { get; set; }
 }
