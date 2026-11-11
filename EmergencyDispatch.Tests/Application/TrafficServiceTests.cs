@@ -25,6 +25,7 @@ public class TrafficServiceTests
     private readonly Mock<ICurrentUserContext> _me = new();
     private readonly Mock<ISystemAuditService> _audit = new();
     private readonly Mock<INotificationService> _notify = new();
+    private readonly Mock<IRoutingService> _routing = new();
     private readonly Station _q7 = new() { Name = "Q7", Latitude = 10.732842, Longitude = 106.719688, CoverageRadiusKm = 10, IsActive = true };
     private readonly Guid _opId = Guid.NewGuid();
     private readonly TrafficService _svc;
@@ -38,7 +39,7 @@ public class TrafficServiceTests
         _units.Setup(u => u.TryReserveForDispatchAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         AsOperator(_q7.Id);
         _svc = new TrafficService(_repo.Object, _users.Object, _rt.Object, NullLogger<TrafficService>.Instance, _units.Object,
-            _assign.Object, _stations.Object, _me.Object, _audit.Object, _notify.Object);
+            _assign.Object, _stations.Object, _me.Object, _audit.Object, _notify.Object, _routing.Object);
     }
 
     private void AsOperator(Guid? station)
@@ -74,6 +75,25 @@ public class TrafficServiceTests
     }
 
     // ===================== Report =====================
+    [Fact]
+    public async Task Report_UsesShortestRoadStation_AndBroadcastsItsScope()
+    {
+        var roadNearest = new Station { Name = "Road nearest", Latitude = 10.75, Longitude = 106.72,
+            CoverageRadiusKm = 0, IsActive = true };
+        _stations.Setup(s => s.GetAllAsync(It.IsAny<Expression<Func<Station, bool>>?>(), It.IsAny<Func<IQueryable<Station>, IQueryable<Station>>?>()))
+            .ReturnsAsync(new[] { _q7, roadNearest });
+        _routing.Setup(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RoadLeg?[] { new(8, 16), new(4, 8) });
+
+        var result = await _svc.ReportHotspotAsync(Dto());
+
+        Assert.True(result.Success);
+        Assert.Equal(roadNearest.Id, result.Data!.ResponsibleStationId);
+        _rt.Verify(n => n.TrafficHotspotReportedAsync(It.Is<TrafficHotspotResponseDto>(h => h.ResponsibleStationId == roadNearest.Id),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private static ReportTrafficHotspotDto Dto(int ttl = 45) => new()
     {
         Title = " Kẹt xe ", LocationAddress = " Nguyễn Văn Linh ", Latitude = 10.7335, Longitude = 106.7192,

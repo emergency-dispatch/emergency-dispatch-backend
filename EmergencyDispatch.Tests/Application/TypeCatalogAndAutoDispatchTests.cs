@@ -435,7 +435,7 @@ public class IncidentTypeOnCreateTests
             new Mock<IAiClassificationService>().Object, new Mock<IAiAnalysisQueue>().Object, new Mock<IRealtimeNotifier>().Object,
             new Mock<INotificationService>().Object, new CreateIncidentDtoValidator(cfg), new CreateOperatorIncidentDtoValidator(cfg),
             NullLogger<IncidentService>.Instance, new Mock<IGuestCancellationTokenService>().Object, stations.Object, settings.Object,
-            new Mock<ICurrentUserContext>().Object, new Mock<IIncidentFollowUpService>().Object, catalog.Object);
+            new Mock<ICurrentUserContext>().Object, new Mock<IIncidentFollowUpService>().Object, new Mock<IRoutingService>().Object, catalog.Object);
         CreateIncidentDto Dto(string code) => new()
         {
             Description = "Có người đuối nước", Latitude = 10.7335, Longitude = 106.7192, LocationAddress = "Kênh Tẻ", IncidentTypeCode = code

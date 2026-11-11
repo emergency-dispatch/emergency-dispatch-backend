@@ -30,6 +30,7 @@ public class TrafficService : ITrafficService
     private readonly ICurrentUserContext _currentUser;
     private readonly ISystemAuditService _auditService;
     private readonly INotificationService _notificationService;
+    private readonly IRoutingService _routingService;
 
     public TrafficService(
         ITrafficHotspotRepository trafficRepository,
@@ -41,7 +42,8 @@ public class TrafficService : ITrafficService
         IStationRepository stationRepository,
         ICurrentUserContext currentUser,
         ISystemAuditService auditService,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IRoutingService routingService)
     {
         _trafficRepository = trafficRepository;
         _userRepository = userRepository;
@@ -53,6 +55,7 @@ public class TrafficService : ITrafficService
         _currentUser = currentUser;
         _auditService = auditService;
         _notificationService = notificationService;
+        _routingService = routingService;
     }
 
     public async Task<ApiResponseDto<TrafficHotspotResponseDto>> ReportHotspotAsync(
@@ -72,8 +75,9 @@ public class TrafficService : ITrafficService
         var now = DateTime.UtcNow;
 
         // Trạm phụ trách = trạm gần nhất (giống cách giao sự cố) → Operator trạm đó giao đội xử lý
-        var station = StationAssignment.PickResponsibleStation(
-            await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
+        var station = await StationAssignment.PickResponsibleStationAsync(
+            await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude,
+            _routingService, _logger, cancellationToken);
 
         var hotspot = new TrafficHotspot
         {

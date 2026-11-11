@@ -1,6 +1,10 @@
 using EmergencyDispatch.Application.DTOs.Settings;
+using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Application.Services;
 using EmergencyDispatch.Domain.Entities;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace EmergencyDispatch.Tests.Application;
 
@@ -30,39 +34,164 @@ public class StationAssignmentTests
     }
 
     [Fact]
-    public void PickResponsibleStation_PicksNearestCoveringStation()
+    public async Task PickResponsibleStation_UsesRoadDistance_NotStraightLineOrTravelTime()
     {
-        var q1 = St("Q1", 10.776889, 106.700806);
-        var q7 = St("Q7", 10.732842, 106.719688);
+        var near = St("Near by air", 10.0001, 106);
+        var farther = St("Shorter road", 10.01, 106);
+        var routing = Routing(new RoadLeg(8, 5), new RoadLeg(4, 10));
 
-        Assert.Same(q7, StationAssignment.PickResponsibleStation(new[] { q1, q7 }, 10.7335, 106.7192));
-        Assert.Same(q1, StationAssignment.PickResponsibleStation(new[] { q1, q7 }, 10.7770, 106.7010));
+        var selected = await Pick(new[] { near, farther }, routing.Object);
+
+        Assert.Same(farther, selected);
+        routing.Verify(r => r.GetLegsToAsync(
+            It.Is<IReadOnlyList<(double Lat, double Lng)>>(p => p.Count == 2
+                && p[0].Lat == near.Latitude && p[0].Lng == near.Longitude
+                && p[1].Lat == farther.Latitude && p[1].Lng == farther.Longitude),
+            10, 106, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public void PickResponsibleStation_NoneCovering_FallsBackToNearest()
+    public async Task PickResponsibleStation_DoesNotUseCoverageRadius()
     {
-        var far = St("Far", 11.5, 107.5, radius: 1);
-        var farther = St("Farther", 12.5, 108.5, radius: 1);
+        var outsideOwnRadius = St("Small radius", 10.01, 106, radius: 0.001);
+        var covering = St("Large radius", 10.02, 106, radius: 100);
 
-        Assert.Same(far, StationAssignment.PickResponsibleStation(new[] { farther, far }, 10.77, 106.70));
+        Assert.Same(outsideOwnRadius, await Pick(new[] { outsideOwnRadius, covering },
+            Routing(new RoadLeg(2, 4), new RoadLeg(4, 8)).Object));
     }
 
     [Fact]
-    public void PickResponsibleStation_IgnoresInactiveAndDeleted()
+    public async Task PickResponsibleStation_IgnoresInactiveAndDeleted()
     {
-        var inactive = St("Inactive", 10.7335, 106.7192, active: false);
-        var deleted = St("Deleted", 10.7335, 106.7192, deleted: true);
-        var ok = St("Ok", 10.80, 106.70);
+        var inactive = St("Inactive", 10, 106, active: false);
+        var deleted = St("Deleted", 10, 106, deleted: true);
+        var ok = St("Ok", 10.01, 106);
+        var other = St("Other", 10.02, 106);
+        var routing = Routing(new RoadLeg(1, 2), new RoadLeg(2, 4));
 
-        Assert.Same(ok, StationAssignment.PickResponsibleStation(new[] { inactive, deleted, ok }, 10.7335, 106.7192));
+        Assert.Same(ok, await Pick(new[] { inactive, deleted, ok, other }, routing.Object));
+        routing.Verify(r => r.GetLegsToAsync(It.Is<IReadOnlyList<(double Lat, double Lng)>>(p => p.Count == 2
+            && p[0].Lat == ok.Latitude && p[1].Lat == other.Latitude), 10, 106, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public void PickResponsibleStation_NoStations_ReturnsNull()
+    public async Task PickResponsibleStation_NoStationsOrSingleStation_NeedsNoRouting()
     {
-        Assert.Null(StationAssignment.PickResponsibleStation(Array.Empty<Station>(), 10, 106));
+        var routing = new Mock<IRoutingService>(MockBehavior.Strict);
+        Assert.Null(await Pick(Array.Empty<Station>(), routing.Object));
+        var only = St("Only", 10.01, 106, radius: 0);
+        Assert.Same(only, await Pick(new[] { only }, routing.Object));
+        routing.VerifyNoOtherCalls();
     }
+
+    [Fact]
+    public async Task PickResponsibleStation_MissingRoadForNearerStation_UsesKnownRoadOnly()
+    {
+        var near = St("No road result", 10.0001, 106);
+        var routed = St("Has road", 10.01, 106);
+
+        Assert.Same(routed, await Pick(new[] { near, routed }, Routing(null, new RoadLeg(10, 20)).Object));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public async Task PickResponsibleStation_InvalidRoadDistance_IsNotSelected(double distance)
+    {
+        var invalid = St("Invalid road", 10.0001, 106);
+        var valid = St("Valid road", 10.01, 106);
+
+        Assert.Same(valid, await Pick(new[] { invalid, valid },
+            Routing(new RoadLeg(distance, 1), new RoadLeg(4, 8)).Object));
+    }
+
+    [Fact]
+    public async Task PickResponsibleStation_EqualRoadDistance_UsesDurationThenStableId()
+    {
+        var slow = St("Slow", 10.01, 106);
+        var fast = St("Fast", 10.02, 106);
+        Assert.Same(fast, await Pick(new[] { slow, fast }, Routing(new RoadLeg(4, 10), new RoadLeg(4, 5)).Object));
+
+        var expected = new[] { slow, fast }.OrderBy(s => s.Id).First();
+        Assert.Same(expected, await Pick(new[] { slow, fast }, Routing(new RoadLeg(4, 5), new RoadLeg(4, 5)).Object));
+        Assert.Same(expected, await Pick(new[] { fast, slow }, Routing(new RoadLeg(4, 5), new RoadLeg(4, 5)).Object));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PickResponsibleStation_NoRoads_FallsBackAndLogsApproximation(bool throwError)
+    {
+        var near = St("Near", 10.0001, 106, radius: 0);
+        var far = St("Far", 10.02, 106, radius: 100);
+        var routing = Routing(null, null);
+        if (throwError)
+            routing.Setup(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new HttpRequestException("OSRM unavailable"));
+        var logger = new Mock<ILogger>();
+
+        Assert.Same(near, await StationAssignment.PickResponsibleStationAsync(new[] { near, far },
+            10, 106, routing.Object, logger.Object));
+        logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((value, _) => value != null && value.ToString()!.Contains("APPROXIMATE")),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PickResponsibleStation_NullServiceResponse_FallsBack()
+    {
+        var near = St("Near", 10.0001, 106);
+        var far = St("Far", 10.02, 106);
+        Assert.Same(near, await Pick(new[] { far, near }, Mock.Of<IRoutingService>()));
+    }
+
+    [Fact]
+    public async Task PickResponsibleStation_RoutingTimeout_DoesNotBlockSos()
+    {
+        var routing = new Mock<IRoutingService>();
+        routing.Setup(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .Returns(async (IReadOnlyList<(double Lat, double Lng)> _, double _, double _, CancellationToken ct) =>
+            {
+                await Task.Delay(Timeout.Infinite, ct);
+                return (IReadOnlyList<RoadLeg?>?)null;
+            });
+        var near = St("Near", 10.0001, 106);
+        var selected = await Pick(new[] { near, St("Far", 10.02, 106) }, routing.Object).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Same(near, selected);
+    }
+
+    [Fact]
+    public async Task PickResponsibleStation_CallerCancellation_IsPropagated()
+    {
+        using var cts = new CancellationTokenSource();
+        var routing = new Mock<IRoutingService>();
+        routing.Setup(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .Returns((IReadOnlyList<(double Lat, double Lng)> _, double _, double _, CancellationToken ct) =>
+            {
+                cts.Cancel();
+                return Task.FromCanceled<IReadOnlyList<RoadLeg?>?>(ct);
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => StationAssignment.PickResponsibleStationAsync(
+            new[] { St("A", 10.01, 106), St("B", 10.02, 106) }, 10, 106,
+            routing.Object, NullLogger.Instance, cts.Token));
+    }
+
+    private static Mock<IRoutingService> Routing(params RoadLeg?[] legs)
+    {
+        var routing = new Mock<IRoutingService>();
+        routing.Setup(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(legs);
+        return routing;
+    }
+
+    private static Task<Station?> Pick(IEnumerable<Station> stations, IRoutingService routing)
+        => StationAssignment.PickResponsibleStationAsync(stations, 10, 106, routing, NullLogger.Instance);
 
     [Fact]
     public void DistanceOutsideArea_DisabledOrInside_IsZero()

@@ -1323,7 +1323,10 @@ Migration `Station_Scoped_Operations` đã áp lên Neon.
 | `GET /api/stations/{id}` trạm khác | Chỉ thông tin công khai (không có xe, nhân sự) |
 
 ### 9.3. Trạm phụ trách sự cố
-- Khi SOS được tạo: trạm đang hoạt động **gần nhất có bán kính phủ chứa vị trí**. Không trạm nào phủ tới thì lấy trạm gần nhất.
+- Khi SOS được tạo: chọn trạm đang hoạt động, chưa bị xóa có **quãng đường bộ từ trạm đến sự cố ngắn nhất**, tra bằng OSRM `/table`. Không dùng `coverageRadiusKm` để lọc hay ưu tiên trạm. Nếu quãng đường bằng nhau, ưu tiên thời gian di chuyển ngắn hơn rồi ID trạm để kết quả ổn định.
+- Tự gán trạm cho báo cáo giao thông và sự cố do Admin tạo cũng dùng quy tắc trên; Operator tạo sự cố vẫn giao cho trạm của Operator. Báo cáo được gom trùng vẫn theo trạm của sự cố gốc.
+- Tối đa 2 giây cho lần tra đường bộ. Nếu chỉ một số trạm có tuyến hợp lệ, chỉ so sánh các tuyến đó, không trộn km đường bộ với km chim bay. Nếu không lấy được tuyến hợp lệ, chọn trạm gần theo tọa độ để không chặn tiếp nhận; log cảnh báo ghi rõ đây là kết quả dự phòng xấp xỉ. Nếu chỉ có một trạm hợp lệ thì giao trạm đó, không cần tra tuyến để so sánh.
+- **English:** Automatic station assignment uses the shortest available station-to-incident road distance from OSRM, independent of station coverage radii. Equal distances use travel time, then station ID. The lookup has a 2-second budget; unavailable routes are excluded while valid road routes exist. If no valid route is available, a clearly logged straight-line fallback keeps intake available. A single eligible station requires no route comparison. The system-wide service-area policy and Operator-owned manual intake remain separate.
 - `IncidentResponseDto` thêm `responsibleStationId`, `responsibleStationName`, `isOutOfServiceArea`, `distanceOutsideAreaKm`.
 - **Chuyển trạm:** `POST /api/incidents/{id}/transfer` `{ "stationId": "...", "reason": "≥ 5 ký tự" }` (Operator trạm đang phụ trách / Admin). Khóa mềm được nhả. Ghi audit `TransferredStation`. Operator trạm nhận được báo realtime và có thông báo.
 - **Điều xe xuyên trạm (Load-Aware):** `recommend` vẫn trả xe mọi trạm, mỗi xe có `isSupportUnit`. Khi `assign` xe trạm khác: Operator trạm có xe nhận `ReceiveSupportDispatched` và thông báo "XE TRẠM BẠN ĐƯỢC ĐIỀU HỖ TRỢ". Staff trạm đó nhận lệnh như bình thường.

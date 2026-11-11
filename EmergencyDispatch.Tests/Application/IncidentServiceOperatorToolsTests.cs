@@ -24,6 +24,7 @@ public class IncidentServiceOperatorToolsTests
     private readonly Mock<IStationRepository> _stations = new();
     private readonly Mock<ISystemSettingsService> _settings = new();
     private readonly Mock<ICurrentUserContext> _me = new();
+    private readonly Mock<IRoutingService> _routing = new();
     private readonly Station _q7 = new() { Name = "Q7", Latitude = 10.732842, Longitude = 106.719688, IsActive = true };
     private readonly IncidentService _svc;
 
@@ -40,7 +41,7 @@ public class IncidentServiceOperatorToolsTests
         _me.SetupGet(m => m.StationId).Returns(_q7.Id);
         _svc = new IncidentService(_incidents.Object, _users.Object, _blocked.Object, Mock.Of<IAiClassificationService>(), Mock.Of<IAiAnalysisQueue>(),
             _rt.Object, Mock.Of<INotificationService>(), new CreateIncidentDtoValidator(cfg), new CreateOperatorIncidentDtoValidator(cfg),
-            NullLogger<IncidentService>.Instance, Mock.Of<IGuestCancellationTokenService>(), _stations.Object, _settings.Object, _me.Object, Mock.Of<IIncidentFollowUpService>());
+            NullLogger<IncidentService>.Instance, Mock.Of<IGuestCancellationTokenService>(), _stations.Object, _settings.Object, _me.Object, Mock.Of<IIncidentFollowUpService>(), _routing.Object);
     }
 
     private User Actor(UserRole role, Guid? station = null)
@@ -59,6 +60,33 @@ public class IncidentServiceOperatorToolsTests
     }
 
     // -------- CreateByOperator (phone call, radio, CCTV) --------
+    [Fact]
+    public async Task CreateByOperator_AdminUsesRoadDistance_OperatorKeepsOwnStation()
+    {
+        var roadNearest = new Station { Name = "Road nearest", Latitude = 10.75, Longitude = 106.72,
+            CoverageRadiusKm = 0, IsActive = true };
+        _stations.Setup(s => s.GetAllAsync(It.IsAny<Expression<Func<Station, bool>>?>(), It.IsAny<Func<IQueryable<Station>, IQueryable<Station>>?>()))
+            .ReturnsAsync(new[] { _q7, roadNearest });
+        _routing.Setup(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RoadLeg?[] { new(8, 16), new(4, 8) });
+        _me.SetupGet(m => m.Role).Returns(UserRole.Admin);
+
+        var adminResult = await _svc.CreateByOperatorAsync(PhoneCall(), Guid.NewGuid());
+
+        Assert.True(adminResult.Success);
+        Assert.Equal(roadNearest.Id, adminResult.Data!.ResponsibleStationId);
+        _routing.Invocations.Clear();
+        _me.SetupGet(m => m.Role).Returns(UserRole.Operator);
+
+        var operatorResult = await _svc.CreateByOperatorAsync(PhoneCall(), Guid.NewGuid());
+
+        Assert.True(operatorResult.Success);
+        Assert.Equal(_q7.Id, operatorResult.Data!.ResponsibleStationId);
+        _routing.Verify(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static CreateOperatorIncidentDto PhoneCall() => new()
     {
         Latitude = 10.7335, Longitude = 106.7192, LocationAddress = " Kho A ", Source = IncidentSource.PhoneCall,

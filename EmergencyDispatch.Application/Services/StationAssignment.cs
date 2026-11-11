@@ -1,33 +1,77 @@
 using EmergencyDispatch.Application.DTOs.Settings;
+using EmergencyDispatch.Application.Interfaces;
 using EmergencyDispatch.Domain.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace EmergencyDispatch.Application.Services;
 
 /// <summary>
-/// Các hàm tính thuần cho mô hình "mỗi Operator phụ trách 1 trạm":
+/// Các hàm hỗ trợ cho mô hình "mỗi Operator phụ trách 1 trạm":
 /// chọn trạm phụ trách theo vị trí sự cố và kiểm tra khu vực phục vụ.
 /// </summary>
 public static class StationAssignment
 {
     /// <summary>
-    /// Trạm phụ trách = trạm đang hoạt động gần nhất có bán kính phủ chứa vị trí;
-    /// không trạm nào phủ tới thì lấy trạm đang hoạt động gần nhất. Null nếu chưa có trạm nào.
+    /// Chọn trạm theo quãng đường bộ từ trạm tới sự cố, không xét CoverageRadiusKm.
+    /// Select by station-to-incident road distance; station coverage radii are not used.
+    /// Khi không có tuyến hợp lệ trong 2 giây, chọn gần nhất theo tọa độ và ghi log dự phòng.
+    /// If no valid road route is available within 2 seconds, log and use straight-line proximity.
     /// </summary>
-    public static Station? PickResponsibleStation(IEnumerable<Station> stations, double lat, double lng)
+    public static async Task<Station?> PickResponsibleStationAsync(
+        IEnumerable<Station> stations, double lat, double lng,
+        IRoutingService routingService, ILogger logger,
+        CancellationToken cancellationToken = default)
     {
-        var ranked = stations
+        cancellationToken.ThrowIfCancellationRequested();
+        var candidates = stations
             .Where(s => s.IsActive && !s.IsDeleted)
-            .Select(s => (Station: s, Km: DistanceKm(lat, lng, s.Latitude, s.Longitude)))
-            .OrderBy(x => x.Km)
             .ToList();
 
-        if (ranked.Count == 0)
+        // Một trạm duy nhất thì không cần gọi định tuyến để so sánh.
+        // A single station needs no routing comparison.
+        if (candidates.Count <= 1)
         {
-            return null;
+            return candidates.FirstOrDefault();
         }
 
-        var covering = ranked.FirstOrDefault(x => x.Km <= x.Station.CoverageRadiusKm);
-        return covering.Station ?? ranked[0].Station;
+        IReadOnlyList<RoadLeg?>? legs = null;
+        using var routingTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        routingTimeout.CancelAfter(TimeSpan.FromSeconds(2));
+        try
+        {
+            legs = await routingService.GetLegsToAsync(
+                candidates.Select(s => (s.Latitude, s.Longitude)).ToList(),
+                lat, lng, routingTimeout.Token);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Station road-distance lookup failed or timed out.");
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Không trộn km đường bộ với km chim bay khi chỉ một số trạm có tuyến.
+        // Compare only valid road routes; never mix road and straight-line distances.
+        var routed = candidates
+            .Select((station, i) => new { Station = station, Leg = legs != null && i < legs.Count ? legs[i] : null })
+            .Where(x => x.Leg != null && double.IsFinite(x.Leg.DistanceKm) && x.Leg.DistanceKm >= 0)
+            .OrderBy(x => x.Leg!.DistanceKm)
+            .ThenBy(x => double.IsFinite(x.Leg!.DurationMinutes) && x.Leg.DurationMinutes >= 0
+                ? x.Leg.DurationMinutes : double.MaxValue)
+            .ThenBy(x => x.Station.Id)
+            .FirstOrDefault();
+
+        if (routed != null)
+        {
+            logger.LogInformation("Assigned station {StationId} by road distance: {DistanceKm} km.",
+                routed.Station.Id, routed.Leg!.DistanceKm);
+            return routed.Station;
+        }
+
+        var fallback = candidates.OrderBy(s => DistanceKm(lat, lng, s.Latitude, s.Longitude))
+            .ThenBy(s => s.Id).First();
+        logger.LogWarning("No valid road route available. Assigned station {StationId} by APPROXIMATE straight-line proximity; this is not a road-distance result.",
+            fallback.Id);
+        return fallback;
     }
 
     /// <summary>

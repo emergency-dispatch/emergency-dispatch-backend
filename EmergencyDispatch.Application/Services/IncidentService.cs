@@ -37,6 +37,7 @@ public class IncidentService : IIncidentService
     private readonly IStationRepository _stationRepository;
     private readonly ISystemSettingsService _settingsService;
     private readonly ICurrentUserContext _currentUser;
+    private readonly IRoutingService _routingService;
 
     // Đội cứu hộ vẫn xem được sự cố trong 30 phút sau khi hoàn tất để nộp báo cáo nghiệm thu
     private static readonly TimeSpan StaffAccessAfterCompletion = TimeSpan.FromMinutes(30);
@@ -75,6 +76,7 @@ public class IncidentService : IIncidentService
         ISystemSettingsService settingsService,
         ICurrentUserContext currentUser,
         IIncidentFollowUpService followUpService,
+        IRoutingService routingService,
         ITypeCatalogRepository? typeCatalog = null)
     {
         _typeCatalog = typeCatalog;
@@ -82,6 +84,7 @@ public class IncidentService : IIncidentService
         _stationRepository = stationRepository;
         _settingsService = settingsService;
         _currentUser = currentUser;
+        _routingService = routingService;
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
         _blockedPhoneRepository = blockedPhoneRepository;
@@ -178,8 +181,9 @@ public class IncidentService : IIncidentService
         }
 
         // Trạm phụ trách theo vị trí (mỗi Operator xử lý sự cố của trạm mình)
-        var responsibleStation = StationAssignment.PickResponsibleStation(
-            await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
+        var responsibleStation = await StationAssignment.PickResponsibleStationAsync(
+            await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude,
+            _routingService, _logger, cancellationToken);
 
         var incident = new Incident
         {
@@ -397,8 +401,9 @@ public class IncidentService : IIncidentService
         }
         else
         {
-            responsibleStation = StationAssignment.PickResponsibleStation(
-                await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude);
+            responsibleStation = await StationAssignment.PickResponsibleStationAsync(
+                await _stationRepository.GetAllAsync(s => s.IsActive), dto.Latitude, dto.Longitude,
+                _routingService, _logger, cancellationToken);
         }
 
         var serviceArea = await _settingsService.GetServiceAreaAsync(cancellationToken);

@@ -29,6 +29,7 @@ public class IncidentServiceTests
     private readonly Mock<IStationRepository> _stations = new();
     private readonly Mock<ISystemSettingsService> _settings = new();
     private readonly Mock<ICurrentUserContext> _me = new();
+    private readonly Mock<IRoutingService> _routing = new();
     private readonly ServiceAreaSettingsDto _area = new() { Enabled = false };
     private readonly Station _q7 = new() { Name = "Q7", Latitude = 10.732842, Longitude = 106.719688, CoverageRadiusKm = 10, IsActive = true };
     private readonly Guid _operatorId = Guid.NewGuid();
@@ -47,7 +48,7 @@ public class IncidentServiceTests
         _me.SetupGet(m => m.StationId).Returns(_q7.Id);
         _svc = new IncidentService(_incidents.Object, _users.Object, _blocked.Object, _ai.Object, _queue.Object, _rt.Object, _notify.Object,
             new CreateIncidentDtoValidator(cfg), new CreateOperatorIncidentDtoValidator(cfg), NullLogger<IncidentService>.Instance,
-            _guest.Object, _stations.Object, _settings.Object, _me.Object, _followUp.Object);
+            _guest.Object, _stations.Object, _settings.Object, _me.Object, _followUp.Object, _routing.Object);
     }
 
     private static CreateIncidentDto Sos(params string[] media) => new()
@@ -69,6 +70,28 @@ public class IncidentServiceTests
     }
 
     // =============== CreateIncident (SOS) ===============
+    [Fact]
+    public async Task Create_UsesShortestRoadStation_AndNotifiesThatStation()
+    {
+        var roadNearest = new Station { Name = "Road nearest", Latitude = 10.75, Longitude = 106.72,
+            CoverageRadiusKm = 0, IsActive = true };
+        _stations.Setup(s => s.GetAllAsync(It.IsAny<Expression<Func<Station, bool>>?>(), It.IsAny<Func<IQueryable<Station>, IQueryable<Station>>?>()))
+            .ReturnsAsync(new[] { _q7, roadNearest });
+        _routing.Setup(r => r.GetLegsToAsync(It.IsAny<IReadOnlyList<(double Lat, double Lng)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RoadLeg?[] { new(8, 16), new(4, 8) });
+        Incident? saved = null;
+        _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
+
+        var result = await _svc.CreateIncidentAsync(Sos());
+
+        Assert.True(result.Success);
+        Assert.Equal(roadNearest.Id, saved!.ResponsibleStationId);
+        Assert.Equal(roadNearest.Id, result.Data!.ResponsibleStationId);
+        _rt.Verify(n => n.IncidentCreatedAsync(It.Is<IncidentResponseDto>(i => i.ResponsibleStationId == roadNearest.Id),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task Create_InvalidDto_ReturnsValidationErrors()
     {
