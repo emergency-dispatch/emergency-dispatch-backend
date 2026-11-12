@@ -137,10 +137,16 @@ public class DispatchService : IDispatchService
         var tasksByUnit = activeAssignments.GroupBy(a => a.RescueUnitId).ToDictionary(g => g.Key, g => g.Count());
 
         // BR-DSP-01 / BR-20: chỉ xe Available, đúng chủng loại, không có nhiệm vụ đang chạy mới được gợi ý
+        // Nearest-Available: khoảng cách từ PostGIS (ST_DWithin trong nấc bán kính lớn nhất + ST_Distance);
+        // không có truy vấn không gian (VD test) → Haversine
+        var postgisMeters = await _rescueUnitRepository.GetDistancesMetersAsync(incident.Latitude, incident.Longitude, radii[^1] * 1000, cancellationToken);
         var eligible = allUnits
             .Where(u => u.Status == RescueUnitStatus.Available && !tasksByUnit.ContainsKey(u.Id))
             .Where(u => matchingTypes == null || matchingTypes.Contains(u.UnitType))
-            .Select(u => (Unit: u, DistanceKm: CalculateDistanceKm(incident.Latitude, incident.Longitude, u.CurrentLat, u.CurrentLng)))
+            .Where(u => postgisMeters == null || postgisMeters.ContainsKey(u.Id))
+            .Select(u => (Unit: u, DistanceKm: postgisMeters != null
+                ? postgisMeters[u.Id] / 1000.0
+                : CalculateDistanceKm(incident.Latitude, incident.Longitude, u.CurrentLat, u.CurrentLng)))
             .ToList();
 
         // Quãng đường / thời gian theo đường bộ thật cho các xe gần nhất (một lần gọi OSRM /table)
@@ -323,9 +329,13 @@ public class DispatchService : IDispatchService
                 LocalizationHelper.Localize("Sự cố đang được xử lý bởi {0}.", incident.LockedByOperator?.FullName ?? LocalizationHelper.Localize("điều phối viên khác")));
         }
 
-        // BR-14: Level 3 điều tối đa 5 xe; Level 1–2 mặc định 1 xe (vượt giới hạn phải có lý do)
+        // BR-14: số xe chuẩn của mức = tổng kế hoạch điều xe Admin cấu hình cho loại sự cố (tối đa 5);
+        // chưa cấu hình → Level 3 tối đa 5 xe, Level 1–2 một xe. Level 1–2 vượt số chuẩn phải có lý do; Level 3 không vượt 5
         var activeCount = incident.DispatchAssignments.Count(a => a.IsActive);
-        var maxUnits = incident.Severity == SeverityLevel.Level3 ? MaxUnitsLevel3 : MaxUnitsDefault;
+        var planned = DispatchScoring.PlannedUnitCount(await GetUnitRulesAsync(incident, cancellationToken), incident.Severity);
+        var maxUnits = incident.Severity == SeverityLevel.Level3
+            ? MaxUnitsLevel3
+            : planned ?? MaxUnitsDefault;
         // Giao xe theo yêu cầu chi viện (Backup) của đội hiện trường = lý do vượt giới hạn hợp lệ
         if (dto.FieldRequestId is { } fieldRequestId)
         {
@@ -1333,7 +1343,14 @@ public class DispatchService : IDispatchService
     {
         var code = DispatchScoring.IncidentTypeCodeFor(incident);
         if (_typeCatalog == null || code == null) return Array.Empty<IncidentTypeUnitRule>();
-        return await _typeCatalog.GetUnitRulesAsync(code, cancellationToken) ?? (IReadOnlyList<IncidentTypeUnitRule>)Array.Empty<IncidentTypeUnitRule>();
+        var rules = await _typeCatalog.GetUnitRulesAsync(code, cancellationToken) ?? (IReadOnlyList<IncidentTypeUnitRule>)Array.Empty<IncidentTypeUnitRule>();
+        // Loại chi tiết thuộc nhóm Khác chưa có kế hoạch riêng → dùng kế hoạch của loại "Khác" chung (nếu Admin đã cấu hình)
+        const string genericOther = nameof(IncidentEventType.Other);
+        if (rules.Count == 0 && code != genericOther && incident.EventType is IncidentEventType.Other or IncidentEventType.None)
+        {
+            rules = await _typeCatalog.GetUnitRulesAsync(genericOther, cancellationToken) ?? rules;
+        }
+        return rules;
     }
 
     private async Task<IReadOnlySet<string>?> MatchingUnitTypesAsync(Incident incident, CancellationToken cancellationToken)

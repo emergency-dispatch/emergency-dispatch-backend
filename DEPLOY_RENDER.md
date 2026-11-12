@@ -8,6 +8,8 @@ Backend chạy bằng Docker (`Dockerfile` ở thư mục gốc), cấu hình b�
 2. Push code (có `Dockerfile`, `.dockerignore`, `render.yaml`) lên GitHub. `appsettings.json` **không** có trong git, nên mọi cấu hình đặt ở Render.
 3. Kaggle: đặt secret `NGROK_DOMAIN` và `AI_SERVICE_API_KEY` để URL và khóa AI không đổi giữa các lần chạy.
 
+4. **PostGIS:** migration `PostGIS_Locations` chạy `CREATE EXTENSION IF NOT EXISTS postgis`. Neon hỗ trợ sẵn PostGIS; nếu log báo lỗi quyền tạo extension, vào Neon Console → SQL Editor chạy `CREATE EXTENSION IF NOT EXISTS postgis;` bằng tài khoản owner rồi deploy lại.
+
 ## 2. Tạo service
 
 Render Dashboard → **New → Blueprint** → chọn repo backend → Render đọc `render.yaml` và hỏi giá trị các biến secret:

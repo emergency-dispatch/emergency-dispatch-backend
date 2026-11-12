@@ -1592,7 +1592,7 @@ Thêm `reportedEventType`, `linkedReportCount`, `linkedToIncidentId` (khi `Linke
 | POST | `/api/incident-types` | Admin | Thêm loại: `{ code, nameVi, nameEn, description?, icon?, color?, category, isActive, displayOrder }` |
 | PUT | `/api/incident-types/{id}` | Admin | Sửa (không đổi `code`; loại hệ thống không đổi `category`) |
 | DELETE | `/api/incident-types/{id}` | Admin | Xóa loại không phải hệ thống, chưa được dùng (đang dùng → 409) |
-| PUT | `/api/incident-types/{id}/unit-rules` | Admin | Thay toàn bộ quy tắc `{ rules: [{ unitTypeCode, minSeverity, quantity (1–5), priority }] }` |
+| PUT | `/api/incident-types/{id}/dispatch-plan` | Admin | Kế hoạch điều xe theo mức: `{ levels: [{ severity: Level1..Level3, units: [{ unitTypeCode, quantity (1–5), priority? }] }] }`, tổng mỗi mức ≤ 5. Response `dispatchPlan` luôn đủ 3 mức (cập nhật 10/11) |
 | GET | `/api/rescue-unit-types` | Đăng nhập | Loại xe; `?includeInactive=true` (Admin) |
 | POST / PUT / DELETE | `/api/rescue-unit-types[/{id}]` | Admin | Tương tự loại sự cố (không có `category`) |
 
@@ -1612,6 +1612,7 @@ Seed hệ thống:
   - không tự điều phối;
   - chống trùng không gom hai báo cáo Khác có loại chi tiết khác nhau.
 - Gợi ý xe (`/api/dispatch/recommend`) lọc loại xe theo quy tắc của loại sự cố. Chưa có quy tắc thì dùng luật dự phòng theo nhóm và từ khóa.
+- (10/11) Kế hoạch theo đúng từng mức (mức chưa cấu hình → mức thấp hơn gần nhất). Số xe chuẩn BR-14 của Level 1–2 = tổng kế hoạch mức đó; Level 3 tối đa 5. AI tự điều phối điều đúng số xe theo kế hoạch, thiếu xe thì điều một phần và ghi chú để Operator bổ sung.
 
 ### 13.3 AI tự điều phối
 - Cấu hình trong `PUT /api/settings/dispatch`: `autoDispatchEnabled` (mặc định false), `autoDispatchMinConfidence` (mặc định 0.90), `autoDispatchDuplicateRadiusMeters` (500), `autoDispatchDuplicateWindowMinutes` (30).

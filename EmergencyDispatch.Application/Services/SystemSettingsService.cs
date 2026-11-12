@@ -29,8 +29,14 @@ public class SystemSettingsService : ISystemSettingsService
     private readonly ISystemAuditService _auditService;
     private readonly IRealtimeNotifier _realtimeNotifier;
 
-    public SystemSettingsService(ISystemSettingRepository repository, ILogger<SystemSettingsService> logger, ISystemAuditService auditService, IRealtimeNotifier realtimeNotifier)
+    public const string InvalidBoundaryMessage = "Ranh giới khu vực phải là GeoJSON Polygon hoặc MultiPolygon hợp lệ (tọa độ [kinh độ, vĩ độ]).";
+
+    private readonly ISpatialQueryService? _spatial;
+
+    public SystemSettingsService(ISystemSettingRepository repository, ILogger<SystemSettingsService> logger, ISystemAuditService auditService, IRealtimeNotifier realtimeNotifier,
+        ISpatialQueryService? spatial = null)
     {
+        _spatial = spatial;
         _realtimeNotifier = realtimeNotifier;
         _repository = repository;
         _logger = logger;
@@ -109,7 +115,12 @@ public class SystemSettingsService : ISystemSettingsService
         CancellationToken cancellationToken = default)
     {
         values.Name = values.Name?.Trim() ?? string.Empty;
+        values.BoundaryGeoJson = string.IsNullOrWhiteSpace(values.BoundaryGeoJson) ? null : values.BoundaryGeoJson.Trim();
         var errors = StationAssignment.ValidateServiceArea(values);
+        if (values.BoundaryGeoJson != null && (_spatial == null || !await _spatial.IsValidBoundaryAsync(values.BoundaryGeoJson, cancellationToken)))
+        {
+            errors.Add(InvalidBoundaryMessage);
+        }
         if (errors.Count > 0)
         {
             return ApiResponseDto<SettingsRecordDto<ServiceAreaSettingsDto>>.FailureResult(errors, "Cấu hình khu vực phục vụ không hợp lệ.");
@@ -118,7 +129,7 @@ public class SystemSettingsService : ISystemSettingsService
         var before = await GetServiceAreaAsync(cancellationToken);
         await _repository.UpsertAsync(ServiceAreaKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
         await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, ServiceAreaKey,
-            $"Cập nhật khu vực phục vụ \"{values.Name}\" (bán kính {values.RadiusKm} km, {(values.Enabled ? "bật" : "tắt")} kiểm tra, {(values.RejectOutside ? "từ chối" : "chỉ gắn cờ")} SOS ngoài vùng)", before, values, cancellationToken);
+            $"Cập nhật khu vực phục vụ \"{values.Name}\" ({(values.BoundaryGeoJson != null ? "ranh giới đa giác" : $"bán kính {values.RadiusKm} km")}, {(values.Enabled ? "bật" : "tắt")} kiểm tra, {(values.RejectOutside ? "từ chối" : "chỉ gắn cờ")} SOS ngoài vùng)", before, values, cancellationToken);
 
         var areaRecord = await GetServiceAreaRecordAsync(cancellationToken);
         await PublishSettingsAsync(ServiceAreaKey, areaRecord.UpdatedAt, areaRecord.UpdatedByName, cancellationToken);

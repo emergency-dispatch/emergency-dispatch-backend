@@ -264,6 +264,31 @@ public class DispatchServiceTests
     }
 
     [Fact]
+    public async Task Assign_Level2_AdminPlanOfTwoUnits_AllowsTwoWithoutOverride_ThirdNeedsReason()
+    {
+        // Admin cấu hình: cháy nổ Level 2 điều 2 xe chữa cháy → số xe chuẩn BR-14 của Level 2 là 2
+        var catalog = new Mock<ITypeCatalogRepository>();
+        catalog.Setup(c => c.GetUnitRulesAsync("FireExplosion", It.IsAny<CancellationToken>())).ReturnsAsync(new List<IncidentTypeUnitRule>
+        {
+            new() { UnitTypeCode = RescueUnitType.FireTruck, Severity = SeverityLevel.Level2, Quantity = 2, Priority = 1 }
+        });
+        var svc = new DispatchService(_assign.Object, _units.Object, _incidents.Object, _users.Object, _rt.Object, _settings.Object,
+            _notify.Object, NullLogger<DispatchService>.Instance, _routing.Object, _me.Object, _esc.Object, _followUp.Object, _fieldRequests.Object,
+            TestHelpers.Config(("Cloudinary:CloudName", "demo")), _teams.Object, catalog.Object);
+        var inc = Incident();
+        var a = Unit(RescueUnitType.FireTruck, 2);
+        var b = Unit(RescueUnitType.FireTruck, 3);
+        var c = Unit(RescueUnitType.FireTruck, 4);
+
+        var two = await svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitIds = new() { a.Id, b.Id } }, _operatorId);
+        var third = await svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = c.Id }, _operatorId);
+
+        Assert.True(two.Success);
+        Assert.False(third.Success);
+        Assert.Equal(2, inc.DispatchAssignments.Count);
+    }
+
+    [Fact]
     public async Task Assign_Level3_AllowsUpToFiveUnitsWithoutOverride()
     {
         var inc = Incident(SeverityLevel.Level3);

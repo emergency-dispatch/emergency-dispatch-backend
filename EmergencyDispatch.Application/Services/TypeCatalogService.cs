@@ -25,8 +25,10 @@ public class TypeCatalogService : ITypeCatalogService
     public const string InvalidCategoryMessage = "Nhóm loại sự cố chỉ nhận FireExplosion, TrafficAccident hoặc Other.";
     public const string SystemCategoryLockedMessage = "Không đổi được nhóm của loại sự cố hệ thống.";
     public const string RuleUnitTypeMissingMessage = "Loại phương tiện {0} không tồn tại trong danh mục.";
-    public const string RuleInvalidMessage = "Quy tắc không hợp lệ: mức độ tối thiểu phải từ Level1 đến Level3, số xe từ 1 đến 5.";
-    public const string RuleDuplicateMessage = "Trùng quy tắc: loại xe {0} ở mức độ {1} được khai báo hai lần.";
+    public const string PlanLevelInvalidMessage = "Mức độ trong kế hoạch phải là Level1, Level2 hoặc Level3 và không lặp lại.";
+    public const string PlanQuantityInvalidMessage = "Số xe của mỗi loại phải từ 1 đến 5.";
+    public const string PlanDuplicateUnitMessage = "Loại xe {0} được khai báo hai lần ở {1}.";
+    public const string PlanTooManyUnitsMessage = "Tổng số xe của {0} vượt quá 5 (BR-14).";
 
     private static readonly Regex CodePattern = new("^[A-Za-z][A-Za-z0-9_]{0,49}$", RegexOptions.Compiled);
 
@@ -189,7 +191,10 @@ public class TypeCatalogService : ITypeCatalogService
         return ApiResponseDto<bool>.SuccessResult(true, "Đã xóa loại sự cố.");
     }
 
-    public async Task<ApiResponseDto<IncidentTypeDto>> ReplaceUnitRulesAsync(Guid incidentTypeId, ReplaceUnitRulesDto dto, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Thay toàn bộ kế hoạch điều xe của loại sự cố: mỗi mức độ gồm các loại xe và số lượng (tổng ≤ 5)
+    /// </summary>
+    public async Task<ApiResponseDto<IncidentTypeDto>> UpdateDispatchPlanAsync(Guid incidentTypeId, UpdateDispatchPlanDto dto, CancellationToken cancellationToken = default)
     {
         var type = await _repository.GetIncidentTypeByIdAsync(incidentTypeId, cancellationToken);
         if (type == null)
@@ -197,46 +202,62 @@ public class TypeCatalogService : ITypeCatalogService
             return ApiResponseDto<IncidentTypeDto>.NotFoundResult(IncidentTypeNotFoundMessage);
         }
 
-        var unitNames = await UnitTypeNamesAsync(cancellationToken);
-        var rules = dto.Rules ?? new List<UnitRuleDto>();
-        var seen = new HashSet<(string, SeverityLevel)>();
-        foreach (var rule in rules)
+        var unitTypes = await UnitTypeNamesAsync(cancellationToken);
+        var levels = dto.Levels ?? new List<DispatchPlanLevelDto>();
+        if (levels.Any(l => l.Severity is < SeverityLevel.Level1 or > SeverityLevel.Level3)
+            || levels.Select(l => l.Severity).Distinct().Count() != levels.Count)
         {
-            var unitCode = rule.UnitTypeCode?.Trim() ?? string.Empty;
-            if (!unitNames.ContainsKey(unitCode))
+            return ApiResponseDto<IncidentTypeDto>.FailureResult(PlanLevelInvalidMessage);
+        }
+
+        var created = new List<IncidentTypeUnitRule>();
+        foreach (var level in levels)
+        {
+            var units = level.Units ?? new List<DispatchPlanUnitDto>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < units.Count; i++)
             {
-                return ApiResponseDto<IncidentTypeDto>.FailureResult(LocalizationHelper.Localize(RuleUnitTypeMissingMessage, unitCode));
+                var unit = units[i];
+                var code = unit.UnitTypeCode?.Trim() ?? string.Empty;
+                if (!unitTypes.TryGetValue(code, out var unitType) || (!unitType.IsActive && type.UnitRules.All(r => r.UnitTypeCode != code)))
+                {
+                    return ApiResponseDto<IncidentTypeDto>.FailureResult(LocalizationHelper.Localize(RuleUnitTypeMissingMessage, code));
+                }
+                if (unit.Quantity is < 1 or > DispatchScoring.MaxUnitsPerLevel)
+                {
+                    return ApiResponseDto<IncidentTypeDto>.FailureResult(PlanQuantityInvalidMessage);
+                }
+                if (!seen.Add(code))
+                {
+                    return ApiResponseDto<IncidentTypeDto>.FailureResult(LocalizationHelper.Localize(PlanDuplicateUnitMessage, code, level.Severity));
+                }
+                created.Add(new IncidentTypeUnitRule
+                {
+                    IncidentTypeId = type.Id,
+                    UnitTypeCode = code,
+                    Severity = level.Severity,
+                    Quantity = unit.Quantity,
+                    Priority = unit.Priority ?? i + 1
+                });
             }
-            if (rule.MinSeverity is < SeverityLevel.Level1 or > SeverityLevel.Level3 || rule.Quantity is < 1 or > 5)
+            if (units.Sum(u => u.Quantity) > DispatchScoring.MaxUnitsPerLevel)
             {
-                return ApiResponseDto<IncidentTypeDto>.FailureResult(RuleInvalidMessage);
-            }
-            if (!seen.Add((unitCode, rule.MinSeverity)))
-            {
-                return ApiResponseDto<IncidentTypeDto>.FailureResult(LocalizationHelper.Localize(RuleDuplicateMessage, unitCode, rule.MinSeverity));
+                return ApiResponseDto<IncidentTypeDto>.FailureResult(LocalizationHelper.Localize(PlanTooManyUnitsMessage, level.Severity));
             }
         }
 
-        var before = string.Join(", ", type.UnitRules.Select(Describe));
+        var before = DescribePlan(type.UnitRules);
         _repository.RemoveUnitRules(type.UnitRules.ToList());
         type.UnitRules.Clear();
-        var created = rules.Select(r => new IncidentTypeUnitRule
-        {
-            IncidentTypeId = type.Id,
-            UnitTypeCode = r.UnitTypeCode.Trim(),
-            MinSeverity = r.MinSeverity,
-            Quantity = r.Quantity,
-            Priority = r.Priority
-        }).ToList();
         await _repository.AddUnitRulesAsync(created, cancellationToken);
         // EF tự gắn quy tắc mới vào type.UnitRules khi Add (cùng IncidentTypeId); chỉ thêm tay khi chưa có (VD repository giả trong test)
         foreach (var rule in created.Where(r => !type.UnitRules.Contains(r))) type.UnitRules.Add(rule);
         await _repository.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(SystemAuditAction.Updated, AuditEntityTypes.IncidentType, type.Id, type.Code,
-            $"Đổi quy tắc loại xe của {type.Code}: [{before}] → [{string.Join(", ", created.Select(Describe))}]", cancellationToken: cancellationToken);
+            $"Đổi kế hoạch điều xe của {type.Code}: [{before}] → [{DescribePlan(created)}]", cancellationToken: cancellationToken);
 
-        return ApiResponseDto<IncidentTypeDto>.SuccessResult(MapIncidentType(type, unitNames), "Đã lưu quy tắc loại xe.");
+        return ApiResponseDto<IncidentTypeDto>.SuccessResult(MapIncidentType(type, unitTypes), "Đã lưu kế hoạch điều xe.");
     }
 
     // ==================== HỖ TRỢ ====================
@@ -244,7 +265,9 @@ public class TypeCatalogService : ITypeCatalogService
     private static bool IsValidCategory(IncidentEventType category)
         => category is IncidentEventType.FireExplosion or IncidentEventType.TrafficAccident or IncidentEventType.Other;
 
-    private static string Describe(IncidentTypeUnitRule r) => $"{r.UnitTypeCode}×{r.Quantity}≥{r.MinSeverity}";
+    private static string DescribePlan(IEnumerable<IncidentTypeUnitRule> rules)
+        => string.Join("; ", rules.GroupBy(r => r.Severity).OrderBy(g => g.Key)
+            .Select(g => $"{g.Key}: " + string.Join(", ", g.OrderBy(r => r.Priority).Select(r => $"{r.UnitTypeCode}×{r.Quantity}"))));
 
     private async Task<Dictionary<string, RescueUnitTypeDefinition>> UnitTypeNamesAsync(CancellationToken cancellationToken)
         => (await _repository.GetUnitTypesAsync(includeInactive: true, cancellationToken)).ToDictionary(t => t.Code, StringComparer.Ordinal);
@@ -301,15 +324,18 @@ public class TypeCatalogService : ITypeCatalogService
         IsSystem = t.IsSystem,
         IsActive = t.IsActive,
         DisplayOrder = t.DisplayOrder,
-        UnitRules = t.UnitRules
-            .OrderBy(r => r.Priority).ThenBy(r => r.MinSeverity)
-            .Select(r => new UnitRuleDto
+        DispatchPlan = new[] { SeverityLevel.Level1, SeverityLevel.Level2, SeverityLevel.Level3 }
+            .Select(level =>
             {
-                UnitTypeCode = r.UnitTypeCode,
-                UnitTypeName = unitTypes.TryGetValue(r.UnitTypeCode, out var u) ? (LocalizationHelper.IsEnglish ? u.NameEn : u.NameVi) : r.UnitTypeCode,
-                MinSeverity = r.MinSeverity,
-                Quantity = r.Quantity,
-                Priority = r.Priority
+                var units = t.UnitRules.Where(r => r.Severity == level).OrderBy(r => r.Priority)
+                    .Select(r => new DispatchPlanUnitDto
+                    {
+                        UnitTypeCode = r.UnitTypeCode,
+                        UnitTypeName = unitTypes.TryGetValue(r.UnitTypeCode, out var u) ? (LocalizationHelper.IsEnglish ? u.NameEn : u.NameVi) : r.UnitTypeCode,
+                        Quantity = r.Quantity,
+                        Priority = r.Priority
+                    }).ToList();
+                return new DispatchPlanLevelDto { Severity = level, TotalUnits = units.Sum(x => x.Quantity), Units = units };
             }).ToList()
     };
 }

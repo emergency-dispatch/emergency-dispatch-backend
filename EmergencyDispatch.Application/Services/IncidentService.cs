@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.DTOs.Settings;
 using System.Globalization;
 using System.Text.Json;
 using EmergencyDispatch.Application.Localization;
@@ -42,6 +43,20 @@ public class IncidentService : IIncidentService
     private static readonly TimeSpan StaffAccessAfterCompletion = TimeSpan.FromMinutes(30);
 
     private readonly ITypeCatalogRepository? _typeCatalog;
+    private readonly ISpatialQueryService? _spatial;
+
+    /// <summary>
+    /// Geofencing: có ranh giới đa giác → PostGIS ST_Distance tới đa giác; không có / lỗi → hình tròn tâm + bán kính
+    /// </summary>
+    private async Task<double> DistanceOutsideAreaAsync(ServiceAreaSettingsDto area, double lat, double lng, CancellationToken cancellationToken)
+    {
+        if (area.Enabled && !string.IsNullOrWhiteSpace(area.BoundaryGeoJson) && _spatial != null
+            && await _spatial.DistanceOutsideBoundaryKmAsync(area.BoundaryGeoJson, lat, lng, cancellationToken) is { } km)
+        {
+            return km;
+        }
+        return StationAssignment.DistanceOutsideArea(area, lat, lng);
+    }
 
     public const string InvalidIncidentTypeMessage = "Loại sự cố '{0}' không có trong danh mục hoặc đã bị ẩn.";
 
@@ -75,8 +90,10 @@ public class IncidentService : IIncidentService
         ISystemSettingsService settingsService,
         ICurrentUserContext currentUser,
         IIncidentFollowUpService followUpService,
-        ITypeCatalogRepository? typeCatalog = null)
+        ITypeCatalogRepository? typeCatalog = null,
+        ISpatialQueryService? spatial = null)
     {
+        _spatial = spatial;
         _typeCatalog = typeCatalog;
         _followUpService = followUpService;
         _stationRepository = stationRepository;
@@ -153,7 +170,7 @@ public class IncidentService : IIncidentService
 
         // Kiểm tra khu vực phục vụ ở server (client có thể bị bỏ qua khi gọi thẳng API)
         var serviceArea = await _settingsService.GetServiceAreaAsync(cancellationToken);
-        var outsideKm = StationAssignment.DistanceOutsideArea(serviceArea, dto.Latitude, dto.Longitude);
+        var outsideKm = await DistanceOutsideAreaAsync(serviceArea, dto.Latitude, dto.Longitude, cancellationToken);
         if (outsideKm > 0 && serviceArea.RejectOutside)
         {
             _logger.LogWarning("Từ chối SOS ngoài khu vực phục vụ \"{Area}\" {OutsideKm} km (user={UserId}).",
@@ -402,7 +419,7 @@ public class IncidentService : IIncidentService
         }
 
         var serviceArea = await _settingsService.GetServiceAreaAsync(cancellationToken);
-        var outsideKm = StationAssignment.DistanceOutsideArea(serviceArea, dto.Latitude, dto.Longitude);
+        var outsideKm = await DistanceOutsideAreaAsync(serviceArea, dto.Latitude, dto.Longitude, cancellationToken);
         var now = DateTime.UtcNow;
         var notes = dto.OperatorNotes.Trim();
         var normalizedPhone = PhoneMasking.Normalize(dto.ReporterPhone);

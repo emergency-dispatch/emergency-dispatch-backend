@@ -77,7 +77,7 @@ public class UniqueConstraintExceptionFilterTests
     [InlineData("Stations", "IX_Stations_Code")]
     public void UniqueIndexes_IgnoreSoftDeletedRows(string table, string indexName)
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql("Host=unused").Options;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql("Host=unused", npgsql => npgsql.UseNetTopologySuite()).Options;
         using var db = new ApplicationDbContext(options);
 
         var index = db.Model.GetEntityTypes().Where(t => t.GetTableName() == table)

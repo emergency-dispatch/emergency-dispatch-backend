@@ -8,6 +8,12 @@ public interface IRescueUnitRepository : IGenericRepository<RescueUnit>
     Task<RescueUnit?> GetByIdWithDetailsAsync(Guid id);
     Task<IReadOnlyList<RescueUnit>> GetByStationIdAsync(Guid stationId);
     Task<IReadOnlyList<RescueUnit>> GetAvailableUnitsAsync(string? unitType = null);
+
+    /// <summary>
+    /// Khoảng cách đường chim bay (mét) từ một điểm tới các xe trong bán kính maxMeters, tính bằng PostGIS
+    /// (ST_DWithin lọc trên chỉ mục GiST, ST_Distance trên geography). null = không hỗ trợ truy vấn không gian
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, double>?> GetDistancesMetersAsync(double latitude, double longitude, double maxMeters, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RescueUnit>> GetAllWithStationAsync();
     Task<bool> PlateNumberExistsAsync(string plateNumber, Guid? excludeId = null);
 

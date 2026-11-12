@@ -439,6 +439,12 @@ public static partial class LocalizationCatalog
         { "Bán kính nghi trùng khi tự điều phối phải từ 50 đến 5000 m.", "The auto-dispatch duplicate radius must be between 50 and 5000 m." },
         { "Khung thời gian nghi trùng khi tự điều phối phải từ 1 đến 240 phút.", "The auto-dispatch duplicate window must be between 1 and 240 minutes." },
         { "AI ĐÃ TỰ ĐIỀU PHỐI", "AI AUTO-DISPATCHED" },
-        { "AI CHUYỂN SỰ CỐ CHO ĐIỀU PHỐI VIÊN", "AI HANDED THE INCIDENT TO AN OPERATOR" }
+        { "AI CHUYỂN SỰ CỐ CHO ĐIỀU PHỐI VIÊN", "AI HANDED THE INCIDENT TO AN OPERATOR" },
+        { "Mức độ trong kế hoạch phải là Level1, Level2 hoặc Level3 và không lặp lại.", "Plan levels must be Level1, Level2 or Level3 and must not repeat." },
+        { "Số xe của mỗi loại phải từ 1 đến 5.", "The quantity of each vehicle type must be between 1 and 5." },
+        { "Loại xe {0} được khai báo hai lần ở {1}.", "Vehicle type {0} is declared twice at {1}." },
+        { "Tổng số xe của {0} vượt quá 5 (BR-14).", "The total number of vehicles for {0} exceeds 5 (BR-14)." },
+        { "Đã lưu kế hoạch điều xe.", "Dispatch plan saved." },
+        { "AI tự điều phối một phần: chưa đủ số xe theo cấu hình của mức độ. Điều phối viên cần bổ sung xe.", "AI partially auto-dispatched: not enough units for the configured plan of this severity. The operator needs to add units." }
     };
 }

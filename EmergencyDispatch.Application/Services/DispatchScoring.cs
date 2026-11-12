@@ -84,20 +84,30 @@ public static class DispatchScoring
     }
 
     /// <summary>
-    /// Quy tắc áp dụng ở mức độ này (sự cố chưa phân loại tính như Level 1), xếp theo ưu tiên.
-    /// Không quy tắc nào đạt mức → dùng các quy tắc ở mức thấp nhất của loại đó
+    /// Số xe tối đa của một mức độ (BR-14)
+    /// </summary>
+    public const int MaxUnitsPerLevel = 5;
+
+    /// <summary>
+    /// Kế hoạch điều xe áp dụng cho mức độ này (sự cố chưa phân loại tính như Level 1), xếp theo ưu tiên.
+    /// Mức đó chưa cấu hình → dùng mức thấp hơn gần nhất đã cấu hình; không có mức thấp hơn → mức thấp nhất đã cấu hình
     /// </summary>
     public static List<IncidentTypeUnitRule> ApplicableRules(IReadOnlyList<IncidentTypeUnitRule> rules, SeverityLevel severity)
     {
         if (rules.Count == 0) return new List<IncidentTypeUnitRule>();
         var level = severity == SeverityLevel.Unclassified ? SeverityLevel.Level1 : severity;
-        var applicable = rules.Where(r => r.MinSeverity <= level).ToList();
-        if (applicable.Count == 0)
-        {
-            var lowest = rules.Min(r => r.MinSeverity);
-            applicable = rules.Where(r => r.MinSeverity == lowest).ToList();
-        }
-        return applicable.OrderBy(r => r.Priority).ThenBy(r => r.MinSeverity).ToList();
+        var configured = rules.Select(r => r.Severity).Distinct().ToList();
+        var chosen = configured.Where(l => l <= level).DefaultIfEmpty(configured.Min()).Max();
+        return rules.Where(r => r.Severity == chosen).OrderBy(r => r.Priority).ToList();
+    }
+
+    /// <summary>
+    /// Tổng số xe theo kế hoạch của mức độ này (tối đa 5); null = loại sự cố chưa cấu hình kế hoạch
+    /// </summary>
+    public static int? PlannedUnitCount(IReadOnlyList<IncidentTypeUnitRule> rules, SeverityLevel severity)
+    {
+        var applicable = ApplicableRules(rules, severity);
+        return applicable.Count == 0 ? null : Math.Clamp(applicable.Sum(r => r.Quantity), 1, MaxUnitsPerLevel);
     }
 
     /// <summary>
