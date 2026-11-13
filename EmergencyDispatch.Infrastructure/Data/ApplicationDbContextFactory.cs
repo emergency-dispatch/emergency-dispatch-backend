@@ -25,7 +25,7 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
             ?? "Host=localhost;Port=5432;Database=EmergencyDispatchDb;Username=postgres;Password=postgres;";
 
         var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
-        optionsBuilder.UseNpgsql(connectionString);
+        optionsBuilder.UseNpgsql(connectionString, npgsql => npgsql.UseNetTopologySuite());
 
         return new ApplicationDbContext(optionsBuilder.Options);
     }

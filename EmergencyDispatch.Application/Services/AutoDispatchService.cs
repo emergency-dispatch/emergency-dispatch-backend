@@ -41,6 +41,7 @@ public class AutoDispatchService : IAutoDispatchService
     public const string SuspectedDuplicateNote = "AI không tự điều phối: nghi trùng với sự cố đã được điều xe gần đó. Cần Điều phối viên kiểm tra.";
     public const string NoUnitsNote = "AI không tự điều phối: không còn xe phù hợp trong bán kính tìm kiếm. Cần Điều phối viên xử lý.";
     public const string AssignFailedNote = "AI không tự điều phối: phát lệnh thất bại (xe vừa bị điều đi nơi khác). Cần Điều phối viên xử lý.";
+    public const string PartialNote = "AI tự điều phối một phần: chưa đủ số xe theo cấu hình của mức độ. Điều phối viên cần bổ sung xe.";
 
     private readonly IIncidentRepository _incidentRepository;
     private readonly IDispatchService _dispatchService;
@@ -128,7 +129,7 @@ public class AutoDispatchService : IAutoDispatchService
                 return AutoDispatchOutcome.SkippedDuplicate;
             }
 
-            var unitIds = await PickUnitsAsync(incident, cancellationToken);
+            var (unitIds, plannedUnits) = await PickUnitsAsync(incident, cancellationToken);
             if (unitIds.Count == 0)
             {
                 await MarkSkippedAsync(incident, NoUnitsNote, null, new { reason = "NoUnits" }, cancellationToken);
@@ -147,7 +148,7 @@ public class AutoDispatchService : IAutoDispatchService
             incident.IncidentTypeCode = DispatchScoring.IncidentTypeCodeFor(incident);
             incident.ResponseTimeMs = (long)(now - incident.CreatedAt).TotalMilliseconds;
             incident.AutoDispatchState = AutoDispatchState.Dispatched;
-            incident.AutoDispatchNote = DispatchedNote;
+            incident.AutoDispatchNote = unitIds.Count < plannedUnits ? PartialNote : DispatchedNote;
             incident.SuspectedDuplicateOfIncidentId = null;
             incident.UpdatedAt = now;
 
@@ -165,7 +166,7 @@ public class AutoDispatchService : IAutoDispatchService
                 IncidentId = incident.Id,
                 ActorRole = DispatchService.AutoDispatchActorRole,
                 Action = AuditAction.AutoDispatched,
-                Description = $"AI tự điều phối {unitIds.Count} xe (độ tin cậy {ai.ConfidenceScore:P1}, ngưỡng {settings.AutoDispatchMinConfidence:P0})",
+                Description = $"AI tự điều phối {unitIds.Count}/{plannedUnits} xe theo cấu hình (độ tin cậy {ai.ConfidenceScore:P1}, ngưỡng {settings.AutoDispatchMinConfidence:P0})",
                 NewStateJson = JsonSerializer.Serialize(new
                 {
                     confidence = ai.ConfidenceScore,
@@ -175,6 +176,7 @@ public class AutoDispatchService : IAutoDispatchService
                     incidentTypeCode = incident.IncidentTypeCode,
                     severity = incident.Severity.ToString(),
                     model = ai.ModelName,
+                    plannedUnits,
                     unitIds
                 }),
                 Timestamp = now
@@ -247,35 +249,29 @@ public class AutoDispatchService : IAutoDispatchService
     }
 
     /// <summary>
-    /// Chọn xe theo quy tắc loại xe (ưu tiên trước), xe gần nhất trước. BR-14: Level 1–2 một xe; Level 3 tối đa 5 xe theo số lượng quy tắc
+    /// Chọn xe theo kế hoạch điều xe của mức độ (Admin cấu hình: loại xe × số lượng), loại ưu tiên trước, xe gần nhất trước, tối đa 5.
+    /// Chưa có kế hoạch → một xe gần nhất theo luật dự phòng. Trả kèm số xe kế hoạch để biết có thiếu xe không
     /// </summary>
-    private async Task<List<Guid>> PickUnitsAsync(Incident incident, CancellationToken cancellationToken)
+    private async Task<(List<Guid> Units, int Planned)> PickUnitsAsync(Incident incident, CancellationToken cancellationToken)
     {
-        var isLevel3 = incident.Severity == SeverityLevel.Level3;
-        var maxUnits = isLevel3 ? 5 : 1;
         var rules = DispatchScoring.ApplicableRules(await _dispatchService.GetUnitRulesAsync(incident, cancellationToken), incident.Severity);
-        var chosen = new List<Guid>();
-
-        // Chưa có quy tắc → để động cơ gợi ý tự lọc loại xe (luật dự phòng), lấy xe gần nhất
         var plan = rules.Count > 0
-            ? rules.Select(r => (Code: (string?)r.UnitTypeCode, Need: isLevel3 ? r.Quantity : 1)).ToList()
+            ? rules.Select(r => (Code: (string?)r.UnitTypeCode, Need: r.Quantity)).ToList()
             : new List<(string? Code, int Need)> { (null, 1) };
+        var planned = Math.Min(plan.Sum(p => p.Need), DispatchScoring.MaxUnitsPerLevel);
+        var chosen = new List<Guid>();
 
         foreach (var (code, need) in plan)
         {
-            if (chosen.Count >= maxUnits) break;
+            if (chosen.Count >= planned) break;
             var recommendations = await _dispatchService.GetRecommendationsAsync(incident.Id, DispatchAlgorithm.NearestAvailable, code, null, cancellationToken);
-            var picked = (recommendations.Data ?? new List<RecommendedUnitResponseDto>())
+            chosen.AddRange((recommendations.Data ?? new List<RecommendedUnitResponseDto>())
                 .Select(r => r.RescueUnitId)
                 .Where(id => !chosen.Contains(id))
-                .Take(Math.Min(need, maxUnits - chosen.Count))
-                .ToList();
-            chosen.AddRange(picked);
-            // Level 1–2: một xe của quy tắc ưu tiên cao nhất còn xe là đủ
-            if (!isLevel3 && chosen.Count > 0) break;
+                .Take(Math.Min(need, planned - chosen.Count)));
         }
 
-        return chosen;
+        return (chosen, planned);
     }
 
     private async Task MarkSkippedAsync(Incident incident, string note, Guid? duplicateOf, object details, CancellationToken cancellationToken)

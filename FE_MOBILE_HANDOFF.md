@@ -1313,3 +1313,64 @@ Mỗi phần tử có `code`, `nameVi`, `nameEn`, `name` (theo `Accept-Language`
 ### F. Dashboard / báo cáo
 - Thống kê theo loại sự cố và loại xe động (theo danh mục), không cố định 2 hay 6 loại.
 - Có thể thống kê tỷ lệ tự điều phối từ `autoDispatchState` của sự cố.
+
+## 32. Cập nhật 10/11/2026: Admin cấu hình kế hoạch điều xe theo từng mức độ (thay "unit-rules" ở mục 31)
+
+Admin cấu hình cho mỗi loại sự cố: **Level 1 / Level 2 / Level 3 điều loại xe nào, mỗi loại bao nhiêu chiếc** (tổng mỗi mức ≤ 5). Web + mobile làm như nhau.
+
+**Thay đổi API so với mục 31:**
+- Bỏ `PUT /api/incident-types/{id}/unit-rules`, thay bằng **`PUT /api/incident-types/{id}/dispatch-plan`** (Admin):
+```json
+{
+  "levels": [
+    { "severity": "Level1", "units": [ { "unitTypeCode": "FireTruck", "quantity": 1 } ] },
+    { "severity": "Level2", "units": [ { "unitTypeCode": "FireTruck", "quantity": 2 } ] },
+    { "severity": "Level3", "units": [
+        { "unitTypeCode": "FireTruck", "quantity": 2 },
+        { "unitTypeCode": "LadderTruck", "quantity": 1 },
+        { "unitTypeCode": "Ambulance", "quantity": 1 } ] }
+  ]
+}
+```
+  - Thứ tự trong `units` là thứ tự ưu tiên khi thiếu xe. Có thể gửi `priority` riêng.
+  - Mức không gửi hoặc `units` rỗng nghĩa là chưa cấu hình mức đó; hệ thống dùng mức thấp hơn gần nhất đã cấu hình.
+  - Lỗi 400 (`message` song ngữ) khi:
+    - loại xe không có trong danh mục;
+    - `quantity` ngoài 1–5;
+    - một loại xe lặp lại trong cùng mức;
+    - tổng một mức > 5;
+    - mức lặp lại hoặc không phải Level1–3.
+- `IncidentTypeDto.unitRules` đổi thành **`dispatchPlan`**: luôn đủ 3 phần tử Level1, Level2, Level3, mỗi phần tử `{ severity, totalUnits, units: [{ unitTypeCode, unitTypeName, quantity, priority }] }`. Mức chưa cấu hình có `units` rỗng và `totalUnits = 0`.
+
+**Ảnh hưởng nghiệp vụ:**
+- Gợi ý xe chỉ lấy các loại xe trong kế hoạch của mức độ sự cố.
+- Số xe chuẩn BR-14 của Level 1–2 = `totalUnits` của mức đó. Điều thêm quá số này phải `allowExtraUnits` + lý do như cũ. Level 3 vẫn tối đa 5. Loại chưa cấu hình kế hoạch dùng giới hạn cũ (Level 1–2: 1 xe, Level 3: 5 xe).
+- AI tự điều phối điều đúng số xe theo kế hoạch. Thiếu xe thì vẫn điều phần có được, và `autoDispatchNote` báo "tự điều phối một phần", để Operator bổ sung.
+- Loại chi tiết thuộc nhóm Khác chưa có kế hoạch riêng sẽ dùng kế hoạch của loại "Khác" chung (nếu Admin đã cấu hình).
+
+**Màn hình Admin gợi ý:** tab "Kế hoạch điều xe" trong chi tiết loại sự cố, gồm 3 khối Level 1 / 2 / 3. Mỗi khối là danh sách dòng "loại xe (dropdown từ `GET /api/rescue-unit-types`) × số lượng", kéo thả để đổi ưu tiên, hiện tổng số xe (tối đa 5).
+
+**Kế hoạch mặc định (seed):**
+| Loại | Level 1 | Level 2 | Level 3 |
+|---|---|---|---|
+| Cháy nổ | 1 xe chữa cháy | 2 xe chữa cháy | 2 chữa cháy + 1 xe thang + 1 cứu hộ hạng nặng + 1 cấp cứu |
+| Tai nạn giao thông | 1 cấp cứu | 1 cấp cứu + 1 cứu hộ hạng nặng | 2 cấp cứu + 1 cứu hộ hạng nặng + 1 chữa cháy |
+| Đuối nước / ngập | 1 xuồng | 1 xuồng + 1 cấp cứu | 2 xuồng + 1 cấp cứu |
+| Khác | chưa cấu hình | | |
+
+## 33. Cập nhật 12/11/2026: PostGIS + ranh giới khu vực phục vụ dạng đa giác
+
+Backend đã dùng **PostGIS**:
+- Sự cố, xe, trạm, điểm nghẽn có cột `geography(Point, 4326)` tự sinh từ vĩ độ / kinh độ, kèm chỉ mục GiST.
+- Gom báo cáo trùng và nghi trùng dùng `ST_DWithin`.
+- Gợi ý xe tính khoảng cách bằng `ST_Distance`.
+
+API trả về không đổi (vẫn `latitude` / `longitude`).
+
+**Việc cho web (màn Admin → Cài đặt → Khu vực phục vụ):** `GET/PUT /api/settings/service-area` có thêm trường tùy chọn **`boundaryGeoJson`**. Đây là chuỗi GeoJSON `Polygon` / `MultiPolygon`, tọa độ `[kinh độ, vĩ độ]`, ví dụ:
+```json
+{"type":"Polygon","coordinates":[[[106.79,10.83],[106.82,10.83],[106.82,10.86],[106.79,10.86],[106.79,10.83]]]}
+```
+- Có `boundaryGeoJson` thì SOS được kiểm tra trong / ngoài theo **đa giác**. Khoảng cách ngoài vùng tính bằng PostGIS; ngoài vùng vẫn trả 422 như cũ. Không có thì dùng tâm + bán kính như trước.
+- Gợi ý màn hình: vẽ đa giác trên Mapbox (mapbox-gl-draw) rồi gửi `JSON.stringify(feature.geometry)`; hiển thị lại đa giác khi đọc cài đặt.
+- GeoJSON không phải đa giác hợp lệ → 400.

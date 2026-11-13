@@ -53,8 +53,9 @@ public class IncidentTypeDefinition : BaseEntity
 }
 
 /// <summary>
-/// Quy tắc loại xe cho một loại sự cố (bảng IncidentTypeUnitRules), thay luật viết cứng BR-13:
-/// từ mức độ MinSeverity trở lên cần Quantity xe loại UnitTypeCode; Priority nhỏ = ưu tiên trước
+/// Kế hoạch điều xe của một loại sự cố (bảng IncidentTypeUnitRules), thay luật viết cứng BR-13 / BR-14:
+/// ở mức độ Severity cần Quantity xe loại UnitTypeCode; Priority nhỏ = điều trước khi thiếu xe.
+/// Tổng Quantity của một mức = số xe chuẩn của mức đó (tối đa 5)
 /// </summary>
 public class IncidentTypeUnitRule : BaseEntity
 {
@@ -62,7 +63,7 @@ public class IncidentTypeUnitRule : BaseEntity
     public IncidentTypeDefinition? IncidentType { get; set; }
 
     public string UnitTypeCode { get; set; } = string.Empty;
-    public SeverityLevel MinSeverity { get; set; } = SeverityLevel.Level1;
+    public SeverityLevel Severity { get; set; } = SeverityLevel.Level1;
     public int Quantity { get; set; } = 1;
     public int Priority { get; set; }
 }

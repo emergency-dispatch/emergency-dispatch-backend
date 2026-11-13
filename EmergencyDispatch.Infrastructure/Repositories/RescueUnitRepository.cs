@@ -1,3 +1,4 @@
+using NetTopologySuite.Geometries;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
@@ -64,6 +65,16 @@ public class RescueUnitRepository : GenericRepository<RescueUnit>, IRescueUnitRe
         }
 
         return await query.AnyAsync();
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, double>?> GetDistancesMetersAsync(double latitude, double longitude, double maxMeters, CancellationToken cancellationToken = default)
+    {
+        var point = new Point(longitude, latitude) { SRID = 4326 };
+        return await _dbSet
+            .AsNoTracking()
+            .Where(r => EF.Property<Point>(r, ApplicationDbContext.LocationColumn).IsWithinDistance(point, maxMeters))
+            .Select(r => new { r.Id, Meters = EF.Property<Point>(r, ApplicationDbContext.LocationColumn).Distance(point) })
+            .ToDictionaryAsync(x => x.Id, x => x.Meters, cancellationToken);
     }
 
     public async Task<bool> TryReserveForDispatchAsync(Guid unitId, CancellationToken cancellationToken = default)

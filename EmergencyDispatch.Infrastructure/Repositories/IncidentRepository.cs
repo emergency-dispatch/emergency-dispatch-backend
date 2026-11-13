@@ -1,3 +1,4 @@
+using NetTopologySuite.Geometries;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
@@ -271,8 +272,15 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         public ValueTask DisposeAsync() => _transaction.DisposeAsync();
     }
 
+    /// <summary>
+    /// Sự cố đang hoạt động gần một điểm (gom báo cáo trùng BR-07, nghi trùng khi tự điều phối).
+    /// Khung (min/max lat/lng) do IncidentLinking.BoundingBox dựng quanh tâm với bán kính R → truy vấn PostGIS
+    /// ST_DWithin(Location, tâm, R mét) trên cột geography có chỉ mục GiST
+    /// </summary>
     public async Task<IReadOnlyList<Incident>> FindLinkCandidatesAsync(double minLat, double maxLat, double minLng, double maxLng, DateTime sinceUtc, CancellationToken cancellationToken = default)
     {
+        var center = new Point((minLng + maxLng) / 2, (minLat + maxLat) / 2) { SRID = 4326 };
+        var radiusMeters = (maxLat - minLat) / 2 * 111_320.0;
         var active = new[]
         {
             IncidentStatus.Pending, IncidentStatus.AiProcessing, IncidentStatus.AiProcessed, IncidentStatus.Verified,
@@ -283,8 +291,7 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
             .Include(i => i.AiClassification)
             .Include(i => i.DispatchAssignments).ThenInclude(a => a.RescueUnit)
             .Where(i => active.Contains(i.Status)
-                        && i.Latitude >= minLat && i.Latitude <= maxLat
-                        && i.Longitude >= minLng && i.Longitude <= maxLng
+                        && EF.Property<Point>(i, ApplicationDbContext.LocationColumn).IsWithinDistance(center, radiusMeters)
                         && (i.LatestReportAt ?? i.CreatedAt) >= sinceUtc)
             .ToListAsync(cancellationToken);
     }

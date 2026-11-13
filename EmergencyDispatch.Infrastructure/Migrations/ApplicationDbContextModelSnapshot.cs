@@ -5,6 +5,7 @@ using EmergencyDispatch.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
@@ -21,6 +22,7 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                 .HasAnnotation("ProductVersion", "9.0.2")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "postgis");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AiClassification", b =>
@@ -789,6 +791,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<int>("LinkedReportCount")
                         .HasColumnType("integer");
 
+                    b.Property<Point>("Location")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("geography(Point,4326)")
+                        .HasComputedColumnSql("ST_SetSRID(ST_MakePoint(\"Longitude\", \"Latitude\"), 4326)::geography", true);
+
                     b.Property<string>("LocationAddress")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -886,6 +893,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.HasIndex("DuplicateOfIncidentId");
 
                     b.HasIndex("IncidentTypeCode");
+
+                    b.HasIndex("Location")
+                        .HasDatabaseName("IX_Incidents_Location");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
 
                     b.HasIndex("LockedByOperatorId");
 
@@ -1192,13 +1204,13 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<int>("MinSeverity")
-                        .HasColumnType("integer");
-
                     b.Property<int>("Priority")
                         .HasColumnType("integer");
 
                     b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Severity")
                         .HasColumnType("integer");
 
                     b.Property<string>("UnitTypeCode")
@@ -1213,7 +1225,7 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("UnitTypeCode");
 
-                    b.HasIndex("IncidentTypeId", "UnitTypeCode", "MinSeverity")
+                    b.HasIndex("IncidentTypeId", "UnitTypeCode", "Severity")
                         .IsUnique()
                         .HasDatabaseName("UQ_IncidentTypeUnitRules_Type_Unit_Severity");
 
@@ -1356,6 +1368,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<DateTime?>("LastLocationUpdateAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Point>("Location")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("geography(Point,4326)")
+                        .HasComputedColumnSql("ST_SetSRID(ST_MakePoint(\"CurrentLng\", \"CurrentLat\"), 4326)::geography", true);
+
                     b.Property<string>("PlateNumber")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1379,6 +1396,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Location")
+                        .HasDatabaseName("IX_RescueUnits_Location");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
 
                     b.HasIndex("PlateNumber")
                         .IsUnique()
@@ -1488,6 +1510,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<double>("Latitude")
                         .HasColumnType("double precision");
 
+                    b.Property<Point>("Location")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("geography(Point,4326)")
+                        .HasComputedColumnSql("ST_SetSRID(ST_MakePoint(\"Longitude\", \"Latitude\"), 4326)::geography", true);
+
                     b.Property<double>("Longitude")
                         .HasColumnType("double precision");
 
@@ -1521,6 +1548,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("IsActive")
                         .HasDatabaseName("IX_Stations_IsActive");
+
+                    b.HasIndex("Location")
+                        .HasDatabaseName("IX_Stations_Location");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
 
                     b.HasIndex("Name")
                         .IsUnique()
@@ -1750,6 +1782,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<double>("Latitude")
                         .HasColumnType("double precision");
 
+                    b.Property<Point>("Location")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("geography(Point,4326)")
+                        .HasComputedColumnSql("ST_SetSRID(ST_MakePoint(\"Longitude\", \"Latitude\"), 4326)::geography", true);
+
                     b.Property<string>("LocationAddress")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -1810,6 +1847,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("IsActive")
                         .HasDatabaseName("IX_TrafficHotspots_IsActive");
+
+                    b.HasIndex("Location")
+                        .HasDatabaseName("IX_TrafficHotspots_Location");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
 
                     b.HasIndex("ReportedByUserId")
                         .HasDatabaseName("IX_TrafficHotspots_ReportedBy");

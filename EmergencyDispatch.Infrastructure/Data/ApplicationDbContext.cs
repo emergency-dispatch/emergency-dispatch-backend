@@ -1,3 +1,4 @@
+using NetTopologySuite.Geometries;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Exceptions;
@@ -119,9 +120,37 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<IncidentTypeDefinition> IncidentTypes => Set<IncidentTypeDefinition>();
     public DbSet<IncidentTypeUnitRule> IncidentTypeUnitRules => Set<IncidentTypeUnitRule>();
 
+    /// <summary>
+    /// Tên cột vị trí PostGIS (shadow property, không lộ ra Domain): geography(Point, 4326) tự sinh từ cột vĩ độ / kinh độ
+    /// </summary>
+    public const string LocationColumn = "Location";
+
+    /// <summary>
+    /// Cột PostGIS geography(Point, 4326) dạng STORED GENERATED từ (kinh độ, vĩ độ) + chỉ mục GiST.
+    /// Ứng dụng vẫn ghi Latitude / Longitude như cũ; PostgreSQL tự cập nhật Location, nên API và luồng ghi không đổi
+    /// </summary>
+    private static void HasGeographyLocation<TEntity>(ModelBuilder modelBuilder, string latColumn, string lngColumn, string indexName)
+        where TEntity : class
+    {
+        modelBuilder.Entity<TEntity>(entity =>
+        {
+            entity.Property<Point>(LocationColumn)
+                  .HasColumnType("geography(Point,4326)")
+                  .HasComputedColumnSql($"ST_SetSRID(ST_MakePoint(\"{lngColumn}\", \"{latColumn}\"), 4326)::geography", stored: true);
+            entity.HasIndex(LocationColumn).HasMethod("gist").HasDatabaseName(indexName);
+        });
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // PostGIS: truy vấn không gian (ST_DWithin / ST_Distance / ST_Covers) trên cột geography có chỉ mục GiST
+        modelBuilder.HasPostgresExtension("postgis");
+        HasGeographyLocation<Incident>(modelBuilder, nameof(Incident.Latitude), nameof(Incident.Longitude), "IX_Incidents_Location");
+        HasGeographyLocation<RescueUnit>(modelBuilder, nameof(RescueUnit.CurrentLat), nameof(RescueUnit.CurrentLng), "IX_RescueUnits_Location");
+        HasGeographyLocation<TrafficHotspot>(modelBuilder, nameof(TrafficHotspot.Latitude), nameof(TrafficHotspot.Longitude), "IX_TrafficHotspots_Location");
+        HasGeographyLocation<Station>(modelBuilder, nameof(Station.Latitude), nameof(Station.Longitude), "IX_Stations_Location");
 
         // ==================== 1. USER ====================
         modelBuilder.Entity<User>(entity =>
@@ -657,7 +686,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.HasKey(r => r.Id);
             entity.Property(r => r.UnitTypeCode).HasMaxLength(50).IsRequired();
             entity.ToTable(t => t.HasCheckConstraint("CK_IncidentTypeUnitRules_Quantity", "\"Quantity\" BETWEEN 1 AND 5"));
-            entity.HasIndex(r => new { r.IncidentTypeId, r.UnitTypeCode, r.MinSeverity })
+            entity.HasIndex(r => new { r.IncidentTypeId, r.UnitTypeCode, r.Severity })
                   .IsUnique()
                   .HasDatabaseName("UQ_IncidentTypeUnitRules_Type_Unit_Severity");
             entity.HasOne(r => r.IncidentType)

@@ -108,12 +108,14 @@ public class IncidentTypesController : ControllerBase
         => this.ToHttpResult(await _catalog.DeleteIncidentTypeAsync(id, cancellationToken));
 
     /// <summary>
-    /// Thay toàn bộ quy tắc loại xe của một loại sự cố (danh sách rỗng = không lọc loại xe khi gợi ý)
+    /// Kế hoạch điều xe theo mức độ (Admin): mỗi Level gồm loại xe × số lượng, tổng ≤ 5.
+    /// VD Level1: 1 xe chữa cháy; Level3: 2 xe chữa cháy + 1 xe thang + 1 xe cấp cứu.
+    /// Dùng cho gợi ý xe, số xe chuẩn BR-14 và AI tự điều phối
     /// </summary>
-    [HttpPut("{id:guid}/unit-rules")]
+    [HttpPut("{id:guid}/dispatch-plan")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentTypeDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponseDto<IncidentTypeDto>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> ReplaceUnitRules(Guid id, [FromBody] ReplaceUnitRulesDto dto, CancellationToken cancellationToken)
-        => this.ToHttpResult(await _catalog.ReplaceUnitRulesAsync(id, dto, cancellationToken));
+    public async Task<IActionResult> UpdateDispatchPlan(Guid id, [FromBody] UpdateDispatchPlanDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _catalog.UpdateDispatchPlanAsync(id, dto, cancellationToken));
 }

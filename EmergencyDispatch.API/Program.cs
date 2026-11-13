@@ -99,7 +99,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
     if (!string.IsNullOrEmpty(connectionString))
     {
-        options.UseNpgsql(connectionString);
+        // PostGIS: kiểu geography / hàm ST_* qua NetTopologySuite
+        options.UseNpgsql(connectionString, npgsql => npgsql.UseNetTopologySuite());
         options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
     }
 });
@@ -215,6 +216,7 @@ builder.Services.AddScoped<IIncidentFollowUpService, IncidentFollowUpService>();
 builder.Services.AddScoped<IFieldRequestService, FieldRequestService>();
 builder.Services.AddScoped<IEquipmentService, EquipmentService>();
 builder.Services.AddScoped<ITypeCatalogService, TypeCatalogService>();
+builder.Services.AddScoped<ISpatialQueryService, EmergencyDispatch.Infrastructure.Services.PostGisSpatialQueryService>();
 builder.Services.AddScoped<IAutoDispatchService, AutoDispatchService>();
 builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();

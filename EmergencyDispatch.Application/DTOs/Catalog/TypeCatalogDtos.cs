@@ -78,7 +78,11 @@ public class IncidentTypeDto
     public bool IsSystem { get; set; }
     public bool IsActive { get; set; }
     public int DisplayOrder { get; set; }
-    public List<UnitRuleDto> UnitRules { get; set; } = new();
+
+    /// <summary>
+    /// Kế hoạch điều xe theo mức độ: luôn đủ Level1, Level2, Level3 (mức chưa cấu hình có units rỗng, totalUnits = 0)
+    /// </summary>
+    public List<DispatchPlanLevelDto> DispatchPlan { get; set; } = new();
 }
 
 public class UpsertIncidentTypeDto
@@ -114,19 +118,40 @@ public class UpsertIncidentTypeDto
 }
 
 /// <summary>
-/// Quy tắc: từ mức độ MinSeverity trở lên cần Quantity xe loại UnitTypeCode; Priority nhỏ = ưu tiên trước
+/// Kế hoạch điều xe của một mức độ: các loại xe và số lượng cần điều (tổng tối đa 5 xe, BR-14)
 /// </summary>
-public class UnitRuleDto
+public class DispatchPlanLevelDto
 {
-    public string UnitTypeCode { get; set; } = string.Empty;
-    public string? UnitTypeName { get; set; }
-    public SeverityLevel MinSeverity { get; set; } = SeverityLevel.Level1;
-    public int Quantity { get; set; } = 1;
-    public int Priority { get; set; }
+    /// <summary>Level1 / Level2 / Level3</summary>
+    public SeverityLevel Severity { get; set; }
+
+    /// <summary>Tổng số xe của mức (chỉ đọc, tính từ units)</summary>
+    public int TotalUnits { get; set; }
+
+    public List<DispatchPlanUnitDto> Units { get; set; } = new();
 }
 
-public class ReplaceUnitRulesDto
+public class DispatchPlanUnitDto
+{
+    /// <summary>Mã loại xe trong danh mục (GET /api/rescue-unit-types)</summary>
+    public string UnitTypeCode { get; set; } = string.Empty;
+
+    /// <summary>Tên loại xe (chỉ đọc, theo Accept-Language)</summary>
+    public string? UnitTypeName { get; set; }
+
+    /// <summary>Số xe loại này (1–5)</summary>
+    public int Quantity { get; set; } = 1;
+
+    /// <summary>Thứ tự điều khi thiếu xe (nhỏ = trước); bỏ trống thì theo thứ tự trong danh sách</summary>
+    public int? Priority { get; set; }
+}
+
+/// <summary>
+/// Thay toàn bộ kế hoạch điều xe của loại sự cố. Mức không gửi hoặc units rỗng = bỏ cấu hình mức đó
+/// (dùng cấu hình mức thấp hơn gần nhất)
+/// </summary>
+public class UpdateDispatchPlanDto
 {
     [Required]
-    public List<UnitRuleDto> Rules { get; set; } = new();
+    public List<DispatchPlanLevelDto> Levels { get; set; } = new();
 }

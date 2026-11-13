@@ -104,33 +104,36 @@ public class TypeCatalogServiceTests
         Assert.Equal(IncidentEventType.FireExplosion, fire.Category);
     }
 
+    private static DispatchPlanLevelDto Level(SeverityLevel severity, params (string Code, int Qty)[] units)
+        => new() { Severity = severity, Units = units.Select(u => new DispatchPlanUnitDto { UnitTypeCode = u.Code, Quantity = u.Qty }).ToList() };
+
     [Fact]
-    public async Task ReplaceUnitRules_ValidatesUnitTypeQuantityAndDuplicates()
+    public async Task UpdateDispatchPlan_ValidatesUnitTypeQuantityDuplicatesAndLevelTotal()
     {
         var type = new IncidentTypeDefinition { Code = "FloodDrowning", NameVi = "Đuối nước", NameEn = "Drowning", Category = IncidentEventType.Other };
         _repo.Setup(x => x.GetIncidentTypeByIdAsync(type.Id, It.IsAny<CancellationToken>())).ReturnsAsync(type);
+        Task<ApiResponseDto<IncidentTypeDto>> Save(params DispatchPlanLevelDto[] levels)
+            => _svc.UpdateDispatchPlanAsync(type.Id, new UpdateDispatchPlanDto { Levels = levels.ToList() });
 
-        var unknown = await _svc.ReplaceUnitRulesAsync(type.Id, new ReplaceUnitRulesDto { Rules = { new UnitRuleDto { UnitTypeCode = "Boat2" } } });
-        var tooMany = await _svc.ReplaceUnitRulesAsync(type.Id, new ReplaceUnitRulesDto { Rules = { new UnitRuleDto { UnitTypeCode = RescueUnitType.Ambulance, Quantity = 9 } } });
-        var dup = await _svc.ReplaceUnitRulesAsync(type.Id, new ReplaceUnitRulesDto
-        {
-            Rules = { new UnitRuleDto { UnitTypeCode = RescueUnitType.Ambulance }, new UnitRuleDto { UnitTypeCode = RescueUnitType.Ambulance } }
-        });
-        var ok = await _svc.ReplaceUnitRulesAsync(type.Id, new ReplaceUnitRulesDto
-        {
-            Rules =
-            {
-                new UnitRuleDto { UnitTypeCode = RescueUnitType.Ambulance, MinSeverity = SeverityLevel.Level2, Quantity = 1, Priority = 2 },
-                new UnitRuleDto { UnitTypeCode = RescueUnitType.FireTruck, MinSeverity = SeverityLevel.Level1, Quantity = 2, Priority = 1 }
-            }
-        });
+        Assert.False((await Save(Level(SeverityLevel.Level1, ("Boat2", 1)))).Success);                                     // loại xe không có
+        Assert.False((await Save(Level(SeverityLevel.Level1, (RescueUnitType.Ambulance, 9)))).Success);                    // số lượng > 5
+        Assert.False((await Save(Level(SeverityLevel.Level1, (RescueUnitType.Ambulance, 1), (RescueUnitType.Ambulance, 1)))).Success); // trùng loại trong mức
+        Assert.False((await Save(Level(SeverityLevel.Level3, (RescueUnitType.Ambulance, 3), (RescueUnitType.FireTruck, 3)))).Success); // tổng 6 > 5
+        Assert.False((await Save(Level(SeverityLevel.Level1, (RescueUnitType.Ambulance, 1)), Level(SeverityLevel.Level1, (RescueUnitType.FireTruck, 1)))).Success); // lặp mức
+        Assert.False((await Save(Level(SeverityLevel.Unclassified, (RescueUnitType.Ambulance, 1)))).Success);              // Level 0
 
-        Assert.False(unknown.Success);
-        Assert.False(tooMany.Success);
-        Assert.False(dup.Success);
+        // Level 1: 1 xe chữa cháy; Level 3: 2 xe chữa cháy + 1 xe cấp cứu; Level 2 bỏ trống
+        var ok = await Save(
+            Level(SeverityLevel.Level1, (RescueUnitType.FireTruck, 1)),
+            Level(SeverityLevel.Level3, (RescueUnitType.FireTruck, 2), (RescueUnitType.Ambulance, 1)));
+
         Assert.True(ok.Success);
-        Assert.Equal(new[] { RescueUnitType.FireTruck, RescueUnitType.Ambulance }, ok.Data!.UnitRules.Select(r => r.UnitTypeCode));
-        Assert.Equal(2, type.UnitRules.Count);
+        var plan = ok.Data!.DispatchPlan;
+        Assert.Equal(new[] { SeverityLevel.Level1, SeverityLevel.Level2, SeverityLevel.Level3 }, plan.Select(l => l.Severity));
+        Assert.Equal(new[] { 1, 0, 3 }, plan.Select(l => l.TotalUnits));
+        Assert.Equal(new[] { RescueUnitType.FireTruck, RescueUnitType.Ambulance }, plan[2].Units.Select(u => u.UnitTypeCode));
+        Assert.Contains(plan[2].Units[1].UnitTypeName, new[] { "Xe cấp cứu", "Ambulance" });   // tên theo Accept-Language
+        Assert.Equal(3, type.UnitRules.Count);
     }
 }
 
@@ -139,23 +142,29 @@ public class TypeCatalogServiceTests
 /// </summary>
 public class UnitRuleScoringTests
 {
-    private static IncidentTypeUnitRule Rule(string unit, SeverityLevel min, int qty = 1, int priority = 0)
-        => new() { UnitTypeCode = unit, MinSeverity = min, Quantity = qty, Priority = priority };
+    private static IncidentTypeUnitRule Rule(string unit, SeverityLevel level, int qty = 1, int priority = 0)
+        => new() { UnitTypeCode = unit, Severity = level, Quantity = qty, Priority = priority };
 
     [Fact]
-    public void MatchingUnitTypes_UsesRulesUpToSeverity()
+    public void MatchingUnitTypes_UsesExactLevelPlan_MissingLevelUsesNearestLower()
     {
         var rules = new List<IncidentTypeUnitRule>
         {
             Rule(RescueUnitType.FireTruck, SeverityLevel.Level1, priority: 1),
+            Rule(RescueUnitType.FireTruck, SeverityLevel.Level3, qty: 2, priority: 1),
             Rule(RescueUnitType.Ambulance, SeverityLevel.Level3, priority: 2)
         };
 
+        var l1 = DispatchScoring.MatchingUnitTypes(rules, IncidentEventType.FireExplosion, Array.Empty<string>(), "", SeverityLevel.Level1);
         var l2 = DispatchScoring.MatchingUnitTypes(rules, IncidentEventType.FireExplosion, Array.Empty<string>(), "", SeverityLevel.Level2);
         var l3 = DispatchScoring.MatchingUnitTypes(rules, IncidentEventType.FireExplosion, Array.Empty<string>(), "", SeverityLevel.Level3);
 
-        Assert.Equal(new[] { RescueUnitType.FireTruck }, l2!.ToArray());
+        Assert.Equal(new[] { RescueUnitType.FireTruck }, l1!.ToArray());
+        Assert.Equal(new[] { RescueUnitType.FireTruck }, l2!.ToArray());                // Level 2 chưa cấu hình → dùng Level 1
         Assert.Equal(new[] { RescueUnitType.FireTruck, RescueUnitType.Ambulance }.OrderBy(x => x), l3!.OrderBy(x => x));
+        Assert.Equal(1, DispatchScoring.PlannedUnitCount(rules, SeverityLevel.Level2));
+        Assert.Equal(3, DispatchScoring.PlannedUnitCount(rules, SeverityLevel.Level3));
+        Assert.Null(DispatchScoring.PlannedUnitCount(Array.Empty<IncidentTypeUnitRule>(), SeverityLevel.Level3));
     }
 
     [Fact]
@@ -346,17 +355,41 @@ public class AutoDispatchServiceTests
     }
 
     [Fact]
-    public async Task Level2_PicksOneUnitFromHighestPriorityRuleWithUnits()
+    public async Task Level2_FollowsAdminPlan_MarksPartialWhenShortOfUnits()
     {
+        // Kế hoạch Level 2: 1 xe thang + 2 xe chữa cháy (3 xe). Hết xe thang → điều 2 xe chữa cháy, ghi chú thiếu xe
         var inc = Fire(severity: SeverityLevel.Level2);
         _dispatch.Setup(d => d.GetUnitRulesAsync(inc, It.IsAny<CancellationToken>())).ReturnsAsync(new List<IncidentTypeUnitRule>
         {
-            new() { UnitTypeCode = RescueUnitType.LadderTruck, MinSeverity = SeverityLevel.Level1, Quantity = 1, Priority = 1 },
-            new() { UnitTypeCode = RescueUnitType.FireTruck, MinSeverity = SeverityLevel.Level1, Quantity = 2, Priority = 2 }
+            new() { UnitTypeCode = RescueUnitType.FireTruck, Severity = SeverityLevel.Level1, Quantity = 1, Priority = 1 },
+            new() { UnitTypeCode = RescueUnitType.LadderTruck, Severity = SeverityLevel.Level2, Quantity = 1, Priority = 1 },
+            new() { UnitTypeCode = RescueUnitType.FireTruck, Severity = SeverityLevel.Level2, Quantity = 2, Priority = 2 }
         });
-        Recommend(RescueUnitType.LadderTruck);                 // hết xe thang
-        var truck = Guid.NewGuid();
-        Recommend(RescueUnitType.FireTruck, truck, Guid.NewGuid());
+        Recommend(RescueUnitType.LadderTruck);
+        var trucks = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        Recommend(RescueUnitType.FireTruck, trucks);
+        AssignDispatchDto? sent = null;
+        _dispatch.Setup(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()))
+            .Callback<AssignDispatchDto, CancellationToken>((dto, _) => sent = dto)
+            .ReturnsAsync(ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(new List<DispatchAssignmentResponseDto>()));
+
+        Assert.Equal(AutoDispatchOutcome.Dispatched, await _svc.TryAutoDispatchAsync(inc.Id));
+
+        Assert.Equal(trucks.Take(2), sent!.GetUnitIds());
+        Assert.Equal(AutoDispatchService.PartialNote, inc.AutoDispatchNote);
+    }
+
+    [Fact]
+    public async Task Level1_PlanOfOneUnit_DispatchesExactlyOne()
+    {
+        var inc = Fire(severity: SeverityLevel.Level1);
+        _dispatch.Setup(d => d.GetUnitRulesAsync(inc, It.IsAny<CancellationToken>())).ReturnsAsync(new List<IncidentTypeUnitRule>
+        {
+            new() { UnitTypeCode = RescueUnitType.FireTruck, Severity = SeverityLevel.Level1, Quantity = 1, Priority = 1 },
+            new() { UnitTypeCode = RescueUnitType.Ambulance, Severity = SeverityLevel.Level3, Quantity = 1, Priority = 2 }
+        });
+        var nearest = Guid.NewGuid();
+        Recommend(RescueUnitType.FireTruck, nearest, Guid.NewGuid());
         AssignDispatchDto? sent = null;
         _dispatch.Setup(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()))
             .Callback<AssignDispatchDto, CancellationToken>((dto, _) => sent = dto)
@@ -364,7 +397,8 @@ public class AutoDispatchServiceTests
 
         await _svc.TryAutoDispatchAsync(inc.Id);
 
-        Assert.Equal(new[] { truck }, sent!.GetUnitIds());
+        Assert.Equal(new[] { nearest }, sent!.GetUnitIds());
+        Assert.Equal(AutoDispatchService.DispatchedNote, inc.AutoDispatchNote);
     }
 
     [Fact]
@@ -373,8 +407,8 @@ public class AutoDispatchServiceTests
         var inc = Fire(severity: SeverityLevel.Level3);
         _dispatch.Setup(d => d.GetUnitRulesAsync(inc, It.IsAny<CancellationToken>())).ReturnsAsync(new List<IncidentTypeUnitRule>
         {
-            new() { UnitTypeCode = RescueUnitType.FireTruck, MinSeverity = SeverityLevel.Level1, Quantity = 4, Priority = 1 },
-            new() { UnitTypeCode = RescueUnitType.Ambulance, MinSeverity = SeverityLevel.Level3, Quantity = 3, Priority = 2 }
+            new() { UnitTypeCode = RescueUnitType.FireTruck, Severity = SeverityLevel.Level3, Quantity = 4, Priority = 1 },
+            new() { UnitTypeCode = RescueUnitType.Ambulance, Severity = SeverityLevel.Level3, Quantity = 3, Priority = 2 }
         });
         var trucks = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray();
         var ambulances = Enumerable.Range(0, 3).Select(_ => Guid.NewGuid()).ToArray();

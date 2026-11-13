@@ -14,5 +14,5 @@ public interface ITypeCatalogService
     Task<ApiResponseDto<IncidentTypeDto>> CreateIncidentTypeAsync(UpsertIncidentTypeDto dto, CancellationToken cancellationToken = default);
     Task<ApiResponseDto<IncidentTypeDto>> UpdateIncidentTypeAsync(Guid id, UpsertIncidentTypeDto dto, CancellationToken cancellationToken = default);
     Task<ApiResponseDto<bool>> DeleteIncidentTypeAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<ApiResponseDto<IncidentTypeDto>> ReplaceUnitRulesAsync(Guid incidentTypeId, ReplaceUnitRulesDto dto, CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<IncidentTypeDto>> UpdateDispatchPlanAsync(Guid incidentTypeId, UpdateDispatchPlanDto dto, CancellationToken cancellationToken = default);
 }

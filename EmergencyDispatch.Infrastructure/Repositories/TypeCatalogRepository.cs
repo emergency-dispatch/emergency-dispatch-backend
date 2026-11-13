@@ -62,7 +62,7 @@ public class TypeCatalogRepository : ITypeCatalogRepository
         => await _context.IncidentTypeUnitRules
             .AsNoTracking()
             .Where(r => r.IncidentType!.Code == incidentTypeCode)
-            .OrderBy(r => r.Priority).ThenBy(r => r.MinSeverity)
+            .OrderBy(r => r.Severity).ThenBy(r => r.Priority)
             .ToListAsync(cancellationToken);
 
     public void RemoveUnitRules(IEnumerable<IncidentTypeUnitRule> rules) => _context.IncidentTypeUnitRules.RemoveRange(rules);
