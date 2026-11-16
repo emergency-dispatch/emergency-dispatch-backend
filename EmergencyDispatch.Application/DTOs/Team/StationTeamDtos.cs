@@ -30,6 +30,17 @@ public class StationTeamDto
     /// Tổ dưới 2 người → cảnh báo thiếu người khi giao xe
     /// </summary>
     public bool IsUnderstaffed { get; set; }
+
+    /// <summary>
+    /// Chức năng của tổ = các loại xe tổ phụ trách (VD FireTruck, Ambulance); dùng để khớp kế hoạch điều phối
+    /// </summary>
+    public List<string> Functions { get; set; } = new();
+
+    /// <summary>
+    /// Tổ đủ điều kiện nhận phân công: có ít nhất một nhân viên cứu hộ đang hoạt động và có xe (có chức năng).
+    /// Chưa xét tổ đang bận nhiệm vụ
+    /// </summary>
+    public bool CanBeAssigned { get; set; }
 }
 
 public class StationTeamMemberDto

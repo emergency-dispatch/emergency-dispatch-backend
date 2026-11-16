@@ -249,7 +249,7 @@ public class AutoDispatchService : IAutoDispatchService
     }
 
     /// <summary>
-    /// Chọn xe theo kế hoạch điều xe của mức độ (Admin cấu hình: loại xe × số lượng), loại ưu tiên trước, xe gần nhất trước, tối đa 5.
+    /// Chọn tổ theo kế hoạch điều phối của mức độ (Admin cấu hình: chức năng × số tổ), loại ưu tiên trước, xe gần nhất trước, tối đa 5.
     /// Chưa có kế hoạch → một xe gần nhất theo luật dự phòng. Trả kèm số xe kế hoạch để biết có thiếu xe không
     /// </summary>
     private async Task<(List<Guid> Units, int Planned)> PickUnitsAsync(Incident incident, CancellationToken cancellationToken)
@@ -260,15 +260,21 @@ public class AutoDispatchService : IAutoDispatchService
             : new List<(string? Code, int Need)> { (null, 1) };
         var planned = Math.Min(plan.Sum(p => p.Need), DispatchScoring.MaxUnitsPerLevel);
         var chosen = new List<Guid>();
+        var chosenTeams = new HashSet<Guid>();
 
+        // Giao theo tổ: mỗi chức năng trong kế hoạch là các tổ khác nhau (mỗi tổ mang một xe đúng loại), tổ gần nhất trước
         foreach (var (code, need) in plan)
         {
             if (chosen.Count >= planned) break;
+            var remaining = need;
             var recommendations = await _dispatchService.GetRecommendationsAsync(incident.Id, DispatchAlgorithm.NearestAvailable, code, null, cancellationToken);
-            chosen.AddRange((recommendations.Data ?? new List<RecommendedUnitResponseDto>())
-                .Select(r => r.RescueUnitId)
-                .Where(id => !chosen.Contains(id))
-                .Take(Math.Min(need, planned - chosen.Count)));
+            foreach (var r in recommendations.Data ?? new List<RecommendedUnitResponseDto>())
+            {
+                if (chosen.Count >= planned || remaining <= 0) break;
+                if (chosen.Contains(r.RescueUnitId) || !chosenTeams.Add(r.StationTeamId)) continue;
+                chosen.Add(r.RescueUnitId);
+                remaining--;
+            }
         }
 
         return (chosen, planned);

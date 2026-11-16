@@ -21,6 +21,12 @@ public class AssignDispatchDto
     public Guid? RescueUnitId { get; set; }
 
     /// <summary>
+    /// Giao theo tổ: mỗi phần tử là một tổ và chức năng (loại xe) tổ đảm nhận; hệ thống chọn xe sẵn sàng gần nhất
+    /// đúng loại của tổ đó. Có thể dùng cùng / thay cho RescueUnitIds (chọn xe cụ thể của tổ)
+    /// </summary>
+    public List<TeamAssignmentDto>? Teams { get; set; }
+
+    /// <summary>
     /// Thuật toán gợi ý Operator đã dùng khi chọn xe (lưu làm dữ liệu thực nghiệm RQ2)
     /// </summary>
     public DispatchAlgorithm? Algorithm { get; set; }
@@ -52,4 +58,19 @@ public class AssignDispatchDto
         if (RescueUnitId.HasValue) ids.Add(RescueUnitId.Value);
         return ids.Where(id => id != Guid.Empty).Distinct().ToList();
     }
+}
+
+/// <summary>
+/// Một tổ được giao trong lệnh điều phối
+/// </summary>
+public class TeamAssignmentDto
+{
+    [Required(ErrorMessage = "Mã tổ (TeamId) là bắt buộc.")]
+    public Guid TeamId { get; set; }
+
+    /// <summary>
+    /// Chức năng tổ đảm nhận = mã loại xe tổ mang theo (VD FireTruck). Bỏ trống → loại xe đầu tiên của tổ khớp kế hoạch điều phối
+    /// </summary>
+    [MaxLength(50)]
+    public string? UnitType { get; set; }
 }

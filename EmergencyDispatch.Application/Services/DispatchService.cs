@@ -136,6 +136,9 @@ public class DispatchService : IDispatchService
             });
         var tasksByUnit = activeAssignments.GroupBy(a => a.RescueUnitId).ToDictionary(g => g.Key, g => g.Count());
 
+        // Giao theo tổ: chỉ tổ có nhân viên cứu hộ đang hoạt động và không đang làm nhiệm vụ khác mới được gợi ý
+        var teamPool = await LoadTeamPoolAsync(allUnits, activeAssignments, cancellationToken);
+
         // BR-DSP-01 / BR-20: chỉ xe Available, đúng chủng loại, không có nhiệm vụ đang chạy mới được gợi ý
         // Nearest-Available: khoảng cách từ PostGIS (ST_DWithin trong nấc bán kính lớn nhất + ST_Distance);
         // không có truy vấn không gian (VD test) → Haversine
@@ -143,10 +146,14 @@ public class DispatchService : IDispatchService
         var eligible = allUnits
             .Where(u => u.Status == RescueUnitStatus.Available && !tasksByUnit.ContainsKey(u.Id))
             .Where(u => matchingTypes == null || matchingTypes.Contains(u.UnitType))
+            .Where(u => teamPool.Problem(u) == TeamProblem.None)
             .Where(u => postgisMeters == null || postgisMeters.ContainsKey(u.Id))
             .Select(u => (Unit: u, DistanceKm: postgisMeters != null
                 ? postgisMeters[u.Id] / 1000.0
                 : CalculateDistanceKm(incident.Latitude, incident.Longitude, u.CurrentLat, u.CurrentLng)))
+            // Mỗi tổ một dòng cho mỗi chức năng: giữ xe gần nhất của tổ thuộc loại đó
+            .GroupBy(c => (c.Unit.StationTeamId, c.Unit.UnitType))
+            .Select(g => g.OrderBy(c => c.DistanceKm).First())
             .ToList();
 
         // Quãng đường / thời gian theo đường bộ thật cho các xe gần nhất (một lần gọi OSRM /table)
@@ -180,8 +187,12 @@ public class DispatchService : IDispatchService
                     ? $"Nearest-Available: {distanceText} (~{eta:F0} phút)."
                     : $"Load-Aware: {distanceText}, tải trạm {stats.Load:P0}, trạm đang xử lý {stats.Missions} sự cố. Cost = {cost:F3}.";
 
+                var team = teamPool.Teams[c.Unit.StationTeamId!.Value];
                 return new RecommendedUnitResponseDto
                 {
+                    StationTeamId = team.TeamId,
+                    StationTeamName = team.Name,
+                    TeamStaffCount = team.ActiveStaffCount,
                     RescueUnitId = c.Unit.Id,
                     PlateNumber = c.Unit.PlateNumber,
                     UnitType = c.Unit.UnitType,
@@ -214,12 +225,12 @@ public class DispatchService : IDispatchService
 
             return ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
                 ranked,
-                LocalizationHelper.Localize("Đề xuất theo '{0}' trong bán kính {1} km: {2} phương tiện phù hợp.", algorithm, radiusKm, ranked.Count));
+                LocalizationHelper.Localize("Đề xuất theo '{0}' trong bán kính {1} km: {2} tổ phù hợp.", algorithm, radiusKm, ranked.Count));
         }
 
         return ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
             new List<RecommendedUnitResponseDto>(),
-            LocalizationHelper.Localize("Không có phương tiện phù hợp đang sẵn sàng trong bán kính {0} km.", radii[^1]));
+            LocalizationHelper.Localize("Không có tổ phù hợp (có nhân viên, có xe đúng chức năng đang sẵn sàng) trong bán kính {0} km.", radii[^1]));
     }
 
     public async Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetAvailableUnitsNearbyAsync(
@@ -293,10 +304,12 @@ public class DispatchService : IDispatchService
         CancellationToken cancellationToken)
     {
         var unitIds = dto.GetUnitIds();
-        if (unitIds.Count == 0)
+        var teamItems = (dto.Teams ?? new List<TeamAssignmentDto>()).Where(t => t.TeamId != Guid.Empty).ToList();
+        if (unitIds.Count == 0 && teamItems.Count == 0)
         {
-            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult("Cần chọn ít nhất một phương tiện cứu hộ.");
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult("Cần chọn ít nhất một tổ cứu hộ.");
         }
+        var requestedCount = unitIds.Count + teamItems.Count;
 
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(dto.IncidentId, cancellationToken);
         if (incident == null)
@@ -348,10 +361,10 @@ public class DispatchService : IDispatchService
 
         var overrideAllowed = incident.Severity != SeverityLevel.Level3
                               && (dto.FieldRequestId.HasValue || (dto.AllowExtraUnits && (dto.Notes?.Trim().Length ?? 0) >= 5));
-        if (activeCount + unitIds.Count > maxUnits && !overrideAllowed)
+        if (activeCount + requestedCount > maxUnits && !overrideAllowed)
         {
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
-                LocalizationHelper.Localize("Sự cố {0} chỉ được điều tối đa {1} xe (đang có {2} xe).", incident.Severity, maxUnits, activeCount) +
+                LocalizationHelper.Localize("Sự cố {0} chỉ được giao tối đa {1} tổ (đang có {2} tổ).", incident.Severity, maxUnits, activeCount) +
                 (incident.Severity == SeverityLevel.Level3 ? string.Empty : " " + LocalizationHelper.Localize("Đặt allowExtraUnits = true và ghi lý do vào notes nếu cần thêm xe.")));
         }
 
@@ -371,6 +384,62 @@ public class DispatchService : IDispatchService
             }
 
             units.Add(unit);
+        }
+
+        // Giao theo tổ: tổ phải có nhân viên cứu hộ, không đang làm nhiệm vụ khác; mỗi tổ đảm nhận một chức năng (một xe)
+        var allUnits = (await _rescueUnitRepository.GetAllWithStationAsync()).Where(u => !u.IsDeleted).ToList();
+        var activeAll = await _assignmentRepository.GetAllActiveAsync();
+        var teamPool = await LoadTeamPoolAsync(allUnits, activeAll, cancellationToken);
+        if (teamItems.Count > 0)
+        {
+            var busyUnitIds = activeAll.Select(a => a.RescueUnitId).ToHashSet();
+            var planTypes = await MatchingUnitTypesAsync(incident, cancellationToken);
+            foreach (var item in teamItems)
+            {
+                var type = string.IsNullOrWhiteSpace(item.UnitType) ? null : item.UnitType.Trim();
+                var teamUnits = allUnits.Where(u => u.StationTeamId == item.TeamId).ToList();
+                if (teamUnits.Count == 0)
+                {
+                    return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
+                        LocalizationHelper.Localize("Tổ \"{0}\" không tồn tại hoặc chưa phụ trách xe nào nên không có chức năng để nhận sự cố.", item.TeamId));
+                }
+
+                var pick = teamUnits
+                    .Where(u => u.Status == RescueUnitStatus.Available && !busyUnitIds.Contains(u.Id) && units.All(x => x.Id != u.Id))
+                    .Where(u => type != null ? u.UnitType == type : planTypes == null || planTypes.Contains(u.UnitType))
+                    .OrderBy(u => CalculateDistanceKm(incident.Latitude, incident.Longitude, u.CurrentLat, u.CurrentLng))
+                    .FirstOrDefault();
+                if (pick == null)
+                {
+                    return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
+                        LocalizationHelper.Localize("Tổ \"{0}\" không có xe {1} đang sẵn sàng.", teamPool.NameOf(item.TeamId), type ?? LocalizationHelper.Localize("đúng chức năng")));
+                }
+
+                units.Add(await _rescueUnitRepository.GetByIdWithDetailsAsync(pick.Id) ?? pick);
+            }
+        }
+
+        var assignedTeams = new HashSet<Guid>();
+        foreach (var unit in units)
+        {
+            switch (teamPool.Problem(unit))
+            {
+                case TeamProblem.NoTeam:
+                    return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
+                        LocalizationHelper.Localize("Xe {0} chưa thuộc tổ nào. Sự cố được giao theo tổ: gán xe vào một tổ có nhân viên trước khi điều phối.", unit.PlateNumber));
+                case TeamProblem.NoStaff:
+                    return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
+                        LocalizationHelper.Localize("Tổ \"{0}\" chưa có nhân viên cứu hộ đang hoạt động nên không thể nhận phân công.", teamPool.NameOf(unit.StationTeamId)));
+                case TeamProblem.Busy:
+                    return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(
+                        LocalizationHelper.Localize("Tổ \"{0}\" đang thực hiện nhiệm vụ khác (hoặc xe của tổ chưa về trạm), không nhận thêm sự cố.", teamPool.NameOf(unit.StationTeamId)));
+            }
+
+            if (!assignedTeams.Add(unit.StationTeamId!.Value))
+            {
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(
+                    LocalizationHelper.Localize("Tổ \"{0}\" được chọn nhiều lần. Mỗi tổ chỉ đảm nhận một chức năng (một xe) trong sự cố.", teamPool.NameOf(unit.StationTeamId)));
+            }
         }
 
         // BR-DSP-01 / MSG32: giữ chỗ từng xe một cách nguyên tử; nếu một xe vừa bị Operator khác giao thì hoàn tác toàn bộ
@@ -416,6 +485,7 @@ public class DispatchService : IDispatchService
             {
                 IncidentId = incident.Id,
                 RescueUnitId = unit.Id,
+                StationTeamId = unit.StationTeamId,
                 DispatchedAt = now,
                 Status = DispatchAssignmentStatus.Dispatched,
                 Notes = dto.Notes?.Trim(),
@@ -442,6 +512,7 @@ public class DispatchService : IDispatchService
         }
 
         var plates = string.Join(", ", units.Select(u => u.PlateNumber));
+        var teamsText = string.Join(", ", units.Select(u => $"{teamPool.NameOf(u.StationTeamId)} ({u.PlateNumber})"));
         if (oldIncidentStatus == IncidentStatus.Escalated)
         {
             await DeEscalateAsync(incident, operatorId, $"đã điều xe {plates}", cancellationToken);
@@ -453,7 +524,7 @@ public class DispatchService : IDispatchService
             NewStatus = incident.Status,
             ChangedByUserId = operatorId,
             ChangedByRole = actorRole,
-            Notes = $"Phát lệnh điều phối {units.Count} phương tiện: {plates}."
+            Notes = $"Giao sự cố cho {units.Count} tổ: {teamsText}."
         }, cancellationToken);
 
         await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
@@ -462,13 +533,14 @@ public class DispatchService : IDispatchService
             ActorId = operatorId,
             ActorRole = actorRole,
             Action = activeCount > 0 ? AuditAction.ReDispatched : AuditAction.Dispatched,
-            Description = $"Điều phối {units.Count} phương tiện: {plates}",
+            Description = $"Giao sự cố cho {units.Count} tổ: {teamsText}",
             NewStateJson = JsonSerializer.Serialize(new
             {
+                teamIds = units.Select(u => u.StationTeamId),
                 unitIds = units.Select(u => u.Id),
                 plates = units.Select(u => u.PlateNumber),
                 algorithm = dto.Algorithm?.ToString(),
-                extraUnitsOverride = overrideAllowed && activeCount + unitIds.Count > maxUnits,
+                extraUnitsOverride = overrideAllowed && activeCount + units.Count > maxUnits,
                 dispatchTimeMs = incident.DispatchTimeMs
             })
         }, cancellationToken);
@@ -496,6 +568,10 @@ public class DispatchService : IDispatchService
         var dtos = assignments
             .Select(a => MapToAssignmentDto(a, incident, units.First(u => u.Id == a.RescueUnitId)))
             .ToList();
+        foreach (var assignmentDto in dtos)
+        {
+            assignmentDto.StationTeamName ??= teamPool.NameOf(assignmentDto.StationTeamId);
+        }
 
         foreach (var assignmentDto in dtos)
         {
@@ -515,7 +591,7 @@ public class DispatchService : IDispatchService
             {
                 Type = NotificationType.JobAssigned,
                 Title = $"LỆNH ĐIỀU PHỐI {incident.Severity}",
-                Message = $"{incident.Title} — {incident.LocationAddress}. Xe: {string.Join(", ", crewGroup.Select(u => u.PlateNumber))}.",
+                Message = $"{incident.Title} — {incident.LocationAddress}. {teamPool.NameOf(crewGroup.Key.StationTeamId)}, xe: {string.Join(", ", crewGroup.Select(u => u.PlateNumber))}.",
                 IncidentId = incident.Id,
                 Data = new { assignmentIds = assignments.Where(a => crewGroup.Any(u => u.Id == a.RescueUnitId)).Select(a => a.Id) },
                 HighPriority = true
@@ -565,7 +641,7 @@ public class DispatchService : IDispatchService
 
         return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(
             dtos,
-            LocalizationHelper.Localize("Đã phát lệnh điều phối {0} phương tiện: {1}.", units.Count, plates));
+            LocalizationHelper.Localize("Đã giao sự cố cho {0} tổ: {1}.", units.Count, teamsText));
     }
 
     public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> RejectAssignmentAsync(
@@ -1411,6 +1487,50 @@ public class DispatchService : IDispatchService
 
     #region Private Helper Methods
 
+    private enum TeamProblem { None, NoTeam, NoStaff, Busy }
+
+    /// <summary>
+    /// Tình trạng các tổ khi điều phối: số nhân viên đang hoạt động và tổ đang bận
+    /// (có lượt điều phối đang chạy, hoặc xe của tổ đang đi / ở hiện trường / quay về trạm)
+    /// </summary>
+    private sealed class TeamPoolSnapshot
+    {
+        public required IReadOnlyDictionary<Guid, TeamDispatchInfo> Teams { get; init; }
+        public required IReadOnlySet<Guid> BusyTeams { get; init; }
+
+        public TeamProblem Problem(RescueUnit unit)
+        {
+            if (unit.StationTeamId is not Guid teamId) return TeamProblem.NoTeam;
+            if (!Teams.TryGetValue(teamId, out var info) || info.ActiveStaffCount == 0) return TeamProblem.NoStaff;
+            return BusyTeams.Contains(teamId) ? TeamProblem.Busy : TeamProblem.None;
+        }
+
+        public string NameOf(Guid? teamId)
+            => teamId is Guid id && Teams.TryGetValue(id, out var info) ? info.Name : teamId?.ToString() ?? "-";
+    }
+
+    private async Task<TeamPoolSnapshot> LoadTeamPoolAsync(
+        IReadOnlyList<RescueUnit> allUnits, IReadOnlyList<DispatchAssignment> activeAssignments, CancellationToken cancellationToken)
+    {
+        var teamOfUnit = allUnits.ToDictionary(u => u.Id, u => u.StationTeamId);
+        var busy = activeAssignments
+            .Select(a => a.StationTeamId ?? (teamOfUnit.TryGetValue(a.RescueUnitId, out var t) ? t : null))
+            .OfType<Guid>()
+            .ToHashSet();
+        busy.UnionWith(allUnits
+            .Where(u => u.Status is RescueUnitStatus.Dispatched or RescueUnitStatus.OnScene or RescueUnitStatus.Returning)
+            .Select(u => u.StationTeamId)
+            .OfType<Guid>());
+
+        var teamIds = allUnits.Select(u => u.StationTeamId).OfType<Guid>().Distinct().ToList();
+        var infos = await _teamRepository.GetDispatchInfoAsync(teamIds, cancellationToken) ?? Array.Empty<TeamDispatchInfo>();
+        return new TeamPoolSnapshot
+        {
+            Teams = infos.GroupBy(i => i.TeamId).ToDictionary(g => g.Key, g => g.First()),
+            BusyTeams = busy
+        };
+    }
+
     private static double CalculateDistanceKm(double lat1, double lon1, double lat2, double lon2)
     {
         if (lat1 == 0 || lon1 == 0 || lat2 == 0 || lon2 == 0) return 999.0;
@@ -1470,6 +1590,8 @@ public class DispatchService : IDispatchService
             IncidentSeverity = incident?.Severity ?? SeverityLevel.Unclassified,
             RescueUnitId = assignment.RescueUnitId,
             RescueUnit = unitDto,
+            StationTeamId = assignment.StationTeamId ?? unit?.StationTeamId,
+            StationTeamName = assignment.StationTeam?.Name,
             DispatchedAt = assignment.DispatchedAt,
             AcceptedAt = assignment.AcceptedAt,
             ArrivedAt = assignment.ArrivedAt,

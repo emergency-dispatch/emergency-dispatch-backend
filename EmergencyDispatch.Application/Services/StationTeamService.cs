@@ -324,6 +324,9 @@ public class StationTeamService : IStationTeamService
         RescueUnitId = UnitsOf(team).FirstOrDefault()?.Id,
         RescueUnitPlate = UnitsOf(team).FirstOrDefault()?.PlateNumber,
         IsUnderstaffed = team.Members.Count < MinTeamSize,
+        Functions = UnitsOf(team).Select(u => u.UnitType).Distinct().OrderBy(t => t).ToList(),
+        CanBeAssigned = UnitsOf(team).Any()
+                        && team.Members.Any(m => m.Staff is { IsDeleted: false, Role: UserRole.RescueStaff, Status: UserStatus.Active }),
         Members = team.Members
             .OrderBy(m => m.CrewRole)
             .ThenBy(m => m.Staff?.FullName)

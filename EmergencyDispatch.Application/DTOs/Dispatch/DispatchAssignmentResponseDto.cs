@@ -24,6 +24,12 @@ public class DispatchAssignmentResponseDto
     public Guid RescueUnitId { get; set; }
     public RescueUnitResponseDto? RescueUnit { get; set; }
 
+    /// <summary>
+    /// Tổ được phân công (sự cố giao theo tổ; xe là phương tiện tổ mang theo). null = lượt cũ của xe chưa gán tổ
+    /// </summary>
+    public Guid? StationTeamId { get; set; }
+    public string? StationTeamName { get; set; }
+
     public DateTime DispatchedAt { get; set; }
     public DateTime? AcceptedAt { get; set; }
     public DateTime? ArrivedAt { get; set; }

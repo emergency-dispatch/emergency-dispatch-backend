@@ -1374,3 +1374,39 @@ API trả về không đổi (vẫn `latitude` / `longitude`).
 - Có `boundaryGeoJson` thì SOS được kiểm tra trong / ngoài theo **đa giác**. Khoảng cách ngoài vùng tính bằng PostGIS; ngoài vùng vẫn trả 422 như cũ. Không có thì dùng tâm + bán kính như trước.
 - Gợi ý màn hình: vẽ đa giác trên Mapbox (mapbox-gl-draw) rồi gửi `JSON.stringify(feature.geometry)`; hiển thị lại đa giác khi đọc cài đặt.
 - GeoJSON không phải đa giác hợp lệ → 400.
+
+## 34. Cập nhật 17/11/2026: giao sự cố theo tổ (không giao theo xe) + sửa vị trí SOS bị ghi đè
+
+Backend đổi cách điều phối: **sự cố được giao cho tổ**, xe chỉ là phương tiện tổ mang theo. Web và mobile làm như nhau.
+
+**Quy tắc backend đã áp dụng:**
+- Chức năng của tổ = các loại xe tổ phụ trách (VD tổ có xe chữa cháy + xe cấp cứu thì có hai chức năng).
+- Chỉ tổ có **ít nhất một nhân viên cứu hộ đang hoạt động** và có xe đúng chức năng đang `Available` mới được gợi ý / giao.
+- **Xe chưa gán tổ không điều phối được nữa** (400). Operator phải gán xe vào tổ có nhân viên trước. Dữ liệu seed chưa có tổ nào, nên môi trường mới phải tạo tổ trước khi thử điều phối.
+- Mỗi tổ chỉ đảm nhận **một chức năng (một xe)** trong một sự cố. Chọn hai xe cùng tổ → 400.
+- Tổ đang có lượt điều phối chạy, hoặc có xe đang đi / ở hiện trường / quay về trạm → coi là **bận**, giao thêm → 409.
+- Kế hoạch điều phối theo mức (mục 32) giữ nguyên API, nhưng **`quantity` nay là số tổ** của chức năng đó (mỗi tổ mang một xe). Ví dụ Cháy L2: `FireTruck × 2` = 2 tổ chữa cháy. Màn Admin nên đổi nhãn "Số xe" → "Số tổ".
+- AI tự điều phối chọn các tổ khác nhau theo kế hoạch.
+
+**Thay đổi API:**
+- `GET /api/dispatch/recommend`: mỗi dòng = một tổ + xe gần nhất của tổ cho một chức năng. Trường mới: `stationTeamId`, `stationTeamName`, `teamStaffCount`. Một tổ có hai chức năng phù hợp sẽ có hai dòng (FE nên gom theo `stationTeamId`, cho chọn một chức năng mỗi tổ).
+- `POST /api/dispatch/assign`: thêm `teams: [{ teamId, unitType? }]`. Backend tự chọn xe sẵn sàng gần nhất đúng `unitType` của tổ; bỏ `unitType` thì lấy loại xe đầu tiên của tổ khớp kế hoạch. `rescueUnitIds` cũ vẫn dùng được (xe phải thuộc tổ hợp lệ).
+- Lượt điều phối (`DispatchAssignmentResponseDto`) có thêm `stationTeamId`, `stationTeamName`: hiển thị "Tổ A (xe 51A-001.14)" thay vì chỉ biển số.
+- `GET /api/stations/{id}/teams`: thêm `functions` (danh sách loại xe) và `canBeAssigned` (có staff đang hoạt động + có xe).
+
+**Việc cho web (Operator):**
+- Màn điều phối: danh sách gợi ý hiển thị theo tổ (tên tổ, số nhân viên, chức năng, xe, ETA). Nút "Giao" gửi `teams`.
+- Hiện thông báo lỗi backend trả về (tổ không có staff / tổ đang bận / xe chưa thuộc tổ).
+- Màn quản lý tổ: hiện `functions` dạng nhãn, cảnh báo khi `canBeAssigned = false` ("Tổ chưa có nhân viên" / "Tổ chưa có xe").
+- Bản đồ / chi tiết sự cố: các lượt điều phối hiển thị tên tổ.
+
+**Việc cho mobile (Rescue Staff):** thẻ nhiệm vụ hiện tên tổ (`stationTeamName`) cạnh biển số xe. Phạm vi thấy nhiệm vụ không đổi (mục 29).
+
+**Sửa lỗi web: SOS bị đặt sai vị trí (điều xe tới chỗ khác chỗ sự cố)**
+
+Backend luôn điều xe và tính ETA tới đúng tọa độ `latitude/longitude` của sự cố. Lỗi nằm ở `src/components/citizen/SosModal.tsx` (khoảng dòng 440–452): khi bấm gửi, web **luôn** forward-geocode chuỗi địa chỉ rồi **ghi đè** tọa độ người dùng đã ghim / GPS. Kết quả geocode thường là tâm con đường hoặc phường, nên sự cố bị lệch.
+
+Cách sửa:
+- Bỏ bước "Always geocode typed address". Gửi đúng tọa độ ghim trên bản đồ (hoặc GPS nếu chưa ghim).
+- Chỉ forward-geocode khi người dùng **tự gõ địa chỉ mới** mà chưa ghim lại (VD theo cờ `addressEditedManually`), và nên cho xem điểm trên bản đồ để xác nhận trước khi gửi.
+- Kéo ghim thì reverse-geocode để cập nhật ô địa chỉ, không làm ngược lại.

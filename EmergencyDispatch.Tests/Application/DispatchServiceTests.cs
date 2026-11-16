@@ -53,6 +53,12 @@ public class DispatchServiceTests
         _users.Setup(u => u.GetActiveByRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>())).ReturnsAsync(new List<User>());
         _incidents.Setup(i => i.BeginLockedTransactionAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(_lock.Object);
         _teams.Setup(t => t.GetByStationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<StationTeam>());
+        // Giao theo tổ: số nhân viên cứu hộ đang hoạt động của các tổ trong _crews
+        _teams.Setup(t => t.GetDispatchInfoAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> ids, CancellationToken _) => _crews
+                .Where(c => ids.Contains(c.Id))
+                .Select(c => new TeamDispatchInfo(c.Id, c.Name, c.Members.Count(m => m.Staff is { Role: UserRole.RescueStaff, Status: UserStatus.Active, IsDeleted: false })))
+                .ToList());
         _me.SetupGet(m => m.Role).Returns(UserRole.Operator);
         _me.SetupGet(m => m.StationId).Returns(_stationA);
         _svc = new DispatchService(_assign.Object, _units.Object, _incidents.Object, _users.Object, _rt.Object, _settings.Object,
@@ -60,7 +66,10 @@ public class DispatchServiceTests
             TestHelpers.Config(("Cloudinary:CloudName", "demo")), _teams.Object);
     }
 
-    private RescueUnit Unit(string type, double kmNorth, RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null)
+    /// <summary>
+    /// Xe mới; mặc định thuộc một tổ riêng có 1 nhân viên cứu hộ (sự cố giao theo tổ). teamed = false → xe chưa gán tổ
+    /// </summary>
+    private RescueUnit Unit(string type, double kmNorth, RescueUnitStatus status = RescueUnitStatus.Available, Guid? station = null, bool teamed = true)
     {
         var u = new RescueUnit
         {
@@ -72,8 +81,14 @@ public class DispatchServiceTests
             CurrentLng = Lng
         };
         _fleet.Add(u);
+        if (teamed) CrewOf(u, Staffer(u.StationId));
         return u;
     }
+
+    private static User Staffer(Guid stationId) => new()
+    {
+        FullName = "Nhân viên", Role = UserRole.RescueStaff, Status = UserStatus.Active, StationId = stationId
+    };
 
     private Incident Incident(SeverityLevel sev = SeverityLevel.Level2, IncidentEventType type = IncidentEventType.FireExplosion,
         IncidentStatus status = IncidentStatus.Verified, Action<Incident>? tweak = null)
@@ -364,7 +379,7 @@ public class DispatchServiceTests
     // ===================== Status transitions =====================
     private (DispatchAssignment A, Incident I, RescueUnit U, User Staff) Mission(DispatchAssignmentStatus status, IncidentStatus incStatus = IncidentStatus.Dispatched)
     {
-        var u = Unit(RescueUnitType.FireTruck, 2, RescueUnitStatus.Dispatched);
+        var u = Unit(RescueUnitType.FireTruck, 2, RescueUnitStatus.Dispatched, teamed: false);
         var inc = Incident(status: incStatus);
         var a = new DispatchAssignment { IncidentId = inc.Id, Incident = inc, RescueUnitId = u.Id, RescueUnit = u, Status = status };
         inc.DispatchAssignments.Add(a);
@@ -902,9 +917,9 @@ public class DispatchServiceTests
     public async Task MyAssignments_OnlyOwnTeamAndUnteamedUnits()
     {
         var inc = Incident(status: IncidentStatus.Dispatched);
-        var u1 = Unit(RescueUnitType.FireTruck, 2, RescueUnitStatus.Dispatched);
-        var u2 = Unit(RescueUnitType.FireTruck, 3, RescueUnitStatus.Dispatched);
-        var u3 = Unit(RescueUnitType.Ambulance, 4, RescueUnitStatus.Dispatched);   // xe chưa gán tổ
+        var u1 = Unit(RescueUnitType.FireTruck, 2, RescueUnitStatus.Dispatched, teamed: false);
+        var u2 = Unit(RescueUnitType.FireTruck, 3, RescueUnitStatus.Dispatched, teamed: false);
+        var u3 = Unit(RescueUnitType.Ambulance, 4, RescueUnitStatus.Dispatched, teamed: false);   // xe chưa gán tổ
         var m1 = Staff("Tổ 1");
         var m2 = Staff("Tổ 2");
         var loner = Staff("Chưa vào tổ");
@@ -993,5 +1008,121 @@ public class DispatchServiceTests
         Assert.True(CrewScope.CanWorkOn(_stationA, null, freeUnit));
         Assert.False(CrewScope.CanWorkOn(_stationB, null, freeUnit));             // trạm khác
         Assert.False(CrewScope.CanWorkOn(null, null, freeUnit));
+    }
+
+    // ===================== Giao sự cố theo tổ =====================
+    [Fact]
+    public async Task Recommend_OnlyTeamsWithActiveStaff_UnteamedAndEmptyTeamsExcluded()
+    {
+        var inc = Incident();
+        var staffed = Unit(RescueUnitType.FireTruck, 3);
+        Unit(RescueUnitType.FireTruck, 1, teamed: false);                    // xe chưa gán tổ
+        var emptyTeamUnit = Unit(RescueUnitType.FireTruck, 2, teamed: false);
+        CrewOf(emptyTeamUnit);                                               // tổ không có nhân viên
+        var suspendedUnit = Unit(RescueUnitType.FireTruck, 2.5, teamed: false);
+        CrewOf(suspendedUnit, new User { Role = UserRole.RescueStaff, Status = UserStatus.Suspended, StationId = _stationA });
+
+        var r = await _svc.GetRecommendationsAsync(inc.Id);
+
+        var only = Assert.Single(r.Data!);
+        Assert.Equal(staffed.Id, only.RescueUnitId);
+        Assert.Equal(staffed.StationTeamId, only.StationTeamId);
+        Assert.Equal(1, only.TeamStaffCount);
+    }
+
+    [Fact]
+    public async Task Recommend_TeamOnAnotherMission_IsBusyEvenWithFreeVehicle()
+    {
+        var inc = Incident();
+        var onMission = Unit(RescueUnitType.FireTruck, 1, teamed: false);
+        var spare = Unit(RescueUnitType.FireTruck, 2, teamed: false);
+        CrewOfUnits(new[] { onMission, spare }, Staffer(_stationA));
+        _active.Add(new DispatchAssignment { RescueUnitId = onMission.Id, IncidentId = Guid.NewGuid(), Status = DispatchAssignmentStatus.EnRoute });
+        var other = Unit(RescueUnitType.FireTruck, 5);
+
+        var r = await _svc.GetRecommendationsAsync(inc.Id);
+
+        Assert.Equal(new[] { other.Id }, r.Data!.Select(x => x.RescueUnitId));
+    }
+
+    [Fact]
+    public async Task Recommend_TeamWithTwoVehiclesOfSameFunction_ListedOnceWithNearest()
+    {
+        var inc = Incident();
+        var far = Unit(RescueUnitType.FireTruck, 6, teamed: false);
+        var near = Unit(RescueUnitType.FireTruck, 2, teamed: false);
+        CrewOfUnits(new[] { far, near }, Staffer(_stationA));
+
+        var r = await _svc.GetRecommendationsAsync(inc.Id);
+
+        Assert.Equal(new[] { near.Id }, r.Data!.Select(x => x.RescueUnitId));
+    }
+
+    [Fact]
+    public async Task Assign_ByTeam_PicksTeamsNearestVehicleOfFunction_AndStoresTeam()
+    {
+        var inc = Incident(SeverityLevel.Level3);
+        var fireFar = Unit(RescueUnitType.FireTruck, 6, teamed: false);
+        var fireNear = Unit(RescueUnitType.FireTruck, 2, teamed: false);
+        var ambulance = Unit(RescueUnitType.Ambulance, 1, teamed: false);
+        var team = CrewOfUnits(new[] { fireFar, fireNear, ambulance }, Staffer(_stationA));
+
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto
+        {
+            IncidentId = inc.Id,
+            Teams = new() { new TeamAssignmentDto { TeamId = team.Id, UnitType = RescueUnitType.FireTruck } }
+        }, _operatorId);
+
+        Assert.True(r.Success, r.Message);
+        var assignment = Assert.Single(inc.DispatchAssignments);
+        Assert.Equal(fireNear.Id, assignment.RescueUnitId);
+        Assert.Equal(team.Id, assignment.StationTeamId);
+        Assert.Equal(team.Name, r.Data!.Single().StationTeamName);
+    }
+
+    [Fact]
+    public async Task Assign_TwoVehiclesOfSameTeam_IsRejected()
+    {
+        var inc = Incident(SeverityLevel.Level3);
+        var fire = Unit(RescueUnitType.FireTruck, 2, teamed: false);
+        var ambulance = Unit(RescueUnitType.Ambulance, 3, teamed: false);
+        CrewOfUnits(new[] { fire, ambulance }, Staffer(_stationA));
+
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitIds = new() { fire.Id, ambulance.Id } }, _operatorId);
+
+        Assert.False(r.Success);
+        Assert.Empty(inc.DispatchAssignments);
+        _units.Verify(u => u.TryReserveForDispatchAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Assign_UnteamedVehicleOrTeamWithoutStaff_IsRejected()
+    {
+        var inc = Incident();
+        var unteamed = Unit(RescueUnitType.FireTruck, 2, teamed: false);
+        var noStaff = Unit(RescueUnitType.FireTruck, 3, teamed: false);
+        CrewOf(noStaff);
+
+        var r1 = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = unteamed.Id }, _operatorId);
+        var r2 = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = noStaff.Id }, _operatorId);
+
+        Assert.False(r1.Success);
+        Assert.False(r2.Success);
+        Assert.Empty(inc.DispatchAssignments);
+    }
+
+    [Fact]
+    public async Task Assign_TeamAlreadyOnAnotherIncident_IsConflict()
+    {
+        var inc = Incident();
+        var onMission = Unit(RescueUnitType.Ambulance, 1, teamed: false);
+        var spare = Unit(RescueUnitType.FireTruck, 2, teamed: false);
+        CrewOfUnits(new[] { onMission, spare }, Staffer(_stationA));
+        _active.Add(new DispatchAssignment { RescueUnitId = onMission.Id, IncidentId = Guid.NewGuid(), Status = DispatchAssignmentStatus.OnScene });
+
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = spare.Id }, _operatorId);
+
+        Assert.Equal(ApiErrorCodes.Conflict, r.ErrorCode);
+        Assert.Empty(inc.DispatchAssignments);
     }
 }

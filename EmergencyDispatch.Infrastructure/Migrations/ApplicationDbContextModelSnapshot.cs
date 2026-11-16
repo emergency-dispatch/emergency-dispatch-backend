@@ -447,6 +447,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<Guid>("RescueUnitId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("StationTeamId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -470,6 +473,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("RescueUnitId", "Status")
                         .HasDatabaseName("IX_DispatchAssignments_Unit_Status");
+
+                    b.HasIndex("StationTeamId", "Status")
+                        .HasDatabaseName("IX_DispatchAssignments_Team_Status");
 
                     b.ToTable("DispatchAssignments");
                 });
@@ -2197,6 +2203,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("EmergencyDispatch.Domain.Entities.StationTeam", "StationTeam")
+                        .WithMany()
+                        .HasForeignKey("StationTeamId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("AssignedByUser");
 
                     b.Navigation("CompletionReport");
@@ -2204,6 +2215,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Navigation("Incident");
 
                     b.Navigation("RescueUnit");
+
+                    b.Navigation("StationTeam");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.Equipment", b =>

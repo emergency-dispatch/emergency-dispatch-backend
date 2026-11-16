@@ -20,6 +20,13 @@ public class DispatchAssignment : BaseEntity
     public RescueUnit? RescueUnit { get; set; }
 
     /// <summary>
+    /// Tổ được phân công (chốt tại thời điểm phát lệnh): sự cố giao theo tổ, xe là phương tiện tổ mang theo.
+    /// Biết chính xác nhân viên nào nhận nhiệm vụ kể cả khi xe sau này đổi tổ. null = dữ liệu cũ (xe chưa gán tổ)
+    /// </summary>
+    public Guid? StationTeamId { get; set; }
+    public StationTeam? StationTeam { get; set; }
+
+    /// <summary>
     /// Thời điểm trung tâm phát lệnh điều phối xe
     /// </summary>
     public DateTime DispatchedAt { get; set; } = DateTime.UtcNow;

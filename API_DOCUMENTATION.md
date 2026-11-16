@@ -1640,6 +1640,21 @@ Seed hệ thống:
 ### 13.4 Độ tin cậy AI
 `ai-service/ai_service.py` trả `confidence = p(token loại) × p(token mức độ)` lấy từ `output_scores` khi sinh, `confidence_source = "logprob"`, kèm `type_probability`, `severity_probability`. Không train lại model. Bản cũ không gửi `confidence_source` nên backend coi là `heuristic` và không tự điều phối.
 
+
+## 14. GIAO SỰ CỐ THEO TỔ (đợt 17/11/2026)
+
+- **Nguyên tắc:** sự cố giao cho tổ; chức năng của tổ = loại xe tổ phụ trách; xe là phương tiện tổ mang theo. Lượt điều phối lưu `StationTeamId` (chốt lúc phát lệnh, migration `Dispatch_By_Team`; lượt cũ được điền theo tổ hiện tại của xe).
+- **Điều kiện tổ được giao:** có ≥ 1 nhân viên `RescueStaff` trạng thái `Active`; có xe đúng chức năng `Available`; không bận (không có lượt điều phối đang chạy, không có xe `Dispatched` / `OnScene` / `Returning`). Xe chưa gán tổ không được điều phối.
+- **Mỗi tổ một chức năng (một xe) trong một sự cố.** Kế hoạch điều phối theo mức: `quantity` = số tổ của chức năng; số chuẩn BR-14 tính theo số tổ (bằng số xe).
+- `GET /api/dispatch/recommend`: mỗi dòng là (tổ, chức năng) với xe gần nhất; thêm `stationTeamId`, `stationTeamName`, `teamStaffCount`.
+- `POST /api/dispatch/assign`: thêm `teams: [{ "teamId": "...", "unitType": "FireTruck" }]`; `rescueUnitIds` vẫn nhận.
+  ```json
+  { "incidentId": "...", "teams": [ { "teamId": "...", "unitType": "FireTruck" }, { "teamId": "...", "unitType": "Ambulance" } ] }
+  ```
+- Lỗi: 400 xe chưa thuộc tổ / tổ không có nhân viên / tổ chọn hai lần / tổ không có xe đúng loại sẵn sàng; 409 tổ đang bận.
+- `DispatchAssignmentResponseDto`: thêm `stationTeamId`, `stationTeamName`. `StationTeamDto`: thêm `functions`, `canBeAssigned`.
+- AI tự điều phối chọn các tổ khác nhau theo kế hoạch (tổ gần nhất trước).
+
 ## Thay đổi phạm vi hồ sơ khẩn cấp (22/10/2026)
 * Đã bỏ danh sách nhiều người thân và cấu hình tin nhắn tự động; giữ một người liên hệ trong hồ sơ, Medical ID, Special Info và cơ chế song ngữ.
 * Migration `Remove_Multiple_Emergency_Contacts_And_Sms` gỡ bảng/cột của chức năng đã bỏ. Trước khi gỡ, tài khoản chưa có cả ba trường liên hệ cũ sẽ được điền từ một liên hệ còn hiệu lực, ưu tiên primary.

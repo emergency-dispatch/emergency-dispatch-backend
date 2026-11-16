@@ -18,6 +18,7 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
             .Include(d => d.Incident)
             .Include(d => d.RescueUnit)
                 .ThenInclude(r => r!.Station)
+            .Include(d => d.StationTeam)
             .Include(d => d.CompletionReport)
                 .ThenInclude(c => c!.MediaItems)
             .Include(d => d.CompletionReport)
@@ -38,6 +39,7 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
         return await _dbSet
             .Include(d => d.RescueUnit)
                 .ThenInclude(r => r!.Station)
+            .Include(d => d.StationTeam)
             .Include(d => d.CompletionReport)
                 .ThenInclude(c => c!.MediaItems)
             .Include(d => d.CompletionReport)
@@ -87,6 +89,7 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
             .Include(d => d.Incident)
             .Include(d => d.RescueUnit)
                 .ThenInclude(r => r!.Station)
+            .Include(d => d.StationTeam)
             .Where(d => d.Status == DispatchAssignmentStatus.Dispatched ||
                         d.Status == DispatchAssignmentStatus.Accepted ||
                         d.Status == DispatchAssignmentStatus.EnRoute ||

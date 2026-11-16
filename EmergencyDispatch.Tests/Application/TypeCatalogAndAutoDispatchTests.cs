@@ -260,10 +260,14 @@ public class AutoDispatchServiceTests
         return inc;
     }
 
+    // Tổ của xe trong gợi ý: mặc định mỗi xe một tổ riêng; test gán sẵn khi cần hai xe cùng tổ
+    private readonly Dictionary<Guid, Guid> _teamOf = new();
+    private Guid TeamOf(Guid unitId) => _teamOf.TryGetValue(unitId, out var t) ? t : _teamOf[unitId] = Guid.NewGuid();
+
     private void Recommend(string? unitType, params Guid[] unitIds)
         => _dispatch.Setup(d => d.GetRecommendationsAsync(It.IsAny<Guid>(), DispatchAlgorithm.NearestAvailable, unitType, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(
-                unitIds.Select(id => new RecommendedUnitResponseDto { RescueUnitId = id, UnitType = unitType ?? RescueUnitType.FireTruck }).ToList()));
+                unitIds.Select(id => new RecommendedUnitResponseDto { RescueUnitId = id, StationTeamId = TeamOf(id), UnitType = unitType ?? RescueUnitType.FireTruck }).ToList()));
 
     [Theory]
     [InlineData(0.89, "logprob", "below-threshold")]
@@ -377,6 +381,31 @@ public class AutoDispatchServiceTests
 
         Assert.Equal(trucks.Take(2), sent!.GetUnitIds());
         Assert.Equal(AutoDispatchService.PartialNote, inc.AutoDispatchNote);
+    }
+
+    [Fact]
+    public async Task Plan_TwoTeamsOfFunction_SkipsSecondVehicleOfSameTeam()
+    {
+        // Kế hoạch Level 2: 2 tổ chữa cháy. Hai xe gần nhất cùng một tổ → lấy xe gần nhất của tổ đó + tổ kế tiếp
+        var inc = Fire(severity: SeverityLevel.Level2);
+        _dispatch.Setup(d => d.GetUnitRulesAsync(inc, It.IsAny<CancellationToken>())).ReturnsAsync(new List<IncidentTypeUnitRule>
+        {
+            new() { UnitTypeCode = RescueUnitType.FireTruck, Severity = SeverityLevel.Level2, Quantity = 2, Priority = 1 }
+        });
+        Guid first = Guid.NewGuid(), sameTeam = Guid.NewGuid(), otherTeam = Guid.NewGuid();
+        var team = Guid.NewGuid();
+        _teamOf[first] = team;
+        _teamOf[sameTeam] = team;
+        Recommend(RescueUnitType.FireTruck, first, sameTeam, otherTeam);
+        AssignDispatchDto? sent = null;
+        _dispatch.Setup(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()))
+            .Callback<AssignDispatchDto, CancellationToken>((dto, _) => sent = dto)
+            .ReturnsAsync(ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(new List<DispatchAssignmentResponseDto>()));
+
+        await _svc.TryAutoDispatchAsync(inc.Id);
+
+        Assert.Equal(new[] { first, otherTeam }, sent!.GetUnitIds());
+        Assert.Equal(AutoDispatchService.DispatchedNote, inc.AutoDispatchNote);
     }
 
     [Fact]

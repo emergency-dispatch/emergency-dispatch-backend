@@ -380,6 +380,13 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                   .HasForeignKey(d => d.RescueUnitId)
                   .OnDelete(DeleteBehavior.Restrict);
 
+            // Tổ được phân công; xóa tổ không xóa lịch sử điều phối
+            entity.HasOne(d => d.StationTeam)
+                  .WithMany()
+                  .HasForeignKey(d => d.StationTeamId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(d => new { d.StationTeamId, d.Status }).HasDatabaseName("IX_DispatchAssignments_Team_Status");
+
             entity.HasQueryFilter(d => !d.IsDeleted);
         });
 

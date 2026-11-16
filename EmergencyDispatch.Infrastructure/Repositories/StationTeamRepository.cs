@@ -1,4 +1,5 @@
 using EmergencyDispatch.Domain.Entities;
+using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
 using EmergencyDispatch.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,20 @@ public class StationTeamRepository : IStationTeamRepository
             .Include(t => t.RescueUnits)
             .Include(t => t.Members).ThenInclude(m => m.Staff)
             .FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<TeamDispatchInfo>> GetDispatchInfoAsync(IReadOnlyCollection<Guid> teamIds, CancellationToken cancellationToken = default)
+    {
+        if (teamIds.Count == 0) return Array.Empty<TeamDispatchInfo>();
+        return await _context.StationTeams
+            .AsNoTracking()
+            .Where(t => teamIds.Contains(t.Id))
+            .Select(t => new TeamDispatchInfo(
+                t.Id,
+                t.Name,
+                t.Members.Count(m => m.Staff != null && !m.Staff.IsDeleted
+                                     && m.Staff.Role == UserRole.RescueStaff && m.Staff.Status == UserStatus.Active)))
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<StationTeamMember?> GetMembershipAsync(Guid staffId, CancellationToken cancellationToken = default)

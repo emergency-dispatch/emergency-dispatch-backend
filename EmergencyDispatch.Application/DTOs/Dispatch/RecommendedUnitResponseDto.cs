@@ -7,6 +7,20 @@ namespace EmergencyDispatch.Application.DTOs.Dispatch;
 /// </summary>
 public class RecommendedUnitResponseDto
 {
+    /// <summary>
+    /// Tổ được gợi ý (sự cố giao theo tổ). Mỗi dòng = một tổ với xe gần nhất của tổ cho một chức năng (loại xe)
+    /// </summary>
+    public Guid StationTeamId { get; set; }
+    public string StationTeamName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Số nhân viên cứu hộ đang hoạt động của tổ (luôn ≥ 1: tổ không có staff không được gợi ý)
+    /// </summary>
+    public int TeamStaffCount { get; set; }
+
+    /// <summary>
+    /// Xe tổ sẽ mang theo
+    /// </summary>
     public Guid RescueUnitId { get; set; }
     public string PlateNumber { get; set; } = string.Empty;
     public string UnitType { get; set; }
