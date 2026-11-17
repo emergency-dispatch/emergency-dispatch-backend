@@ -23,6 +23,17 @@ public interface IRescueUnitRepository : IGenericRepository<RescueUnit>
     Task<bool> TryReserveForDispatchAsync(Guid unitId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Chỉ ghi các cột vị trí (CurrentLat, CurrentLng, LastLocationUpdateAt, UpdatedAt). Không đụng trạng thái xe:
+    /// GPS gửi đúng lúc nghiệm thu không được ghi ngược trạng thái cũ đã đọc trước đó
+    /// </summary>
+    Task SaveLocationAsync(Guid unitId, double latitude, double longitude, DateTime atUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Chỉ ghi các cột trạng thái (Status, CoolDownUntil, UpdatedAt) theo giá trị trên đối tượng; không ghi đè vị trí GPS
+    /// </summary>
+    Task SaveStatusAsync(RescueUnit unit, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Trả xe đã giữ chỗ (Dispatched) về Available khi phát lệnh nhiều xe thất bại giữa chừng
     /// </summary>
     Task ReleaseReservationAsync(Guid unitId, CancellationToken cancellationToken = default);

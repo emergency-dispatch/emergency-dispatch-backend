@@ -32,6 +32,7 @@ public class DispatchServiceTests
     private readonly List<StationTeam> _crews = new();
     private readonly List<RescueUnit> _fleet = new();
     private readonly List<DispatchAssignment> _active = new();
+    private readonly Dictionary<Guid, Incident> _incidentById = new();
     private readonly Guid _stationA = Guid.NewGuid();
     private readonly Guid _stationB = Guid.NewGuid();
     private readonly Guid _operatorId = Guid.NewGuid();
@@ -59,6 +60,11 @@ public class DispatchServiceTests
                 .Where(c => ids.Contains(c.Id))
                 .Select(c => new TeamDispatchInfo(c.Id, c.Name, c.Members.Count(m => m.Staff is { Role: UserRole.RescueStaff, Status: UserStatus.Active, IsDeleted: false })))
                 .ToList());
+        // Đọc lại lượt điều phối "từ DB" khi xét đóng sự cố = danh sách lượt hiện có của sự cố
+        _assign.Setup(a => a.GetFreshByIncidentIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => _incidentById.TryGetValue(id, out var i)
+                ? i.DispatchAssignments.ToList()
+                : new List<DispatchAssignment>());
         _me.SetupGet(m => m.Role).Returns(UserRole.Operator);
         _me.SetupGet(m => m.StationId).Returns(_stationA);
         _svc = new DispatchService(_assign.Object, _units.Object, _incidents.Object, _users.Object, _rt.Object, _settings.Object,
@@ -99,6 +105,7 @@ public class DispatchServiceTests
             ResponsibleStationId = _stationA, VerifiedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow.AddMinutes(-2)
         };
         tweak?.Invoke(inc);
+        _incidentById[inc.Id] = inc;
         _incidents.Setup(i => i.GetIncidentWithDetailsAsync(inc.Id, It.IsAny<CancellationToken>())).ReturnsAsync(inc);
         _incidents.Setup(i => i.GetByIdAsync(inc.Id)).ReturnsAsync(inc);
         return inc;
@@ -1124,5 +1131,110 @@ public class DispatchServiceTests
 
         Assert.Equal(ApiErrorCodes.Conflict, r.ErrorCode);
         Assert.Empty(inc.DispatchAssignments);
+    }
+
+    // ===================== Lượt cuối kết thúc không qua nghiệm thu =====================
+    private DispatchAssignment CompletedSibling(Incident inc, string summary = "Đã dập tắt đám cháy")
+    {
+        var done = new DispatchAssignment
+        {
+            IncidentId = inc.Id, RescueUnitId = Guid.NewGuid(), Status = DispatchAssignmentStatus.Completed,
+            CompletionReport = new CompletionReport { ActionsSummary = summary, SubmittedAt = DateTime.UtcNow.AddMinutes(-1) }
+        };
+        inc.DispatchAssignments.Add(done);
+        return done;
+    }
+
+    [Fact]
+    public async Task Cancel_LastActive_AfterOtherTeamCompleted_ClosesIncident()
+    {
+        var (a, inc, u, _) = Mission(DispatchAssignmentStatus.Accepted, IncidentStatus.InProgress);
+        CompletedSibling(inc);
+        inc.ReportedByUserId = Guid.NewGuid();
+        var op = new User { Role = UserRole.Operator, StationId = _stationA, FullName = "Op" };
+        _users.Setup(x => x.GetByIdAsync(op.Id)).ReturnsAsync(op);
+
+        var r = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, op.Id);
+
+        Assert.True(r.Success, r.Message);
+        Assert.Equal(IncidentStatus.Completed, inc.Status);
+        Assert.Equal("Đã dập tắt đám cháy", inc.ResolutionSummary);
+        Assert.Equal(op.Id, inc.ClosedByUserId);
+        Assert.NotNull(inc.ResolutionTimeMs);
+        Assert.Equal(RescueUnitStatus.Available, u.Status);
+        _lock.Verify(l => l.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyUsersAsync(It.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(inc.ReportedByUserId!.Value)),
+            It.Is<NotificationRequest>(m => m.Title == "Cứu hộ đã hoàn tất"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cancel_OnlyTeam_NoneCompleted_ReturnsIncidentToQueue()
+    {
+        var (a, inc, _, _) = Mission(DispatchAssignmentStatus.Dispatched);
+        var op = new User { Role = UserRole.Operator, StationId = _stationA, FullName = "Op" };
+        _users.Setup(x => x.GetByIdAsync(op.Id)).ReturnsAsync(op);
+
+        await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, op.Id);
+
+        Assert.Equal(IncidentStatus.Verified, inc.Status);
+        Assert.Null(inc.ClosedAt);
+    }
+
+    [Fact]
+    public async Task Cancel_WhileOtherTeamStillActive_KeepsIncidentOpen()
+    {
+        var (a, inc, _, _) = Mission(DispatchAssignmentStatus.Accepted, IncidentStatus.InProgress);
+        CompletedSibling(inc);
+        inc.DispatchAssignments.Add(new DispatchAssignment { IncidentId = inc.Id, Status = DispatchAssignmentStatus.OnScene });
+        var op = new User { Role = UserRole.Operator, StationId = _stationA, FullName = "Op" };
+        _users.Setup(x => x.GetByIdAsync(op.Id)).ReturnsAsync(op);
+
+        await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, op.Id);
+
+        Assert.Equal(IncidentStatus.InProgress, inc.Status);
+    }
+
+    [Fact]
+    public async Task Reject_LastActive_AfterOtherTeamCompleted_ClosesInsteadOfRequeue()
+    {
+        var (a, inc, u, staff) = Mission(DispatchAssignmentStatus.EnRoute, IncidentStatus.InProgress);
+        CompletedSibling(inc, "Sơ cứu xong, bàn giao 115");
+
+        var r = await _svc.RejectAssignmentAsync(a.Id, new RejectAssignmentDto { Reason = RejectionReason.VehicleBreakdown }, staff.Id);
+
+        Assert.True(r.Success);
+        Assert.Equal(IncidentStatus.Completed, inc.Status);
+        Assert.Equal("Sơ cứu xong, bàn giao 115", inc.ResolutionSummary);
+        Assert.Equal(RescueUnitStatus.Maintenance, u.Status);
+    }
+
+    [Fact]
+    public async Task Cancel_IncidentAlreadyClosed_DoesNothing()
+    {
+        var (a, inc, _, _) = Mission(DispatchAssignmentStatus.Accepted, IncidentStatus.InProgress);
+        CompletedSibling(inc);
+        var op = new User { Role = UserRole.Operator, StationId = _stationA, FullName = "Op" };
+        _users.Setup(x => x.GetByIdAsync(op.Id)).ReturnsAsync(op);
+        // Tổ khác vừa nghiệm thu đóng sự cố ngay trước khi khóa (đọc lại thấy Completed)
+        _incidents.Setup(i => i.ReloadAsync(inc, It.IsAny<CancellationToken>()))
+            .Callback(() => inc.Status = IncidentStatus.Completed)
+            .Returns(Task.CompletedTask);
+
+        await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, op.Id);
+
+        Assert.Null(inc.ClosedAt);
+        _lock.Verify(l => l.CommitAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UnitStatusSaves_OnlyStatusColumns_NeverWholeRow()
+    {
+        var (a, _, u, staff) = Mission(DispatchAssignmentStatus.Dispatched);
+
+        await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Accepted }, staff.Id);
+        await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.EnRoute }, staff.Id);
+
+        _units.Verify(x => x.SaveStatusAsync(u, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        _units.Verify(x => x.UpdateAsync(It.IsAny<RescueUnit>()), Times.Never);
     }
 }

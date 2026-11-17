@@ -291,6 +291,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(i => i.IncidentTypeCode).HasMaxLength(50);
             entity.Property(i => i.ReportedIncidentTypeCode).HasMaxLength(50);
             entity.Property(i => i.AutoDispatchNote).HasMaxLength(500);
+            entity.Property(i => i.AutoDispatchReasonCode).HasMaxLength(50);
             entity.HasOne<IncidentTypeDefinition>()
                   .WithMany()
                   .HasForeignKey(i => i.IncidentTypeCode)

@@ -1776,6 +1776,7 @@ public class IncidentService : IIncidentService
             IncidentTypeCode = incident.IncidentTypeCode ?? DispatchScoring.IncidentTypeCodeFor(incident),
             AutoDispatchState = incident.AutoDispatchState,
             AutoDispatchNote = string.IsNullOrWhiteSpace(incident.AutoDispatchNote) ? null : LocalizationHelper.Localize(incident.AutoDispatchNote),
+            AutoDispatchReasonCode = incident.AutoDispatchReasonCode,
             SuspectedDuplicateOfIncidentId = incident.SuspectedDuplicateOfIncidentId,
             LinkedReportCount = incident.LinkedReportCount,
             LinkedToIncidentId = incident.Status == IncidentStatus.Linked || incident.CancellationReason == CancellationReason.Duplicate

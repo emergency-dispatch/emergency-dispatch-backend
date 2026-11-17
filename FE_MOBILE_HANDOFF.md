@@ -1410,3 +1410,44 @@ Cách sửa:
 - Bỏ bước "Always geocode typed address". Gửi đúng tọa độ ghim trên bản đồ (hoặc GPS nếu chưa ghim).
 - Chỉ forward-geocode khi người dùng **tự gõ địa chỉ mới** mà chưa ghim lại (VD theo cờ `addressEditedManually`), và nên cho xem điểm trên bản đồ để xác nhận trước khi gửi.
 - Kéo ghim thì reverse-geocode để cập nhật ô địa chỉ, không làm ngược lại.
+
+## 35. Cập nhật 17/11/2026: sửa 3 lỗi backend từ đợt test FE Operator (main @ 142940d)
+
+**1. Xe kẹt trạng thái sau nghiệm thu: đã sửa ở backend, FE/mobile không phải đổi API.**
+- GPS (`PUT /api/rescue-units/{id}/location`) nay chỉ ghi các cột vị trí, không còn ghi ngược trạng thái xe.
+- Các lần đổi trạng thái xe trong luồng điều phối chỉ ghi Status / CoolDownUntil.
+- **Gỡ kẹt:** xe đang Dispatched / OnScene / Returning mà **không còn lượt điều phối nào đang chạy** thì Operator đổi được sang Available / Maintenance / OutOfService qua `PUT /api/rescue-units/{id}/status`. Trước đây API trả lỗi "Xe đang thực hiện nhiệm vụ".
+- Web: màn quản lý xe nên hiện nút "Đặt lại sẵn sàng" cho xe ở trạng thái nhiệm vụ. Bấm mà backend trả lỗi (xe còn nhiệm vụ thật) thì hiện thông báo lỗi.
+
+**2. Thu hồi / từ chối lượt cuối nay tự xét sự cố.**
+
+| Lượt cuối kết thúc bằng | Đã có tổ nghiệm thu | Kết quả |
+|---|---|---|
+| Thu hồi hoặc từ chối | Có | Sự cố **tự đóng (Completed)**. Kết luận lấy từ báo cáo nghiệm thu gần nhất; người dân nhận "Cứu hộ đã hoàn tất"; Operator/Admin nhận "SỰ CỐ ĐÃ TỰ ĐÓNG" |
+| Thu hồi hoặc từ chối | Chưa | Sự cố về **Verified** (chờ giao tổ khác) |
+| Còn tổ khác đang làm | | Giữ nguyên |
+
+- Web: sau khi thu hồi, đọc `message` trả về ("Sự cố đã được đóng..." / "...đã trả về hàng chờ điều phối") và cập nhật sự cố theo `ReceiveIncidentUpdated`. Không cần nút đóng tay.
+- Từ chối: thông báo gửi Operator có `data.incidentClosed = true` khi sự cố đã tự đóng.
+
+**3. Lưu lý do AI không tự điều phối.**
+- `AutoDispatchState` có thêm giá trị **`NotEligible` (3)**: AI đã xét nhưng sự cố không đủ điều kiện.
+- Trường mới **`autoDispatchReasonCode`** trong sự cố và trong sự kiện `ReceiveAutoDispatched` (`reasonCode`). `autoDispatchNote` là câu mô tả song ngữ.
+
+| Mã | Ý nghĩa |
+|---|---|
+| `below-threshold` | Độ tin cậy dưới ngưỡng |
+| `confidence-not-measured` | Độ tin cậy chỉ ước lượng (không phải logprob) |
+| `operator-handling` | Điều phối viên đang giữ ca lúc AI phân tích xong |
+| `ai-failed` | Phân tích AI thất bại |
+| `ai-type-mismatch` | Loại AI nhận diện khác loại sự cố |
+| `type-not-ai-recognizable` | Không thuộc cháy nổ / tai nạn |
+| `reporter-chose-other` | Người báo chọn "Khác" |
+| `unclassified` | Chưa có Level 1–3 |
+| `out-of-service-area` | Ngoài khu vực phục vụ |
+| `linked-report` | Báo cáo đã gom vào sự cố khác |
+| `suspected-duplicate`, `no-teams`, `assign-failed` | Đi cùng `Skipped` (như trước) |
+| `partial` | Đi cùng `Dispatched`: chưa đủ số tổ theo kế hoạch |
+
+- Web: với `NotEligible` chỉ hiện nhãn nhỏ trong chi tiết / danh sách sự cố (VD "AI không tự điều phối: độ tin cậy dưới ngưỡng" kèm `aiConfidence`). **Không bật toast / còi**: sự kiện này đến với hầu hết sự cố. Toast chỉ cho `Dispatched` và `Skipped` như cũ.
+- Sự cố Operator đã xác minh trước khi AI xong, hoặc khi tắt tự điều phối, thì không lưu lý do (giữ `None`).

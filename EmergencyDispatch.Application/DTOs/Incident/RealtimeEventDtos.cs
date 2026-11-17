@@ -152,9 +152,13 @@ public class AutoDispatchEventDto
     public Guid IncidentId { get; set; }
     public Guid? ResponsibleStationId { get; set; }
 
-    /// <summary>Dispatched = hệ thống đã điều xe; Skipped = chuyển Operator (xem note / suspectedDuplicateOfIncidentId)</summary>
+    /// <summary>Dispatched = hệ thống đã điều xe; Skipped = chuyển Operator (xem note / suspectedDuplicateOfIncidentId);
+    /// NotEligible = AI đã xét nhưng không đủ điều kiện (chỉ cập nhật nhãn, không cần cảnh báo)</summary>
     public EmergencyDispatch.Domain.Enums.AutoDispatchState State { get; set; }
     public string? Note { get; set; }
+
+    /// <summary>Mã lý do, xem IncidentResponseDto.AutoDispatchReasonCode</summary>
+    public string? ReasonCode { get; set; }
     public double? Confidence { get; set; }
 
     /// <summary>Biển số các xe đã điều (khi Dispatched)</summary>

@@ -1655,6 +1655,17 @@ Seed hệ thống:
 - `DispatchAssignmentResponseDto`: thêm `stationTeamId`, `stationTeamName`. `StationTeamDto`: thêm `functions`, `canBeAssigned`.
 - AI tự điều phối chọn các tổ khác nhau theo kế hoạch (tổ gần nhất trước).
 
+
+## 15. SỬA LỖI ĐỢT TEST 17/11/2026
+
+- **Vị trí / trạng thái xe ghi theo cột:** `PUT /api/rescue-units/{id}/location` chỉ cập nhật `CurrentLat`, `CurrentLng`, `LastLocationUpdateAt` (ExecuteUpdate). Đổi trạng thái xe trong điều phối chỉ cập nhật `Status`, `CoolDownUntil`. Hết lỗi GPS ghi ngược trạng thái khi nghiệm thu chen giữa.
+- **Gỡ kẹt xe:** `PUT /api/rescue-units/{id}/status` cho phép đưa xe đang ở trạng thái nhiệm vụ về Available / Maintenance / OutOfService khi xe không còn lượt điều phối đang chạy (audit ghi "Gỡ kẹt").
+- **Kết thúc lượt cuối không qua nghiệm thu** (thu hồi qua `PUT /api/dispatch/assignments/{id}/status` = Cancelled, hoặc `POST .../reject`): khóa sự cố (`SELECT ... FOR UPDATE`), đọc lại các lượt từ DB, rồi:
+  - còn lượt đang chạy → giữ nguyên;
+  - hết lượt, có lượt Completed → đóng sự cố (`ResolutionSummary` = báo cáo nghiệm thu gần nhất, `ClosedByUserId` = người thu hồi / từ chối, `ResolutionTimeMs`), đóng báo cáo đã gom, báo người dân và Operator;
+  - hết lượt, chưa có Completed → `Verified`.
+- **AI không tự điều phối:** `AutoDispatchState.NotEligible = 3`, cột mới `Incidents.AutoDispatchReasonCode` (migration `Auto_Dispatch_Reason_Code`). `IncidentResponseDto.autoDispatchReasonCode`, `AutoDispatchEventDto.reasonCode`. NotEligible chỉ phát realtime, không gửi thông báo.
+
 ## Thay đổi phạm vi hồ sơ khẩn cấp (22/10/2026)
 * Đã bỏ danh sách nhiều người thân và cấu hình tin nhắn tự động; giữ một người liên hệ trong hồ sơ, Medical ID, Special Info và cơ chế song ngữ.
 * Migration `Remove_Multiple_Emergency_Contacts_And_Sms` gỡ bảng/cột của chức năng đã bỏ. Trước khi gỡ, tài khoản chưa có cả ba trường liên hệ cũ sẽ được điền từ một liên hệ còn hiệu lực, ưu tiên primary.

@@ -191,14 +191,15 @@ public class RescueUnitService : IRescueUnitService
 
     public async Task<RescueUnitResponseDto> UpdateLocationAsync(Guid id, UpdateRescueUnitLocationDto dto)
     {
-        var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(id);
+        var unit = await _rescueUnitRepository.GetByIdAsync(id);
         if (unit == null)
         {
             throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ với ID: {0}", id));
         }
 
+        // Chỉ ghi cột vị trí: không lưu cả dòng (sẽ ghi ngược trạng thái đọc từ trước khi nghiệm thu / đổi trạng thái chen giữa)
         unit.UpdateLocation(dto.Latitude, dto.Longitude);
-        await _rescueUnitRepository.UpdateAsync(unit);
+        await _rescueUnitRepository.SaveLocationAsync(unit.Id, unit.CurrentLat, unit.CurrentLng, unit.LastLocationUpdateAt ?? DateTime.UtcNow);
 
         // Sự cố lấy từ lượt phân công đang chạy của xe (không tin incidentId do client gửi)
         var activeAssignment = await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id);
@@ -227,13 +228,16 @@ public class RescueUnitService : IRescueUnitService
         }
 
         EnsureOwnStation(unit.StationId);
+        // Xe ở trạng thái nhiệm vụ mà không còn lượt điều phối nào đang chạy = xe bị kẹt (dữ liệu lệch): cho phép gỡ thủ công
+        var stuck = false;
         if (dto.Status != unit.Status)
         {
             var hasActiveAssignment = await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null;
-            if (IsOnMission(unit.Status) || hasActiveAssignment)
+            if (hasActiveAssignment)
             {
                 throw new InvalidOperationException("Xe đang thực hiện nhiệm vụ: trạng thái được cập nhật tự động theo tiến độ nhiệm vụ.");
             }
+            stuck = IsOnMission(unit.Status);
             EnsureManualStatusAllowed(dto.Status, unit.Status);
         }
 
@@ -243,14 +247,16 @@ public class RescueUnitService : IRescueUnitService
         {
             unit.CoolDownUntil = null;
         }
-        await _rescueUnitRepository.UpdateAsync(unit);
+        await _rescueUnitRepository.SaveStatusAsync(unit);
 
         if (oldStatus != dto.Status)
         {
-            await PublishStatusAsync(unit, oldStatus, "Đổi trạng thái thủ công");
+            await PublishStatusAsync(unit, oldStatus, stuck ? "Gỡ kẹt trạng thái thủ công" : "Đổi trạng thái thủ công");
             await _auditService.LogAsync(SystemAuditAction.StatusChanged, AuditEntityTypes.RescueUnit, unit.Id, unit.PlateNumber,
-                $"Đổi trạng thái xe {unit.PlateNumber}: {oldStatus} → {dto.Status}",
-                new { status = oldStatus }, new { status = dto.Status });
+                stuck
+                    ? $"Gỡ kẹt xe {unit.PlateNumber}: {oldStatus} → {dto.Status} (không còn lượt điều phối đang chạy)"
+                    : $"Đổi trạng thái xe {unit.PlateNumber}: {oldStatus} → {dto.Status}",
+                new { status = oldStatus }, new { status = dto.Status, unstuck = stuck });
         }
 
         return MapToDto(unit);

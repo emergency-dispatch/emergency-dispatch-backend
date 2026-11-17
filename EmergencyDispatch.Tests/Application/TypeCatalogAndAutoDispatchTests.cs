@@ -383,6 +383,34 @@ public class AutoDispatchServiceTests
         Assert.Equal(AutoDispatchService.PartialNote, inc.AutoDispatchNote);
     }
 
+
+    [Fact]
+    public async Task NotEligible_BelowThreshold_StoresReasonAndPublishesWithoutAlert()
+    {
+        var inc = Fire(confidence: 0.70);
+
+        var outcome = await _svc.TryAutoDispatchAsync(inc.Id);
+
+        Assert.Equal(AutoDispatchOutcome.NotEligible, outcome);
+        Assert.Equal(AutoDispatchState.NotEligible, inc.AutoDispatchState);
+        Assert.Equal("below-threshold", inc.AutoDispatchReasonCode);
+        Assert.Equal(AutoDispatchService.NotEligibleNotes["below-threshold"], inc.AutoDispatchNote);
+        _rt.Verify(r => r.AutoDispatchResultAsync(It.Is<AutoDispatchEventDto>(e => e.State == AutoDispatchState.NotEligible && e.ReasonCode == "below-threshold"),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<EmergencyDispatch.Application.DTOs.Notification.NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task NotEligible_AlreadyVerifiedByOperator_IsNotRecorded()
+    {
+        var inc = Fire(tweak: i => { i.Status = IncidentStatus.Verified; i.VerifiedAt = DateTime.UtcNow; });
+
+        await _svc.TryAutoDispatchAsync(inc.Id);
+
+        Assert.Equal(AutoDispatchState.None, inc.AutoDispatchState);
+        Assert.Null(inc.AutoDispatchReasonCode);
+    }
+
     [Fact]
     public async Task Plan_TwoTeamsOfFunction_SkipsSecondVehicleOfSameTeam()
     {

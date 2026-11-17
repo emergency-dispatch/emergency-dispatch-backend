@@ -35,6 +35,12 @@ public class IncidentResponseDto
     public string? AutoDispatchNote { get; set; }
 
     /// <summary>
+    /// Mã lý do (NotEligible: below-threshold, confidence-not-measured, operator-handling, ai-failed...;
+    /// Skipped: suspected-duplicate, no-teams, assign-failed; Dispatched: partial hoặc null)
+    /// </summary>
+    public string? AutoDispatchReasonCode { get; set; }
+
+    /// <summary>
     /// Nghi trùng với sự cố đã được điều xe (AI tự điều phối phát hiện) → Operator kiểm tra, gộp hoặc điều thêm
     /// </summary>
     public Guid? SuspectedDuplicateOfIncidentId { get; set; }

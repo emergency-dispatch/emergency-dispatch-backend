@@ -122,7 +122,10 @@ public enum AutoDispatchState
     Dispatched = 1,
 
     /// <summary>Đủ điều kiện AI nhưng bị bỏ qua (nghi trùng, hết xe...), chuyển cho Operator</summary>
-    Skipped = 2
+    Skipped = 2,
+
+    /// <summary>AI đã xét nhưng sự cố không đủ điều kiện tự điều phối (dưới ngưỡng, chưa đo được độ tin cậy, đang có người giữ ca...)</summary>
+    NotEligible = 3
 }
 
 /// <summary>

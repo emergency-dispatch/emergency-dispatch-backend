@@ -114,6 +114,11 @@ public class Incident : BaseEntity
     public string? AutoDispatchNote { get; set; }
 
     /// <summary>
+    /// Mã lý do kết quả tự điều phối (VD below-threshold, operator-handling, suspected-duplicate, no-teams) để FE lọc / hiển thị
+    /// </summary>
+    public string? AutoDispatchReasonCode { get; set; }
+
+    /// <summary>
     /// AI tự động điều phối phát hiện sự cố này có thể trùng một sự cố đã được điều xe → Operator kiểm tra
     /// </summary>
     public Guid? SuspectedDuplicateOfIncidentId { get; set; }

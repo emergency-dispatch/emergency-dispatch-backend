@@ -728,6 +728,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("AutoDispatchReasonCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<int>("AutoDispatchState")
                         .HasColumnType("integer");
 

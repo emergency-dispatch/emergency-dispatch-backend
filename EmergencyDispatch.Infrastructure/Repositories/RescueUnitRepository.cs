@@ -88,6 +88,30 @@ public class RescueUnitRepository : GenericRepository<RescueUnit>, IRescueUnitRe
         return affected == 1;
     }
 
+    public async Task SaveLocationAsync(Guid unitId, double latitude, double longitude, DateTime atUtc, CancellationToken cancellationToken = default)
+    {
+        await _dbSet
+            .Where(r => r.Id == unitId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(r => r.CurrentLat, latitude)
+                .SetProperty(r => r.CurrentLng, longitude)
+                .SetProperty(r => r.LastLocationUpdateAt, atUtc)
+                .SetProperty(r => r.UpdatedAt, atUtc), cancellationToken);
+    }
+
+    public async Task SaveStatusAsync(RescueUnit unit, CancellationToken cancellationToken = default)
+    {
+        var status = unit.Status;
+        var coolDownUntil = unit.CoolDownUntil;
+        var updatedAt = unit.UpdatedAt ?? DateTime.UtcNow;
+        await _dbSet
+            .Where(r => r.Id == unit.Id)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(r => r.Status, status)
+                .SetProperty(r => r.CoolDownUntil, coolDownUntil)
+                .SetProperty(r => r.UpdatedAt, updatedAt), cancellationToken);
+    }
+
     public async Task ReleaseReservationAsync(Guid unitId, CancellationToken cancellationToken = default)
     {
         await _dbSet

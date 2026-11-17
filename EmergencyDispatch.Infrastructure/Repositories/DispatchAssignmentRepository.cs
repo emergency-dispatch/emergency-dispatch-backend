@@ -49,6 +49,15 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<DispatchAssignment>> GetFreshByIncidentIdAsync(Guid incidentId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .Include(d => d.CompletionReport)
+            .Where(d => d.IncidentId == incidentId)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<DispatchAssignment>> GetByRescueUnitIdAsync(Guid rescueUnitId)
     {
         return await _dbSet

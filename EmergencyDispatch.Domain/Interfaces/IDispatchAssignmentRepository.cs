@@ -12,6 +12,11 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
     /// </summary>
     Task<Guid?> GetIncidentIdAsync(Guid assignmentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DispatchAssignment>> GetByIncidentIdAsync(Guid incidentId);
+
+    /// <summary>
+    /// Các lượt của sự cố đọc thẳng từ DB (AsNoTracking, kèm báo cáo nghiệm thu) để xét đóng sự cố sau khi một lượt kết thúc
+    /// </summary>
+    Task<IReadOnlyList<DispatchAssignment>> GetFreshByIncidentIdAsync(Guid incidentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DispatchAssignment>> GetByRescueUnitIdAsync(Guid rescueUnitId);
     Task<DispatchAssignment?> GetActiveAssignmentByUnitIdAsync(Guid rescueUnitId);
     Task<IReadOnlyList<DispatchAssignment>> GetAllActiveAsync();

@@ -182,6 +182,9 @@ public class RescueUnitServiceTests
 
         Assert.Equal(10.75, u.CurrentLat);
         Assert.NotNull(u.LastLocationUpdateAt);
+        // Chỉ ghi cột vị trí, không lưu cả dòng (tránh ghi ngược trạng thái xe)
+        _units.Verify(x => x.SaveLocationAsync(u.Id, 10.75, 106.71, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+        _units.Verify(x => x.UpdateAsync(It.IsAny<RescueUnit>()), Times.Never);
         _rt.Verify(n => n.RescueUnitLocationAsync(It.Is<RescueUnitLocationEventDto>(e => e.IncidentId != null && e.HeadingDegrees == 90), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -202,5 +205,18 @@ public class RescueUnitServiceTests
     public async Task GetById_Unknown_Throws()
     {
         await Assert.ThrowsAsync<KeyNotFoundException>(() => _svc.GetByIdAsync(Guid.NewGuid()));
+    }
+
+    [Theory]
+    [InlineData(RescueUnitStatus.OnScene)]
+    [InlineData(RescueUnitStatus.Dispatched)]
+    public async Task UpdateStatus_StuckOnMissionWithoutActiveAssignment_CanBeReleased(RescueUnitStatus stuck)
+    {
+        var u = Existing(stuck);
+
+        await _svc.UpdateStatusAsync(u.Id, new UpdateRescueUnitStatusDto { Status = RescueUnitStatus.Available });
+
+        Assert.Equal(RescueUnitStatus.Available, u.Status);
+        _units.Verify(x => x.SaveStatusAsync(u, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

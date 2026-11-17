@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Dispatch;
 using EmergencyDispatch.Application.DTOs.Incident;
@@ -41,6 +42,24 @@ public class AutoDispatchService : IAutoDispatchService
     public const string SuspectedDuplicateNote = "AI không tự điều phối: nghi trùng với sự cố đã được điều xe gần đó. Cần Điều phối viên kiểm tra.";
     public const string NoUnitsNote = "AI không tự điều phối: không còn xe phù hợp trong bán kính tìm kiếm. Cần Điều phối viên xử lý.";
     public const string AssignFailedNote = "AI không tự điều phối: phát lệnh thất bại (xe vừa bị điều đi nơi khác). Cần Điều phối viên xử lý.";
+    /// <summary>
+    /// Ghi chú cho từng mã không đủ điều kiện (lưu vào sự cố, hiển thị song ngữ). Mã không có ở đây thì không lưu
+    /// (not-awaiting-verification: Operator đã xác minh, không ghi đè)
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> NotEligibleNotes = new Dictionary<string, string>
+    {
+        ["linked-report"] = "AI không tự điều phối: báo cáo đã được gom vào sự cố khác.",
+        ["out-of-service-area"] = "AI không tự điều phối: sự cố ngoài khu vực phục vụ.",
+        ["unclassified"] = "AI không tự điều phối: chưa xác định được mức độ Level 1–3.",
+        ["type-not-ai-recognizable"] = "AI không tự điều phối: loại sự cố không thuộc nhóm AI nhận diện (cháy nổ / tai nạn).",
+        ["reporter-chose-other"] = "AI không tự điều phối: người báo chọn loại \"Khác\", cần Điều phối viên thẩm định.",
+        ["operator-handling"] = "AI không tự điều phối: Điều phối viên đang giữ ca xử lý sự cố tại thời điểm AI phân tích.",
+        ["ai-failed"] = "AI không tự điều phối: phân tích AI thất bại.",
+        ["confidence-not-measured"] = "AI không tự điều phối: độ tin cậy chỉ là ước lượng, không đo từ mô hình.",
+        ["ai-type-mismatch"] = "AI không tự điều phối: loại sự cố AI nhận diện khác loại của sự cố.",
+        ["below-threshold"] = "AI không tự điều phối: độ tin cậy thấp hơn ngưỡng cấu hình."
+    };
+
     public const string PartialNote = "AI tự điều phối một phần: chưa đủ số xe theo cấu hình của mức độ. Điều phối viên cần bổ sung xe.";
 
     private readonly IIncidentRepository _incidentRepository;
@@ -99,9 +118,14 @@ public class AutoDispatchService : IAutoDispatchService
         }
 
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
-        if (incident == null || IneligibleReason(incident, settings, DateTime.UtcNow) is { } early)
+        if (incident == null)
         {
-            _logger.LogDebug("Auto-dispatch bỏ qua sự cố {IncidentId}: {Reason}", incidentId, incident == null ? "not-found" : IneligibleReason(incident, settings, DateTime.UtcNow));
+            return AutoDispatchOutcome.NotEligible;
+        }
+        if (IneligibleReason(incident, settings, DateTime.UtcNow) is { } early)
+        {
+            _logger.LogDebug("Auto-dispatch bỏ qua sự cố {IncidentId}: {Reason}", incidentId, early);
+            await RecordNotEligibleAsync(incident, early, cancellationToken);
             return AutoDispatchOutcome.NotEligible;
         }
 
@@ -113,15 +137,20 @@ public class AutoDispatchService : IAutoDispatchService
         {
             await _incidentRepository.ReloadAsync(incident, cancellationToken);
             var now = DateTime.UtcNow;
-            if (IneligibleReason(incident, settings, now) != null)
+            if (IneligibleReason(incident, settings, now) is { } late)
             {
+                if (await RecordNotEligibleAsync(incident, late, cancellationToken) && areaLock != null)
+                {
+                    await areaLock.CommitAsync(cancellationToken);
+                    committed = true;
+                }
                 return AutoDispatchOutcome.NotEligible;
             }
 
             var duplicate = await FindDispatchedNeighbourAsync(incident, settings, now, cancellationToken);
             if (duplicate is { } dup)
             {
-                await MarkSkippedAsync(incident, SuspectedDuplicateNote, dup.Incident.Id,
+                await MarkSkippedAsync(incident, SuspectedDuplicateNote, "suspected-duplicate", dup.Incident.Id,
                     new { reason = "SuspectedDuplicate", duplicateOf = dup.Incident.Id, distanceMeters = Math.Round(dup.DistanceMeters, 1) }, cancellationToken);
                 if (areaLock != null) await areaLock.CommitAsync(cancellationToken);
                 committed = true;
@@ -132,7 +161,7 @@ public class AutoDispatchService : IAutoDispatchService
             var (unitIds, plannedUnits) = await PickUnitsAsync(incident, cancellationToken);
             if (unitIds.Count == 0)
             {
-                await MarkSkippedAsync(incident, NoUnitsNote, null, new { reason = "NoUnits" }, cancellationToken);
+                await MarkSkippedAsync(incident, NoUnitsNote, "no-teams", null, new { reason = "NoUnits" }, cancellationToken);
                 if (areaLock != null) await areaLock.CommitAsync(cancellationToken);
                 committed = true;
                 await AnnounceAsync(incident, cancellationToken);
@@ -149,6 +178,7 @@ public class AutoDispatchService : IAutoDispatchService
             incident.ResponseTimeMs = (long)(now - incident.CreatedAt).TotalMilliseconds;
             incident.AutoDispatchState = AutoDispatchState.Dispatched;
             incident.AutoDispatchNote = unitIds.Count < plannedUnits ? PartialNote : DispatchedNote;
+            incident.AutoDispatchReasonCode = unitIds.Count < plannedUnits ? "partial" : null;
             incident.SuspectedDuplicateOfIncidentId = null;
             incident.UpdatedAt = now;
 
@@ -200,7 +230,7 @@ public class AutoDispatchService : IAutoDispatchService
                 var fresh = await _incidentRepository.GetIncidentWithDetailsAsync(incident.Id, cancellationToken);
                 if (fresh != null && fresh.Status == IncidentStatus.AiProcessed)
                 {
-                    await MarkSkippedAsync(fresh, AssignFailedNote, null, new { reason = "AssignFailed", message = result.Message }, cancellationToken);
+                    await MarkSkippedAsync(fresh, AssignFailedNote, "assign-failed", null, new { reason = "AssignFailed", message = result.Message }, cancellationToken);
                     await AnnounceAsync(fresh, cancellationToken);
                 }
                 committed = true;
@@ -280,9 +310,42 @@ public class AutoDispatchService : IAutoDispatchService
         return (chosen, planned);
     }
 
-    private async Task MarkSkippedAsync(Incident incident, string note, Guid? duplicateOf, object details, CancellationToken cancellationToken)
+    /// <summary>
+    /// Lưu lý do không đủ điều kiện vào sự cố và cập nhật realtime (không gửi thông báo / cảnh báo).
+    /// Không ghi đè kết quả đã có (Dispatched / Skipped) và bỏ qua mã không cần lưu. true = đã lưu
+    /// </summary>
+    private async Task<bool> RecordNotEligibleAsync(Incident incident, string reason, CancellationToken cancellationToken)
+    {
+        if (!NotEligibleNotes.TryGetValue(reason, out var note)
+            || incident.AutoDispatchState is not (AutoDispatchState.None or AutoDispatchState.NotEligible))
+        {
+            return false;
+        }
+
+        incident.AutoDispatchState = AutoDispatchState.NotEligible;
+        incident.AutoDispatchReasonCode = reason;
+        incident.AutoDispatchNote = note;
+        incident.UpdatedAt = DateTime.UtcNow;
+        await _incidentRepository.SaveChangesAsync(cancellationToken);
+
+        await _realtimeNotifier.AutoDispatchResultAsync(new AutoDispatchEventDto
+        {
+            IncidentId = incident.Id,
+            ResponsibleStationId = incident.ResponsibleStationId,
+            State = AutoDispatchState.NotEligible,
+            Note = LocalizationHelper.Localize(note),
+            ReasonCode = reason,
+            Confidence = incident.AiClassification?.ConfidenceScore,
+            At = DateTime.UtcNow
+        }, cancellationToken);
+        await _realtimeNotifier.IncidentUpdatedAsync(IncidentService.MapToResponseDto(incident), cancellationToken);
+        return true;
+    }
+
+    private async Task MarkSkippedAsync(Incident incident, string note, string reasonCode, Guid? duplicateOf, object details, CancellationToken cancellationToken)
     {
         incident.AutoDispatchState = AutoDispatchState.Skipped;
+        incident.AutoDispatchReasonCode = reasonCode;
         incident.AutoDispatchNote = note;
         incident.SuspectedDuplicateOfIncidentId = duplicateOf;
         incident.UpdatedAt = DateTime.UtcNow;
@@ -315,7 +378,8 @@ public class AutoDispatchService : IAutoDispatchService
             IncidentId = incident.Id,
             ResponsibleStationId = incident.ResponsibleStationId,
             State = incident.AutoDispatchState,
-            Note = incident.AutoDispatchNote,
+            Note = incident.AutoDispatchNote == null ? null : LocalizationHelper.Localize(incident.AutoDispatchNote),
+            ReasonCode = incident.AutoDispatchReasonCode,
             Confidence = incident.AiClassification?.ConfidenceScore,
             Plates = plates,
             SuspectedDuplicateOfIncidentId = incident.SuspectedDuplicateOfIncidentId,
