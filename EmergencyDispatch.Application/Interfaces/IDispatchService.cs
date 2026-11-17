@@ -73,6 +73,22 @@ public interface IDispatchService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lịch sử báo cáo nghiệm thu: Admin toàn bộ (lọc trạm tùy chọn), Operator trạm mình, nhân viên cứu hộ tổ mình / do mình nộp
+    /// </summary>
+    Task<ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>> GetCompletionReportsAsync(
+        CompletionReportFilterDto filter,
+        Guid viewerUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Chi tiết một báo cáo nghiệm thu (cùng phạm vi xem với lịch sử)
+    /// </summary>
+    Task<ApiResponseDto<CompletionReportHistoryItemDto>> GetCompletionReportByIdAsync(
+        Guid id,
+        Guid viewerUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Cập nhật tiến độ nhiệm vụ (Accepted -> EnRoute -> OnScene)
     /// </summary>
     Task<ApiResponseDto<DispatchAssignmentResponseDto>> UpdateAssignmentStatusAsync(

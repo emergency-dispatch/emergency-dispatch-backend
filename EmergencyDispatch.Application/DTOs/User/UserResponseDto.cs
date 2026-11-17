@@ -10,6 +10,9 @@ public class UserResponseDto
     public string? PhoneNumber { get; set; }
     public string? AvatarUrl { get; set; }
     public UserRole Role { get; set; }
+
+    /// <summary>Mã nhân sự NV-NNNN (null với người dân)</summary>
+    public string? StaffCode { get; set; }
     public UserStatus Status { get; set; }
 
     // Thông tin nhân thân

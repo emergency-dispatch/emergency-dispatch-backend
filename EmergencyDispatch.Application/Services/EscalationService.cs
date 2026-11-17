@@ -213,6 +213,7 @@ public class EscalationService : IEscalationService
         {
             Id = l.Id,
             IncidentId = l.IncidentId,
+            IncidentCode = l.Incident?.Code,
             IncidentTitle = l.Incident?.Title,
             IncidentSeverity = l.Incident?.Severity ?? SeverityLevel.Unclassified,
             IncidentStatus = l.Incident?.Status ?? IncidentStatus.Pending,
@@ -337,6 +338,7 @@ public class EscalationService : IEscalationService
                 await _realtimeNotifier.IncidentUpdatedAsync(new IncidentResponseDto
                 {
                     Id = incident.Id,
+                    Code = incident.Code,
                     Title = incident.Title,
                     Description = incident.Description,
                     Latitude = incident.Latitude,
@@ -355,6 +357,7 @@ public class EscalationService : IEscalationService
                 await _realtimeNotifier.EscalationAlertAsync(new EscalationAlertDto
                 {
                     IncidentId = incident.Id,
+                    IncidentCode = incident.Code,
                     IncidentTitle = incident.Title,
                     Severity = incident.Severity,
                     Status = incident.Status,
@@ -412,6 +415,7 @@ public class EscalationService : IEscalationService
             await _realtimeNotifier.EscalationAlertAsync(new EscalationAlertDto
             {
                 IncidentId = incident.Id,
+                IncidentCode = incident.Code,
                 IncidentTitle = incident.Title,
                 Severity = incident.Severity,
                 Status = incident.Status,

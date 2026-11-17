@@ -1237,4 +1237,99 @@ public class DispatchServiceTests
         _units.Verify(x => x.SaveStatusAsync(u, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
         _units.Verify(x => x.UpdateAsync(It.IsAny<RescueUnit>()), Times.Never);
     }
+
+    // ===================== Lịch sử báo cáo nghiệm thu =====================
+    [Fact]
+    public async Task CompletionReports_Operator_IsForcedToOwnStation()
+    {
+        Guid? station = null;
+        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid? st, Guid? _, Guid? _, Guid? _, Guid? _, DateTime? _, DateTime? _, string? _, int _, int _, CancellationToken _) => station = st)
+            .ReturnsAsync((new List<CompletionReport>(), 0));
+
+        var r = await _svc.GetCompletionReportsAsync(new CompletionReportFilterDto { StationId = Guid.NewGuid(), PageSize = 1000 }, Guid.NewGuid());
+
+        Assert.True(r.Success);
+        Assert.Equal(_stationA, station);
+        Assert.Equal(100, r.Data!.PageSize);
+    }
+
+    [Fact]
+    public async Task CompletionReports_RescueStaff_SeesOwnTeamOrOwnSubmissions()
+    {
+        var staff = Staff("Tổ 1");
+        var teamId = Guid.NewGuid();
+        _me.SetupGet(m => m.Role).Returns(UserRole.RescueStaff);
+        _users.Setup(x => x.GetTeamIdAsync(staff.Id, It.IsAny<CancellationToken>())).ReturnsAsync(teamId);
+        (Guid? st, Guid? ct, Guid? cu) seen = default;
+        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid? s, Guid? _, Guid? _, Guid? c, Guid? u, DateTime? _, DateTime? _, string? _, int _, int _, CancellationToken _) => seen = (s, c, u))
+            .ReturnsAsync((new List<CompletionReport>(), 0));
+
+        await _svc.GetCompletionReportsAsync(new CompletionReportFilterDto(), staff.Id);
+
+        Assert.Null(seen.st);
+        Assert.Equal(teamId, seen.ct);
+        Assert.Equal(staff.Id, seen.cu);
+    }
+
+    [Fact]
+    public async Task CompletionReports_MapsIncidentTeamAndUnits()
+    {
+        var inc = Incident(status: IncidentStatus.Completed);
+        var unit = Unit(RescueUnitType.FireTruck, 2, RescueUnitStatus.Available, teamed: false);
+        var submitter = new User { FullName = "Nguyễn Văn A" };
+        var report = new CompletionReport
+        {
+            IncidentId = inc.Id, Incident = inc, ActionsSummary = "Đã dập tắt đám cháy", SubmittedByUserId = submitter.Id, SubmittedByUser = submitter,
+            MediaItems = { new CompletionReportMedia { MediaUrl = "https://x/1.jpg" } }
+        };
+        report.Assignments.Add(new DispatchAssignment { IncidentId = inc.Id, RescueUnitId = unit.Id, RescueUnit = unit, Status = DispatchAssignmentStatus.Completed });
+        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<CompletionReport> { report }, 1));
+
+        var item = (await _svc.GetCompletionReportsAsync(new CompletionReportFilterDto(), Guid.NewGuid())).Data!.Items.Single();
+
+        Assert.Equal(inc.Id, item.IncidentId);
+        Assert.Equal(IncidentStatus.Completed, item.IncidentStatus);
+        Assert.Equal("Nguyễn Văn A", item.SubmittedByName);
+        Assert.Equal(new[] { "https://x/1.jpg" }, item.EvidenceMediaUrls);
+        Assert.Equal(unit.PlateNumber, item.Units.Single().PlateNumber);
+    }
+
+    [Fact]
+    public async Task CompletionReportById_OtherStationForOperator_IsForbidden()
+    {
+        var report = new CompletionReport
+        {
+            IncidentId = Guid.NewGuid(),
+            Incident = new Incident { ResponsibleStationId = Guid.NewGuid() },
+            StationTeam = new StationTeam { StationId = Guid.NewGuid(), Name = "Tổ X" }
+        };
+        _assign.Setup(a => a.GetCompletionReportByIdAsync(report.Id, It.IsAny<CancellationToken>())).ReturnsAsync(report);
+
+        var r = await _svc.GetCompletionReportByIdAsync(report.Id, Guid.NewGuid());
+
+        Assert.False(r.Success);
+        Assert.Equal(ApiErrorCodes.Forbidden, r.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CompletionReportById_RescueStaff_OwnTeam_IsAllowed_OtherTeam_IsForbidden()
+    {
+        var staff = Staff("Tổ 1");
+        var teamId = Guid.NewGuid();
+        _me.SetupGet(m => m.Role).Returns(UserRole.RescueStaff);
+        _users.Setup(x => x.GetTeamIdAsync(staff.Id, It.IsAny<CancellationToken>())).ReturnsAsync(teamId);
+        var mine = new CompletionReport { StationTeamId = teamId };
+        var other = new CompletionReport { StationTeamId = Guid.NewGuid() };
+        _assign.Setup(a => a.GetCompletionReportByIdAsync(mine.Id, It.IsAny<CancellationToken>())).ReturnsAsync(mine);
+        _assign.Setup(a => a.GetCompletionReportByIdAsync(other.Id, It.IsAny<CancellationToken>())).ReturnsAsync(other);
+
+        Assert.True((await _svc.GetCompletionReportByIdAsync(mine.Id, staff.Id)).Success);
+        Assert.Equal(ApiErrorCodes.Forbidden, (await _svc.GetCompletionReportByIdAsync(other.Id, staff.Id)).ErrorCode);
+    }
 }

@@ -221,6 +221,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         return new LinkedToIncidentDto
         {
             IncidentId = refreshed.Id,
+            Code = refreshed.Code,
             Title = refreshed.Title,
             LocationAddress = refreshed.LocationAddress,
             EventType = refreshed.EventType,

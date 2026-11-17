@@ -431,6 +431,7 @@ public class AuthService : IAuthService
     private static UserDto MapToUserDto(User user) => new()
     {
         Id = user.Id,
+        StaffCode = user.StaffCode,
         FullName = user.FullName,
         Email = user.Email,
         PhoneNumber = user.PhoneNumber,

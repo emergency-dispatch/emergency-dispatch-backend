@@ -150,6 +150,7 @@ public class ReportService : IReportService
         return new IncidentHistoryItemDto
         {
             Id = i.Id,
+            Code = i.Code,
             Title = i.Title,
             LocationAddress = i.LocationAddress,
             Severity = i.Severity,

@@ -8,6 +8,16 @@ namespace EmergencyDispatch.Domain.Entities;
 public class Incident : BaseEntity
 {
     /// <summary>
+    /// Số thứ tự toàn hệ thống (sequence "IncidentNumbers"), cấp khi lưu lần đầu
+    /// </summary>
+    public long Number { get; set; }
+
+    /// <summary>
+    /// Mã hiển thị SC-yyMMdd-NNNN (DisplayCodes.IncidentCode), cấp khi lưu lần đầu. Duy nhất, tìm kiếm được
+    /// </summary>
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>
     /// Tiêu đề hoặc phân loại ngắn gọn của sự cố
     /// </summary>
     public string Title { get; set; } = string.Empty;

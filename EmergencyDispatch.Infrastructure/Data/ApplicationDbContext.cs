@@ -15,6 +15,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     private const string CompletionReportTeamIndex = "UQ_CompletionReports_Incident_Team";
+    public const string IncidentNumberSequence = "IncidentNumbers";
+    public const string StaffNumberSequence = "StaffNumbers";
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
     {
@@ -24,6 +26,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     {
         try
         {
+            AssignDisplayCodes(sql => Database.SqlQueryRaw<long>(sql).AsEnumerable().First());
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
         catch (DbUpdateException ex) when (TryGetConflictEntity(ex, out var entityName))
@@ -36,11 +39,61 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     {
         try
         {
+            foreach (var (entity, sequence) in PendingDisplayCodes())
+            {
+                var next = await Database.SqlQueryRaw<long>(NextValSql(sequence)).FirstAsync(cancellationToken);
+                ApplyDisplayCode(entity, next);
+            }
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
         catch (DbUpdateException ex) when (TryGetConflictEntity(ex, out var entityName))
         {
             throw new ConcurrencyConflictException(entityName, ex);
+        }
+    }
+
+    private static string NextValSql(string sequence) => $"SELECT nextval('\"{sequence}\"') AS \"Value\"";
+
+    /// <summary>
+    /// Sự cố mới chưa có mã, tài khoản nhân sự (mới hoặc vừa đổi vai trò) chưa có số nhân sự
+    /// </summary>
+    private List<(object Entity, string Sequence)> PendingDisplayCodes()
+    {
+        var pending = new List<(object, string)>();
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.Entity is Incident incident && entry.State == EntityState.Added && string.IsNullOrEmpty(incident.Code))
+            {
+                pending.Add((incident, IncidentNumberSequence));
+            }
+            else if (entry.Entity is User user && entry.State is EntityState.Added or EntityState.Modified
+                     && user.StaffNumber == null && Domain.Common.DisplayCodes.NeedsStaffNumber(user.Role))
+            {
+                pending.Add((user, StaffNumberSequence));
+            }
+        }
+        return pending;
+    }
+
+    private void AssignDisplayCodes(Func<string, long> nextVal)
+    {
+        foreach (var (entity, sequence) in PendingDisplayCodes())
+        {
+            ApplyDisplayCode(entity, nextVal(NextValSql(sequence)));
+        }
+    }
+
+    private static void ApplyDisplayCode(object entity, long next)
+    {
+        switch (entity)
+        {
+            case Incident incident:
+                incident.Number = next;
+                incident.Code = Domain.Common.DisplayCodes.IncidentCode(next, incident.CreatedAt);
+                break;
+            case User user:
+                user.StaffNumber = (int)next;
+                break;
         }
     }
 
@@ -152,12 +205,17 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         HasGeographyLocation<TrafficHotspot>(modelBuilder, nameof(TrafficHotspot.Latitude), nameof(TrafficHotspot.Longitude), "IX_TrafficHotspots_Location");
         HasGeographyLocation<Station>(modelBuilder, nameof(Station.Latitude), nameof(Station.Longitude), "IX_Stations_Location");
 
+        modelBuilder.HasSequence<long>(IncidentNumberSequence);
+        modelBuilder.HasSequence<long>(StaffNumberSequence);
+
         // ==================== 1. USER ====================
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasKey(u => u.Id);
             // Chỉ tài khoản chưa xóa giữ email: xóa mềm xong được đăng ký / tạo lại cùng email
             entity.HasIndex(u => u.Email).IsUnique().HasFilter("\"IsDeleted\" = false").HasDatabaseName("IX_Users_Email");
+            entity.HasIndex(u => u.StaffNumber).IsUnique().HasDatabaseName("IX_Users_StaffNumber");
+            entity.Ignore(u => u.StaffCode);
             entity.HasIndex(u => u.Role).HasDatabaseName("IX_Users_Role");
             entity.HasIndex(u => u.StationId).HasDatabaseName("IX_Users_StationId");
             entity.HasIndex(u => new { u.IsDeleted, u.Status }).HasDatabaseName("IX_Users_Active");
@@ -280,6 +338,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.HasIndex(i => i.ReportedByUserId).HasDatabaseName("IX_Incidents_ReportedBy");
             entity.HasIndex(i => new { i.Latitude, i.Longitude }).HasDatabaseName("IX_Incidents_GeoLocation");
             entity.HasIndex(i => i.CreatedAt).HasDatabaseName("IX_Incidents_CreatedAt");
+            entity.HasIndex(i => i.Code).IsUnique().HasDatabaseName("IX_Incidents_Code");
+            entity.HasIndex(i => i.Number).IsUnique().HasDatabaseName("IX_Incidents_Number");
+            entity.Property(i => i.Code).HasMaxLength(20).IsRequired();
             entity.HasIndex(i => new { i.IsDeleted, i.Status }).HasDatabaseName("IX_Incidents_Active");
 
             entity.Property(i => i.Title).HasMaxLength(300).IsRequired();

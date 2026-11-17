@@ -55,6 +55,7 @@ public class BlockedNumberDto
     public DateTime? ExpiresAt { get; set; }
     public string Reason { get; set; } = string.Empty;
     public Guid? IncidentId { get; set; }
+    public string? IncidentCode { get; set; }
     public string? BlockedByName { get; set; }
     public DateTime? LastExtendedAt { get; set; }
     public DateTime? RemovedAt { get; set; }

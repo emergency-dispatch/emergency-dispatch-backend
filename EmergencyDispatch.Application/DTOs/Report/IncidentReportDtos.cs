@@ -56,6 +56,7 @@ public class IncidentHistoryFilterDto
 public class IncidentHistoryItemDto
 {
     public Guid Id { get; set; }
+    public string Code { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string LocationAddress { get; set; } = string.Empty;
     public SeverityLevel Severity { get; set; }

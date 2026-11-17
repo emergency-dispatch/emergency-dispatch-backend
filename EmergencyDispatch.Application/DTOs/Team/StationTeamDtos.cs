@@ -10,6 +10,10 @@ public class StationTeamDto
 {
     public Guid Id { get; set; }
     public Guid StationId { get; set; }
+
+    /// <summary>Mã trạm (Station.Code) và tên trạm để hiển thị thay cho StationId</summary>
+    public string? StationCode { get; set; }
+    public string? StationName { get; set; }
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
@@ -46,6 +50,7 @@ public class StationTeamDto
 public class StationTeamMemberDto
 {
     public Guid StaffId { get; set; }
+    public string? StaffCode { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public CrewRole CrewRole { get; set; }

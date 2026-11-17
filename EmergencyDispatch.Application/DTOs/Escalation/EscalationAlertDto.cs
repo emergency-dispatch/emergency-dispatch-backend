@@ -8,6 +8,7 @@ namespace EmergencyDispatch.Application.DTOs.Escalation;
 public class EscalationAlertDto
 {
     public Guid IncidentId { get; set; }
+    public string IncidentCode { get; set; } = string.Empty;
     public string IncidentTitle { get; set; } = string.Empty;
     public SeverityLevel Severity { get; set; }
     public IncidentStatus Status { get; set; }

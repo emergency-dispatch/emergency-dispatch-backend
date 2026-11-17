@@ -14,6 +14,16 @@ public class User : BaseEntity
     public string? GoogleId { get; set; }
     public string? AvatarUrl { get; set; }
     public UserRole Role { get; set; } = UserRole.Citizen;
+
+    /// <summary>
+    /// Số nhân sự (sequence "StaffNumbers"), cấp tự động khi lưu tài khoản không phải người dân. Mã hiển thị: StaffCode
+    /// </summary>
+    public int? StaffNumber { get; set; }
+
+    /// <summary>
+    /// Mã nhân sự NV-NNNN; null với người dân
+    /// </summary>
+    public string? StaffCode => Common.DisplayCodes.StaffCode(StaffNumber, Role);
     public UserStatus Status { get; set; } = UserStatus.Active;
 
     // Thông tin nhân thân mở rộng

@@ -25,6 +25,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "postgis");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("IncidentNumbers");
+
+            modelBuilder.HasSequence("StaffNumbers");
+
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.AiClassification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -754,6 +758,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<Guid?>("ClosedByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -819,6 +828,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Property<double>("Longitude")
                         .HasColumnType("double precision");
+
+                    b.Property<long>("Number")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("OperatorNotes")
                         .HasColumnType("text");
@@ -897,6 +909,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("ClosedByUserId");
 
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Incidents_Code");
+
                     b.HasIndex("CreatedAt")
                         .HasDatabaseName("IX_Incidents_CreatedAt");
 
@@ -910,6 +926,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
 
                     b.HasIndex("LockedByOperatorId");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Incidents_Number");
 
                     b.HasIndex("ReportedByUserId")
                         .HasDatabaseName("IX_Incidents_ReportedBy");
@@ -2021,6 +2041,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("StaffNumber")
+                        .HasColumnType("integer");
+
                     b.Property<Guid?>("StationId")
                         .HasColumnType("uuid");
 
@@ -2039,6 +2062,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("Role")
                         .HasDatabaseName("IX_Users_Role");
+
+                    b.HasIndex("StaffNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Users_StaffNumber");
 
                     b.HasIndex("StationId")
                         .HasDatabaseName("IX_Users_StationId");

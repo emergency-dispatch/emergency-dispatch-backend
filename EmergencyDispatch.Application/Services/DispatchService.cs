@@ -829,6 +829,131 @@ public class DispatchService : IDispatchService
         return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(dtos);
     }
 
+    public const string CompletionReportForbiddenMessage = "Bạn không có quyền xem báo cáo nghiệm thu này.";
+    private const int MaxCompletionReportPageSize = 100;
+
+    /// <summary>
+    /// Phạm vi xem báo cáo nghiệm thu của người dùng hiện tại. Error != null = không được xem
+    /// </summary>
+    private async Task<(string? Error, Guid? StationId, Guid? CrewTeamId, Guid? CrewUserId)> CompletionReportScopeAsync(
+        Guid viewerUserId, Guid? requestedStationId, CancellationToken cancellationToken)
+    {
+        switch (_currentUser.Role)
+        {
+            case UserRole.Admin:
+                return (null, requestedStationId, null, null);
+            case UserRole.Operator:
+                return _currentUser.StationId.HasValue
+                    ? (null, _currentUser.StationId, null, null)
+                    : (OperatorScope.NoStationMessage, null, null, null);
+            case UserRole.RescueStaff:
+                var teamId = await _userRepository.GetTeamIdAsync(viewerUserId, cancellationToken);
+                return (null, null, teamId, viewerUserId);
+            default:
+                return (CompletionReportForbiddenMessage, null, null, null);
+        }
+    }
+
+    public async Task<ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>> GetCompletionReportsAsync(
+        CompletionReportFilterDto filter,
+        Guid viewerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (filter.From.HasValue && filter.To.HasValue && filter.From > filter.To)
+        {
+            return ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>.FailureResult("Thời gian bắt đầu phải trước thời gian kết thúc.");
+        }
+
+        var scope = await CompletionReportScopeAsync(viewerUserId, filter.StationId, cancellationToken);
+        if (scope.Error != null)
+        {
+            return ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>.ForbiddenResult(scope.Error);
+        }
+
+        var pageIndex = Math.Max(1, filter.PageIndex);
+        var pageSize = Math.Clamp(filter.PageSize, 1, MaxCompletionReportPageSize);
+        var (items, total) = await _assignmentRepository.GetCompletionReportsAsync(
+            scope.StationId, filter.TeamId, filter.IncidentId, scope.CrewTeamId, scope.CrewUserId,
+            filter.From, filter.To, filter.Search, pageIndex, pageSize, cancellationToken);
+
+        var page = new PaginatedResultDto<CompletionReportHistoryItemDto>(items.Select(MapCompletionReportHistory).ToList(), total, pageIndex, pageSize);
+        return ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>.SuccessResult(page,
+            LocalizationHelper.Localize("Có {0} báo cáo nghiệm thu.", total));
+    }
+
+    public async Task<ApiResponseDto<CompletionReportHistoryItemDto>> GetCompletionReportByIdAsync(
+        Guid id,
+        Guid viewerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var report = await _assignmentRepository.GetCompletionReportByIdAsync(id, cancellationToken);
+        if (report == null)
+        {
+            return ApiResponseDto<CompletionReportHistoryItemDto>.NotFoundResult("Không tìm thấy báo cáo nghiệm thu.");
+        }
+
+        var scope = await CompletionReportScopeAsync(viewerUserId, null, cancellationToken);
+        var allowed = scope.Error == null && (scope.CrewUserId.HasValue
+            ? (scope.CrewTeamId.HasValue && report.StationTeamId == scope.CrewTeamId) || report.SubmittedByUserId == scope.CrewUserId
+            : !scope.StationId.HasValue
+              || report.StationTeam?.StationId == scope.StationId
+              || report.Incident?.ResponsibleStationId == scope.StationId
+              || report.Assignments.Any(a => a.RescueUnit?.StationId == scope.StationId));
+        if (!allowed)
+        {
+            return ApiResponseDto<CompletionReportHistoryItemDto>.ForbiddenResult(scope.Error ?? CompletionReportForbiddenMessage);
+        }
+
+        return ApiResponseDto<CompletionReportHistoryItemDto>.SuccessResult(MapCompletionReportHistory(report));
+    }
+
+    private static CompletionReportHistoryItemDto MapCompletionReportHistory(CompletionReport r)
+    {
+        var firstUnitStation = r.Assignments.Select(a => a.RescueUnit?.Station).FirstOrDefault(s => s != null);
+        return new CompletionReportHistoryItemDto
+        {
+            Id = r.Id,
+            StationTeamId = r.StationTeamId,
+            StationTeamName = r.StationTeam?.Name,
+            ActionsSummary = r.ActionsSummary,
+            VictimsAssistedCount = r.VictimsAssistedCount,
+            EquipmentUsed = r.EquipmentUsed,
+            EvidenceMediaUrls = r.MediaItems.Select(m => m.MediaUrl).ToList(),
+            HandoverEntity = r.HandoverEntity,
+            HandoverContactName = r.HandoverContactName,
+            HandoverContactPhone = r.HandoverContactPhone,
+            HandoverNotes = r.HandoverNotes,
+            SignatureUrl = r.SignatureUrl,
+            SignerName = r.SignerName,
+            SignedAt = r.SignedAt,
+            SubmittedByUserId = r.SubmittedByUserId,
+            SubmittedByName = r.SubmittedByUser?.FullName ?? r.SignerName,
+            SubmittedAt = r.SubmittedAt,
+            IncidentId = r.IncidentId,
+            IncidentCode = r.Incident?.Code ?? string.Empty,
+            IncidentTitle = r.Incident?.Title ?? string.Empty,
+            IncidentAddress = r.Incident?.LocationAddress ?? string.Empty,
+            IncidentStatus = r.Incident?.Status,
+            IncidentSeverity = r.Incident?.Severity,
+            IncidentClosedAt = r.Incident?.ClosedAt,
+            StationId = r.StationTeam?.StationId ?? firstUnitStation?.Id,
+            StationName = r.StationTeam?.Station?.Name ?? firstUnitStation?.Name,
+            Units = r.Assignments
+                .OrderBy(a => a.DispatchedAt)
+                .Select(a => new CompletionReportUnitDto
+                {
+                    AssignmentId = a.Id,
+                    RescueUnitId = a.RescueUnitId,
+                    PlateNumber = a.RescueUnit?.PlateNumber ?? string.Empty,
+                    UnitType = a.RescueUnit?.UnitType ?? string.Empty,
+                    DispatchedAt = a.DispatchedAt,
+                    ArrivedAt = a.ArrivedAt,
+                    CompletedAt = a.CompletedAt
+                })
+                .ToList()
+        };
+    }
+
     public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> UpdateAssignmentStatusAsync(
         Guid id,
         UpdateAssignmentStatusDto dto,
@@ -1455,6 +1580,7 @@ public class DispatchService : IDispatchService
         var result = new CitizenTrackingResponseDto
         {
             IncidentId = incident.Id,
+            IncidentCode = incident.Code,
             IncidentTitle = incident.Title,
             IncidentAddress = incident.LocationAddress,
             IncidentLat = incident.Latitude,
@@ -1715,6 +1841,7 @@ public class DispatchService : IDispatchService
         {
             Id = assignment.Id,
             IncidentId = assignment.IncidentId,
+            IncidentCode = incident?.Code ?? string.Empty,
             ResponsibleStationId = incident?.ResponsibleStationId,
             IncidentTitle = incident?.Title ?? string.Empty,
             IncidentAddress = incident?.LocationAddress ?? string.Empty,
@@ -1766,6 +1893,7 @@ public class DispatchService : IDispatchService
         return new EmergencyDispatch.Application.DTOs.Incident.IncidentResponseDto
         {
             Id = incident.Id,
+            Code = incident.Code,
             Title = incident.Title,
             Description = incident.Description,
             Latitude = incident.Latitude,

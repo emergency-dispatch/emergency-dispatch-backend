@@ -9,6 +9,7 @@ public class EscalationLogDto
 {
     public Guid Id { get; set; }
     public Guid IncidentId { get; set; }
+    public string? IncidentCode { get; set; }
     public string? IncidentTitle { get; set; }
     public SeverityLevel IncidentSeverity { get; set; }
     public IncidentStatus IncidentStatus { get; set; }

@@ -701,4 +701,29 @@ public class IncidentServiceTests
         _incidents.Verify(i => i.AdjustLinkedReportCountAsync(parentId, -1, null, It.IsAny<CancellationToken>()), Times.Once);
         _followUp.Verify(f => f.RestoreLinkedReportsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task MyReports_LinkedAndDuplicate_CarryParentIncident_OthersDoNot()
+    {
+        var userId = Guid.NewGuid();
+        var parent = new Incident { Title = "Cháy kho Tân Thuận", LocationAddress = "KCX Tân Thuận", Status = IncidentStatus.InProgress };
+        var linked = new Incident { ReportedByUserId = userId, Status = IncidentStatus.Linked, DuplicateOfIncidentId = parent.Id, DuplicateOfIncident = parent };
+        var duplicate = new Incident { ReportedByUserId = userId, Status = IncidentStatus.Cancelled, CancellationReason = CancellationReason.Duplicate, DuplicateOfIncidentId = parent.Id, DuplicateOfIncident = parent };
+        // Đã tách khỏi sự cố gốc (FK còn sót) → không coi là gom
+        var unlinked = new Incident { ReportedByUserId = userId, Status = IncidentStatus.Verified, DuplicateOfIncidentId = parent.Id, DuplicateOfIncident = parent };
+        _incidents.Setup(i => i.GetByReporterAsync(userId, null, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<Incident> { linked, duplicate, unlinked }, 3));
+
+        var items = (await _svc.GetMyReportsAsync(userId, MyReportFilter.All, 1, 20)).Data!.Items.ToList();
+
+        foreach (var dto in items.Take(2))
+        {
+            Assert.Equal(parent.Id, dto.LinkedToIncidentId);
+            Assert.Equal("Cháy kho Tân Thuận", dto.LinkedToIncidentTitle);
+            Assert.Equal("KCX Tân Thuận", dto.LinkedToIncidentAddress);
+            Assert.Equal(IncidentStatus.InProgress, dto.LinkedToIncidentStatus);
+        }
+        Assert.Null(items[2].LinkedToIncidentId);
+        Assert.Null(items[2].LinkedToIncidentTitle);
+    }
 }

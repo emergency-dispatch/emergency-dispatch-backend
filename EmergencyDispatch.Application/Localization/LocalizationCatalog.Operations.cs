@@ -472,6 +472,9 @@ public static partial class LocalizationCatalog
         { "Loại xe {0} được khai báo hai lần ở {1}.", "Vehicle type {0} is declared twice at {1}." },
         { "Tổng số xe của {0} vượt quá 5 (BR-14).", "The total number of vehicles for {0} exceeds 5 (BR-14)." },
         { "Đã lưu kế hoạch điều xe.", "Dispatch plan saved." },
-        { "AI tự điều phối một phần: chưa đủ số xe theo cấu hình của mức độ. Điều phối viên cần bổ sung xe.", "AI partially auto-dispatched: not enough units for the configured plan of this severity. The operator needs to add units." }
+        { "AI tự điều phối một phần: chưa đủ số xe theo cấu hình của mức độ. Điều phối viên cần bổ sung xe.", "AI partially auto-dispatched: not enough units for the configured plan of this severity. The operator needs to add units." },
+        { "Có {0} báo cáo nghiệm thu.", "{0} completion report(s)." },
+        { "Không tìm thấy báo cáo nghiệm thu.", "Completion report not found." },
+        { "Bạn không có quyền xem báo cáo nghiệm thu này.", "You are not allowed to view this completion report." }
     };
 }

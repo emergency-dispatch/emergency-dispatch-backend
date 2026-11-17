@@ -10,6 +10,9 @@ public class UserDto
     public string? PhoneNumber { get; set; }
     public string? AvatarUrl { get; set; }
     public UserRole Role { get; set; }
+
+    /// <summary>Mã nhân sự NV-NNNN (null với người dân)</summary>
+    public string? StaffCode { get; set; }
     public UserStatus Status { get; set; }
     public Guid? StationId { get; set; }
     public string? StationName { get; set; }

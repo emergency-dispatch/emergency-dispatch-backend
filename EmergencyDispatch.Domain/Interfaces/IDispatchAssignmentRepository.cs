@@ -35,4 +35,27 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
     /// Thêm báo cáo nghiệm thu (chưa SaveChanges)
     /// </summary>
     Task AddCompletionReportAsync(CompletionReport report);
+
+    /// <summary>
+    /// Lịch sử báo cáo nghiệm thu (mới nhất trước), kèm sự cố, tổ, người nộp, ảnh, các xe được hoàn tất.
+    /// stationId: báo cáo của tổ / xe trạm đó hoặc của sự cố trạm đó phụ trách.
+    /// crewTeamId / crewUserId (nhân viên cứu hộ): báo cáo của tổ mình hoặc do chính mình nộp.
+    /// </summary>
+    Task<(IReadOnlyList<CompletionReport> Items, int TotalCount)> GetCompletionReportsAsync(
+        Guid? stationId,
+        Guid? teamId,
+        Guid? incidentId,
+        Guid? crewTeamId,
+        Guid? crewUserId,
+        DateTime? from,
+        DateTime? to,
+        string? search,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Một báo cáo nghiệm thu kèm sự cố, tổ, người nộp, ảnh và các xe được hoàn tất
+    /// </summary>
+    Task<CompletionReport?> GetCompletionReportByIdAsync(Guid id, CancellationToken cancellationToken = default);
 }

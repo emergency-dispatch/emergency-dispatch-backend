@@ -31,6 +31,7 @@ public class BlockedPhoneRepository : GenericRepository<BlockedPhoneNumber>, IBl
         CancellationToken cancellationToken = default)
     {
         var query = _dbSet
+            .Include(b => b.Incident)
             .Include(b => b.BlockedByUser)
             .Include(b => b.RemovedByUser)
             .AsNoTracking()
@@ -63,6 +64,7 @@ public class BlockedPhoneRepository : GenericRepository<BlockedPhoneNumber>, IBl
     public async Task<BlockedPhoneNumber?> GetWithUsersAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _dbSet
+            .Include(b => b.Incident)
             .Include(b => b.BlockedByUser)
             .Include(b => b.RemovedByUser)
             .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);

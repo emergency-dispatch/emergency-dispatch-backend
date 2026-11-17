@@ -104,6 +104,7 @@ public class BlockedNumberService : IBlockedNumberService
         ExpiresAt = b.ExpiresAt,
         Reason = b.Reason,
         IncidentId = b.IncidentId,
+        IncidentCode = b.Incident?.Code,
         BlockedByName = b.BlockedByUser?.FullName,
         LastExtendedAt = b.LastExtendedAt,
         RemovedAt = b.RemovedAt,

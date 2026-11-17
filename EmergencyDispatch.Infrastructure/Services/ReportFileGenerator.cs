@@ -73,7 +73,7 @@ public class ReportFileGenerator : IReportFileGenerator
 
         foreach (var r in rows)
         {
-            Line(r.Id.ToString(), r.Title, r.LocationAddress, SeverityLabel(r.Severity),
+            Line(string.IsNullOrEmpty(r.Code) ? r.Id.ToString() : r.Code, r.Title, r.LocationAddress, SeverityLabel(r.Severity),
                 r.AiSeverityScore?.ToString(CultureInfo.InvariantCulture), StatusLabel(r.Status), CancelLabel(r.CancellationReason),
                 Local(r.ReportedAt), Local(r.VerifiedAt), Local(r.FirstDispatchedAt), Local(r.FirstArrivedAt), Local(r.ClosedAt),
                 Minutes(r.ResponseMinutes), Minutes(r.ResolutionMinutes),
@@ -208,7 +208,7 @@ public class ReportFileGenerator : IReportFileGenerator
                         table.Cell().Element(Cell).Text(Local(r.ReportedAt));
                         table.Cell().Element(Cell).Column(c =>
                         {
-                            c.Item().Text(r.Title).SemiBold();
+                            c.Item().Text(string.IsNullOrEmpty(r.Code) ? r.Title : $"{r.Code} · {r.Title}").SemiBold();
                             c.Item().Text(r.LocationAddress).FontColor(Colors.Grey.Darken1);
                         });
                         table.Cell().Element(Cell).Text(SeverityLabel(r.Severity));

@@ -18,6 +18,7 @@ public class StationTeamRepository : IStationTeamRepository
     public async Task<IReadOnlyList<StationTeam>> GetByStationAsync(Guid stationId, CancellationToken cancellationToken = default)
     {
         return await _context.StationTeams
+            .Include(t => t.Station)
             .Include(t => t.RescueUnits)
             .Include(t => t.Members).ThenInclude(m => m.Staff)
             .Where(t => t.StationId == stationId)
@@ -28,6 +29,7 @@ public class StationTeamRepository : IStationTeamRepository
     public async Task<StationTeam?> GetByIdAsync(Guid teamId, CancellationToken cancellationToken = default)
     {
         return await _context.StationTeams
+            .Include(t => t.Station)
             .Include(t => t.RescueUnits)
             .Include(t => t.Members).ThenInclude(m => m.Staff)
             .FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);

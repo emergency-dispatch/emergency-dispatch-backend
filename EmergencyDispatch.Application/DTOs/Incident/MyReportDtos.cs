@@ -18,6 +18,8 @@ public enum MyReportFilter
 public class MyReportDto
 {
     public Guid Id { get; set; }
+    /// <summary>Mã sự cố hiển thị (SC-yyMMdd-NNNN) thay cho Guid</summary>
+    public string Code { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string LocationAddress { get; set; } = string.Empty;
@@ -26,6 +28,19 @@ public class MyReportDto
     public string? ResolutionSummary { get; set; }
     public CancellationReason? CancellationReason { get; set; }
     public List<string> MediaUrls { get; set; } = new();
+
+    /// <summary>
+    /// Báo cáo đã được gom (Status = Linked) hoặc bị hủy vì trùng (Cancelled + Duplicate): sự cố gốc. null với các ca khác
+    /// </summary>
+    public Guid? LinkedToIncidentId { get; set; }
+
+    /// <summary>
+    /// Tiêu đề / địa chỉ / trạng thái của sự cố gốc (để app hiện "Đã gộp vào sự cố ..." mà không cần gọi thêm)
+    /// </summary>
+    public string? LinkedToIncidentCode { get; set; }
+    public string? LinkedToIncidentTitle { get; set; }
+    public string? LinkedToIncidentAddress { get; set; }
+    public IncidentStatus? LinkedToIncidentStatus { get; set; }
 
     // Mốc thời gian (FR-CIT-05)
     public DateTime ReportedAt { get; set; }
@@ -52,6 +67,7 @@ public class AuditTrailEntryDto
 {
     public Guid Id { get; set; }
     public Guid IncidentId { get; set; }
+    public string? IncidentCode { get; set; }
     public string? IncidentTitle { get; set; }
     public Guid? ActorId { get; set; }
     public string? ActorName { get; set; }
@@ -69,6 +85,11 @@ public class AuditTrailEntryDto
 public class AuditTrailFilterDto
 {
     public Guid? IncidentId { get; set; }
+
+    /// <summary>
+    /// Lọc theo mã sự cố (SC-yyMMdd-NNNN, không phân biệt hoa thường) thay cho IncidentId
+    /// </summary>
+    public string? IncidentCode { get; set; }
     public Guid? ActorId { get; set; }
     public AuditAction? Action { get; set; }
     public DateTime? From { get; set; }

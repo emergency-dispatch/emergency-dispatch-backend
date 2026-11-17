@@ -71,7 +71,8 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
             var term = searchTerm.Trim().ToLower();
-            query = query.Where(i => i.Title.ToLower().Contains(term) ||
+            query = query.Where(i => i.Code.ToLower().Contains(term) ||
+                                     i.Title.ToLower().Contains(term) ||
                                      i.Description.ToLower().Contains(term) ||
                                      i.LocationAddress.ToLower().Contains(term));
         }
@@ -341,6 +342,7 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         var query = _context.Incidents
             .AsNoTracking()
             .Include(i => i.MediaItems)
+            .Include(i => i.DuplicateOfIncident)
             .Include(i => i.DispatchAssignments)
                 .ThenInclude(a => a.RescueUnit)
                     .ThenInclude(r => r!.Station)
@@ -403,6 +405,15 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         return await query.AsSplitQuery().ToListAsync(cancellationToken);
     }
 
+    public async Task<Guid?> GetIdByCodeAsync(string code, CancellationToken cancellationToken = default)
+    {
+        var normalized = code.Trim().ToUpperInvariant();
+        return await _context.Incidents
+            .Where(i => i.Code == normalized)
+            .Select(i => (Guid?)i.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetClosedHistoryAsync(
         IReadOnlyCollection<IncidentStatus> statuses,
         DateTime? from,
@@ -430,7 +441,7 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = $"%{search.Trim()}%";
-            query = query.Where(i => EF.Functions.ILike(i.Title, pattern) || EF.Functions.ILike(i.LocationAddress, pattern));
+            query = query.Where(i => EF.Functions.ILike(i.Code, pattern) || EF.Functions.ILike(i.Title, pattern) || EF.Functions.ILike(i.LocationAddress, pattern));
         }
 
         var total = await query.CountAsync(cancellationToken);

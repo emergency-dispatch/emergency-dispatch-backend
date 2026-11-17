@@ -1402,6 +1402,7 @@ public class IncidentService : IIncidentService
             ExpiresAt = block.ExpiresAt,
             Reason = block.Reason,
             IncidentId = block.IncidentId,
+            IncidentCode = incident.Code,
             BlockedByName = actor?.FullName
         }, "Đã chặn số điện thoại báo khống.");
     }
@@ -1593,8 +1594,17 @@ public class IncidentService : IIncidentService
         var dtos = items.Select(i =>
         {
             var assignments = i.DispatchAssignments.Where(a => a.Status != DispatchAssignmentStatus.Cancelled && a.Status != DispatchAssignmentStatus.Rejected).ToList();
+            // Cùng quy tắc với IncidentResponseDto.LinkedToIncidentId
+            var linked = i.Status == IncidentStatus.Linked || i.CancellationReason == CancellationReason.Duplicate;
+            var parent = linked ? i.DuplicateOfIncident : null;
             return new MyReportDto
             {
+                Code = i.Code,
+                LinkedToIncidentId = linked ? i.DuplicateOfIncidentId : null,
+                LinkedToIncidentCode = parent?.Code,
+                LinkedToIncidentTitle = parent?.Title,
+                LinkedToIncidentAddress = parent?.LocationAddress,
+                LinkedToIncidentStatus = parent?.Status,
                 Id = i.Id,
                 Title = i.Title,
                 Description = i.Description,
@@ -1632,6 +1642,17 @@ public class IncidentService : IIncidentService
             return ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>.FailureResult("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.");
         }
 
+        if (!filter.IncidentId.HasValue && !string.IsNullOrWhiteSpace(filter.IncidentCode))
+        {
+            var byCode = await _incidentRepository.GetIdByCodeAsync(filter.IncidentCode, cancellationToken);
+            if (byCode == null)
+            {
+                return ApiResponseDto<PaginatedResultDto<AuditTrailEntryDto>>.SuccessResult(
+                    new PaginatedResultDto<AuditTrailEntryDto>(new List<AuditTrailEntryDto>(), 0, filter.PageIndex, Math.Clamp(filter.PageSize, 1, 100)));
+            }
+            filter.IncidentId = byCode;
+        }
+
         if (_currentUser.IsStationScoped())
         {
             var scoped = filter.IncidentId.HasValue ? await _incidentRepository.GetByIdAsync(filter.IncidentId.Value) : null;
@@ -1653,6 +1674,7 @@ public class IncidentService : IIncidentService
         {
             Id = a.Id,
             IncidentId = a.IncidentId,
+            IncidentCode = a.Incident?.Code,
             IncidentTitle = a.Incident?.Title,
             ActorId = a.ActorId,
             ActorName = a.Actor?.FullName ?? (a.ActorRole == "AI_Worker" ? "AI Worker" : a.ActorRole),
@@ -1745,6 +1767,7 @@ public class IncidentService : IIncidentService
         return new IncidentResponseDto
         {
             Id = incident.Id,
+            Code = incident.Code,
             Title = incident.Title,
             Description = incident.Description,
             Latitude = incident.Latitude,

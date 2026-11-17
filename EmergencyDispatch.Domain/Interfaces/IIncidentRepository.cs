@@ -134,6 +134,11 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     /// Lịch sử sự cố đã đóng (Completed / Cancelled) cho Admin: lọc theo thời điểm báo cáo, trạm có xe tham gia,
     /// mức độ, từ khóa; mới nhất trước. pageSize = 0 → lấy tất cả (dùng khi xuất báo cáo, có giới hạn maxRows).
     /// </summary>
+    /// <summary>
+    /// Id sự cố theo mã hiển thị (SC-yyMMdd-NNNN, không phân biệt hoa thường); null nếu không có
+    /// </summary>
+    Task<Guid?> GetIdByCodeAsync(string code, CancellationToken cancellationToken = default);
+
     Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetClosedHistoryAsync(
         IReadOnlyCollection<IncidentStatus> statuses,
         DateTime? from,

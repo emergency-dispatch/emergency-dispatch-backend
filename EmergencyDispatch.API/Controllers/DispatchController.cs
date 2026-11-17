@@ -177,6 +177,29 @@ public class DispatchController : ControllerBase
     }
 
     /// <summary>
+    /// Lịch sử báo cáo nghiệm thu (mới nhất trước, phân trang). Admin: toàn bộ, lọc stationId tùy chọn;
+    /// Operator: báo cáo của tổ / xe trạm mình hoặc sự cố trạm mình phụ trách; RescueStaff: báo cáo của tổ mình hoặc do mình nộp
+    /// </summary>
+    [HttpGet("completion-reports")]
+    [Authorize(Roles = "RescueStaff,Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<PaginatedResultDto<CompletionReportHistoryItemDto>>), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetCompletionReports([FromQuery] CompletionReportFilterDto filter, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _dispatchService.GetCompletionReportsAsync(filter, GetCurrentUserId(), cancellationToken));
+
+    /// <summary>
+    /// Chi tiết một báo cáo nghiệm thu (nội dung, ảnh, chữ ký, bàn giao, các xe được hoàn tất)
+    /// </summary>
+    [HttpGet("completion-reports/{id:guid}")]
+    [Authorize(Roles = "RescueStaff,Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<CompletionReportHistoryItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<CompletionReportHistoryItemDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponseDto<CompletionReportHistoryItemDto>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCompletionReportById(Guid id, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _dispatchService.GetCompletionReportByIdAsync(id, GetCurrentUserId(), cancellationToken));
+
+    /// <summary>
     /// Cập nhật tiến độ nhiệm vụ (Accepted -> EnRoute -> OnScene)
     /// </summary>
     [HttpPut("assignments/{id:guid}/status")]

@@ -55,6 +55,8 @@ public class IncidentResponseDto
     public LinkedToIncidentDto? LinkedTo { get; set; }
 
     public Guid Id { get; set; }
+    /// <summary>Mã sự cố hiển thị (SC-yyMMdd-NNNN) thay cho Guid</summary>
+    public string Code { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public double Latitude { get; set; }

@@ -1666,6 +1666,29 @@ Seed hệ thống:
   - hết lượt, chưa có Completed → `Verified`.
 - **AI không tự điều phối:** `AutoDispatchState.NotEligible = 3`, cột mới `Incidents.AutoDispatchReasonCode` (migration `Auto_Dispatch_Reason_Code`). `IncidentResponseDto.autoDispatchReasonCode`, `AutoDispatchEventDto.reasonCode`. NotEligible chỉ phát realtime, không gửi thông báo.
 
+
+## 16. LỊCH SỬ BÁO CÁO NGHIỆM THU (17/11/2026)
+
+- `GET /api/dispatch/completion-reports`: RescueStaff / Operator / Admin.
+  - **Query:** `from`, `to`, `stationId` (Admin), `teamId`, `incidentId`, `search`, `pageIndex`, `pageSize` ≤ 100.
+  - **Kết quả:** `PaginatedResultDto<CompletionReportHistoryItemDto>`, sắp theo `submittedAt` giảm dần.
+  - **Phạm vi:** Operator bị giới hạn ở trạm mình (tổ / xe của trạm, hoặc sự cố trạm phụ trách); RescueStaff ở tổ mình hoặc báo cáo do mình nộp; Admin xem toàn bộ.
+- `GET /api/dispatch/completion-reports/{id}`: cùng phạm vi, trả 403 / 404.
+- `CompletionReportHistoryItemDto` = `CompletionReportDto` + thông tin sự cố (`incidentTitle`, `incidentAddress`, `incidentStatus`, `incidentSeverity`, `incidentClosedAt`), `stationId` / `stationName`, `submittedByName` và `units[]` (lượt / xe được báo cáo hoàn tất).
+- `GET /api/dispatch/my-assignments` nay nạp kèm `rescueUnit`, `stationTeamName` và `completionReport` (ảnh, chữ ký); trước đây các trường này luôn null.
+
+- `GET /api/incidents/my-reports`: `MyReportDto` có thêm `linkedToIncidentId`, `linkedToIncidentTitle`, `linkedToIncidentAddress`, `linkedToIncidentStatus`. Các trường này chỉ có giá trị khi báo cáo ở trạng thái Linked hoặc Cancelled + Duplicate.
+
+
+## 17. MÃ HIỂN THỊ (17/11/2026)
+
+- **Sự cố:** cột `Incidents.Number` (bigint, sequence `IncidentNumbers`) và `Incidents.Code` (`SC-yyMMdd-NNNN`, duy nhất), cấp tự động khi lưu sự cố mới (`ApplicationDbContext.SaveChanges`). Trả ở `code` (`IncidentResponseDto`, `MyReportDto`, `IncidentHistoryItemDto`, `LinkedToIncidentDto`) và `incidentCode` (lượt điều phối, báo cáo nghiệm thu, tracking, audit, escalation log / alert, số bị chặn).
+- **Nhân sự:** cột `Users.StaffNumber` (sequence `StaffNumbers`), cấp khi lưu tài khoản không phải Citizen. Trả `staffCode` = `NV-NNNN` ở `UserDto`, `UserResponseDto`, `StationTeamMemberDto`.
+- **Tổ:** `StationTeamDto.stationCode`, `stationName`.
+- **Tìm kiếm:** `searchTerm` / `search` của danh sách sự cố, lịch sử sự cố và báo cáo nghiệm thu khớp cả mã sự cố. `GET /api/audit-trail?incidentCode=` lọc theo mã.
+- **CSV / PDF báo cáo sự cố:** cột "Mã sự cố" dùng mã ngắn.
+- **Migration `Display_Codes`:** cấp số / mã cho dữ liệu cũ theo `CreatedAt` và đẩy sequence qua giá trị lớn nhất.
+
 ## Thay đổi phạm vi hồ sơ khẩn cấp (22/10/2026)
 * Đã bỏ danh sách nhiều người thân và cấu hình tin nhắn tự động; giữ một người liên hệ trong hồ sơ, Medical ID, Special Info và cơ chế song ngữ.
 * Migration `Remove_Multiple_Emergency_Contacts_And_Sms` gỡ bảng/cột của chức năng đã bỏ. Trước khi gỡ, tài khoản chưa có cả ba trường liên hệ cũ sẽ được điền từ một liên hệ còn hiệu lực, ưu tiên primary.

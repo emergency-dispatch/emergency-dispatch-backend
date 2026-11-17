@@ -141,6 +141,7 @@ public class UserService : IUserService
         var dtos = users.Select(u => new UserResponseDto
         {
             Id = u.Id,
+            StaffCode = u.StaffCode,
             FullName = u.FullName,
             Email = u.Email,
             PhoneNumber = u.PhoneNumber,
@@ -618,6 +619,7 @@ public class UserService : IUserService
 
     private static UserResponseDto MapToUserResponseDto(User user) => new()
     {
+        StaffCode = user.StaffCode,
         LockReason = user.LockReason,
         LockedAt = user.LockedAt,
         LockoutEndUtc = user.LockoutEndUtc > DateTime.UtcNow ? user.LockoutEndUtc : null,

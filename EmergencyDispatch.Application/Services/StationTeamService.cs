@@ -318,6 +318,8 @@ public class StationTeamService : IStationTeamService
     {
         Id = team.Id,
         StationId = team.StationId,
+        StationCode = team.Station?.Code,
+        StationName = team.Station?.Name,
         Name = team.Name,
         RescueUnitIds = UnitsOf(team).Select(u => u.Id).ToList(),
         RescueUnitPlates = UnitsOf(team).Select(u => u.PlateNumber).ToList(),
@@ -333,6 +335,7 @@ public class StationTeamService : IStationTeamService
             .Select(m => new StationTeamMemberDto
             {
                 StaffId = m.StaffId,
+                StaffCode = m.Staff?.StaffCode,
                 FullName = m.Staff?.FullName ?? string.Empty,
                 PhoneNumber = m.Staff?.PhoneNumber,
                 CrewRole = m.CrewRole

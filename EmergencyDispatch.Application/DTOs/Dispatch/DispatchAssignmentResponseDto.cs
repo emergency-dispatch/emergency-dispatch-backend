@@ -11,6 +11,9 @@ public class DispatchAssignmentResponseDto
     public Guid Id { get; set; }
     public Guid IncidentId { get; set; }
 
+    /// <summary>Mã sự cố hiển thị (SC-yyMMdd-NNNN)</summary>
+    public string IncidentCode { get; set; } = string.Empty;
+
     /// <summary>
     /// Trạm phụ trách sự cố; khác trạm của xe = xe được điều hỗ trợ
     /// </summary>

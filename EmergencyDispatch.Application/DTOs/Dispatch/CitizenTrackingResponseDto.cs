@@ -20,6 +20,7 @@ public class RoutePointDto
 public class CitizenTrackingResponseDto
 {
     public Guid IncidentId { get; set; }
+    public string IncidentCode { get; set; } = string.Empty;
     public string IncidentTitle { get; set; } = string.Empty;
     public string IncidentAddress { get; set; } = string.Empty;
     public double IncidentLat { get; set; }

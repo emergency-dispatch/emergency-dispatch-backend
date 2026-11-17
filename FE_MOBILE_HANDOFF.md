@@ -1451,3 +1451,86 @@ Cách sửa:
 
 - Web: với `NotEligible` chỉ hiện nhãn nhỏ trong chi tiết / danh sách sự cố (VD "AI không tự điều phối: độ tin cậy dưới ngưỡng" kèm `aiConfidence`). **Không bật toast / còi**: sự kiện này đến với hầu hết sự cố. Toast chỉ cho `Dispatched` và `Skipped` như cũ.
 - Sự cố Operator đã xác minh trước khi AI xong, hoặc khi tắt tự điều phối, thì không lưu lý do (giữ `None`).
+
+## 36. Cập nhật 17/11/2026: lịch sử báo cáo nghiệm thu
+
+**Lỗi đã sửa:** `GET /api/dispatch/my-assignments` trước đây trả `completionReport = null` và `rescueUnit = null` cho mọi lượt, nên app không xem lại được báo cáo đã nộp. Nay đã trả đủ (báo cáo, ảnh, chữ ký, tổ, xe). App không phải đổi gì, chỉ hiển thị `completionReport` khi `status = Completed`.
+
+**API mới**
+
+| API | Quyền | Mô tả |
+|---|---|---|
+| `GET /api/dispatch/completion-reports` | RescueStaff, Operator, Admin | Lịch sử báo cáo nghiệm thu, mới nhất trước, phân trang |
+| `GET /api/dispatch/completion-reports/{id}` | RescueStaff, Operator, Admin | Chi tiết một báo cáo. 403 nếu ngoài phạm vi, 404 nếu không có |
+
+Query: `from`, `to` (thời điểm nộp, UTC), `stationId` (chỉ Admin), `teamId`, `incidentId`, `search` (nội dung xử lý, tiêu đề, địa chỉ), `pageIndex` (mặc định 1), `pageSize` (mặc định 20, tối đa 100).
+
+Phạm vi xem:
+- **Admin:** toàn bộ; lọc theo `stationId` nếu truyền.
+- **Operator:** báo cáo của tổ / xe trạm mình, hoặc của sự cố trạm mình phụ trách. `stationId` truyền lên bị bỏ qua.
+- **RescueStaff:** báo cáo của tổ mình, hoặc do chính mình nộp.
+- **Citizen:** 403.
+
+Mỗi phần tử gồm các trường của `CompletionReportDto` (`actionsSummary`, `victimsAssistedCount`, `equipmentUsed`, `evidenceMediaUrls`, `handover*`, `signatureUrl`, `signerName`, `signedAt`, `submittedAt`...), cộng thêm:
+- **Sự cố:** `incidentId`, `incidentTitle`, `incidentAddress`, `incidentStatus`, `incidentSeverity`, `incidentClosedAt`.
+- **Tổ / người nộp:** `stationId`, `stationName`, `stationTeamName`, `submittedByName`.
+- **Xe:** `units[]` gồm `assignmentId`, `rescueUnitId`, `plateNumber`, `unitType`, `dispatchedAt`, `arrivedAt`, `completedAt`.
+
+Gợi ý giao diện:
+- **Mobile (nhân viên):** tab "Lịch sử nghiệm thu" gọi `completion-reports`. Bấm vào một dòng thì gọi `completion-reports/{id}` để xem ảnh hiện trường và chữ ký.
+- **Web (Operator/Admin):** trang "Báo cáo nghiệm thu" có lọc ngày / tổ / tìm kiếm. Trong chi tiết sự cố có thể gọi `?incidentId=` để xem các báo cáo của sự cố đó.
+
+## 37. Cập nhật 17/11/2026: `GET /api/incidents/my-reports` trả sự cố gốc
+
+`MyReportDto` có thêm các trường:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `linkedToIncidentId` | Id sự cố gốc. Chỉ có khi `status = Linked`, hoặc `status = Cancelled` với `cancellationReason = Duplicate`; các ca khác là null. Cùng quy tắc với `IncidentResponseDto.linkedToIncidentId` |
+| `linkedToIncidentTitle`, `linkedToIncidentAddress`, `linkedToIncidentStatus` | Tiêu đề, địa chỉ, trạng thái của sự cố gốc |
+
+- Web/Mobile: có thể bỏ request phụ `GET /api/incidents/{id}` dùng để lấy bù thông tin cho các ca Linked / Duplicate. Dùng thẳng các trường trên để hiện "Đã gộp vào sự cố: {title}" và mở `linkedToIncidentId` khi bấm.
+- Nên giữ request phụ làm dự phòng khi `linkedToIncidentId` có giá trị nhưng `linkedToIncidentTitle` là null (sự cố gốc đã bị xóa mềm).
+
+## 38. Cập nhật 17/11/2026: mã hiển thị thay cho ID (Guid)
+
+Backend vẫn dùng Guid làm khóa trong mọi API. Các mã dưới đây **chỉ để hiển thị và tìm kiếm**: không đưa vào URL / body request thay cho id.
+
+**Mã mới backend trả về**
+
+| Mã | Định dạng | Trường | Có trong |
+|---|---|---|---|
+| Mã sự cố | `SC-yyMMdd-NNNN`, VD `SC-261117-0042` (ngày báo theo giờ VN + số thứ tự toàn hệ thống) | `code` | `IncidentResponseDto` (REST + `ReceiveIncidentUpdated`), `MyReportDto`, lịch sử sự cố / báo cáo (`/api/reports/...`, CSV/PDF), `LinkedToIncidentDto` |
+| | | `incidentCode` | `DispatchAssignmentResponseDto` (mọi API lượt điều phối, `my-assignments`, realtime nhiệm vụ), `CompletionReportHistoryItemDto`, `CitizenTrackingResponseDto`, `AuditTrailEntryDto`, `EscalationLogDto`, `EscalationAlertDto`, `BlockedNumberDto` |
+| | | `linkedToIncidentCode` | `MyReportDto` (sự cố gốc khi bị gom / trùng) |
+| Mã nhân sự | `NV-NNNN`; null với người dân | `staffCode` | `UserDto` (login / register / google: `data.user`), `UserResponseDto` (`/api/users/...`, profile), `StationTeamMemberDto` (`members[]` của tổ) |
+| Mã trạm | `Station.Code`, VD `ST-001` (đã có từ trước) | `stationCode`, `stationName` | `StationTeamDto` (mới thêm) |
+
+**Tìm kiếm theo mã**
+- `GET /api/incidents?searchTerm=SC-261117-0042`
+- `GET /api/reports/incidents?search=...`
+- `GET /api/dispatch/completion-reports?search=...`
+- Audit: `GET /api/audit-trail?incidentCode=SC-261117-0042`. Không phân biệt hoa thường; Admin không phải gõ Guid nữa. Mã không tồn tại thì trả danh sách rỗng.
+
+**Danh sách chỗ FE cần đổi (theo rà soát FE ngày 17/11)**
+
+1. **Mã sự cố.** Thay `#{incidentId}` / `INC-{id.slice(0,8)}` bằng `code` / `incidentCode`:
+   - **Staff (nhiệm vụ):** `pages/staff/StaffPage.tsx` dòng 281, 798, 868; `components/staff/StaffMissionAlertModal.tsx` 217, 254; `components/staff/StaffNavigationMap.tsx` 668; `components/staff/StaffStandbyView.tsx` 244; `components/staff/StaffClosureReportModal.tsx` 261; `components/staff/reports/StaffReportsView.tsx` 156.
+   - **Citizen:** `components/citizen/SosModal.tsx` 1037; `components/citizen/CitizenReportsModal.tsx` 289, 410; `components/citizen/CitizenLiveTrackingMapModal.tsx` 499; `components/landing/HeroRadarMap.tsx` 653, 858.
+   - **Admin:** `components/admin/audit/AuditTrailTable.tsx` 73; `components/admin/audit/AuditDetailDrawer.tsx` 66; `pages/admin/EscalationSettingsPage.tsx` 242; `components/admin/blocked/BlockedNumbersTable.tsx` 67.
+   - **Ô lọc audit** `components/admin/audit/IncidentAuditTab.tsx` 72: cho nhập mã `SC-...`, gửi `incidentCode` thay vì `incidentId`. Vẫn nhận Guid nếu người dùng dán Guid.
+2. **Lượt điều phối** (không có mã riêng):
+   - `components/staff/reports/StaffReportsView.tsx` 155 ("Mã nhiệm vụ"): thay bằng `incidentCode` + biển số xe (`rescueUnit.plateNumber`), VD `SC-261117-0042 · 51B-003.14`.
+   - `components/staff/StaffQrHandover.tsx` 204 ("Mã bàn giao"): hiển thị như trên. Nếu QR cần id để quét thì vẫn mã hóa Guid trong QR, chỉ đổi phần chữ hiển thị.
+3. **Trạm:** `components/staff/team/StaffTeamView.tsx` 154 ("Mã trạm" = 8 ký tự Guid) → `stationCode` (kèm `stationName`).
+4. **Nhân sự:**
+   - Web `pages/staff/StaffPage.tsx` 167, 185, 201 và `components/staff/profile/StaffProfileView.tsx` 108 (`ED-` + 4 ký tự Guid): dùng `staffCode`.
+   - Mobile `screens/staff/StaffDashboardScreen.tsx` 221 (đang gán cứng `staffId="ST-8821"`): truyền `user.staffCode`.
+5. **Audit / bản ghi kỹ thuật** (`AuditDetailDrawer.tsx` 76, `SystemAuditDetailDrawer.tsx` 84, 101: id bản ghi, `entityId`): giữ Guid vì chỉ Admin xem trong drawer chi tiết, nhưng nên:
+   - rút gọn hiển thị (8 ký tự đầu + "…");
+   - có nút copy Guid đầy đủ và tooltip `title={guid}`.
+
+   Với audit sự cố, hiển thị `incidentCode` ở dòng chính.
+
+- `components/staff/schedule/ShiftRequestsManager.tsx` (`#{req.id}`) hiện không được màn nào dùng, bỏ qua.
+- Bản ghi cũ đã được migration cấp mã theo thứ tự thời gian tạo, nên không có sự cố hoặc nhân sự nào thiếu mã.
