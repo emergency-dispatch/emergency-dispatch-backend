@@ -28,10 +28,20 @@ public class DispatchAssignmentResponseDto
     public RescueUnitResponseDto? RescueUnit { get; set; }
 
     /// <summary>
+    /// Xe đã bị xóa (xóa mềm) sau nhiệm vụ này; RescueUnit vẫn trả biển số để xem lại lịch sử
+    /// </summary>
+    public bool RescueUnitDeleted { get; set; }
+
+    /// <summary>
     /// Tổ được phân công (sự cố giao theo tổ; xe là phương tiện tổ mang theo). null = lượt cũ của xe chưa gán tổ
     /// </summary>
     public Guid? StationTeamId { get; set; }
     public string? StationTeamName { get; set; }
+
+    /// <summary>
+    /// Tổ đã bị xóa (giải thể) sau nhiệm vụ này. Tên tổ có thể đã được tổ mới dùng lại, FE nên ghi rõ "(đã giải thể)"
+    /// </summary>
+    public bool StationTeamDeleted { get; set; }
 
     public DateTime DispatchedAt { get; set; }
     public DateTime? AcceptedAt { get; set; }
@@ -104,6 +114,11 @@ public class CompletionReportDto
     /// </summary>
     public Guid? StationTeamId { get; set; }
     public string? StationTeamName { get; set; }
+
+    /// <summary>
+    /// Tổ nộp báo cáo đã bị xóa (giải thể)
+    /// </summary>
+    public bool StationTeamDeleted { get; set; }
 
     public string ActionsSummary { get; set; } = string.Empty;
     public int VictimsAssistedCount { get; set; }

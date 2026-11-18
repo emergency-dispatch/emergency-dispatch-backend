@@ -2,6 +2,7 @@ using System.Text.Json;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Notification;
 using EmergencyDispatch.Application.Interfaces;
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
@@ -98,7 +99,8 @@ public class NotificationService : INotificationService
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         var (items, total) = await _notificationRepository.GetByUserAsync(userId, unreadOnly, pageIndex, pageSize, cancellationToken);
-        return new PaginatedResultDto<NotificationDto>(items.Select(Map), total, pageIndex, pageSize);
+        var english = LocalizationHelper.IsEnglish;
+        return new PaginatedResultDto<NotificationDto>(items.Select(n => Map(n, english)), total, pageIndex, pageSize);
     }
 
     public Task<int> GetUnreadCountAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -144,14 +146,21 @@ public class NotificationService : INotificationService
         try
         {
             var dataJson = request.Data == null ? null : JsonSerializer.Serialize(request.Data);
+            // Dựng cả hai ngôn ngữ một lần; mỗi người nhận xem / nhận push theo ngôn ngữ giao diện của mình
+            var titleVi = request.Title.Vi;
+            var messageVi = request.Message.Vi;
+            var titleEn = request.Title.En;
+            var messageEn = request.Message.En;
             var notifications = users.Select(u => new Notification
             {
                 Id = Guid.NewGuid(),
                 UserId = u.Id,
                 IncidentId = request.IncidentId,
                 Type = request.Type,
-                Title = request.Title,
-                Message = request.Message,
+                Title = titleVi,
+                Message = messageVi,
+                TitleEn = titleEn,
+                MessageEn = messageEn,
                 DataJson = dataJson
             }).ToList();
 
@@ -163,13 +172,21 @@ public class NotificationService : INotificationService
             };
             foreach (var notification in notifications)
             {
-                var token = users.First(u => u.Id == notification.UserId).FcmToken;
+                var recipient = users.First(u => u.Id == notification.UserId);
+                var token = recipient.FcmToken;
                 if (string.IsNullOrWhiteSpace(token)) continue;
 
                 pushData["notificationId"] = notification.Id.ToString();
-                var result = await _pushSender.SendAsync(token, request.Title, request.Message, pushData, request.HighPriority, cancellationToken);
+                var english = IsEnglishUser(recipient);
+                var result = await _pushSender.SendAsync(token,
+                    english ? titleEn : titleVi, english ? messageEn : messageVi,
+                    pushData, request.HighPriority, cancellationToken);
                 notification.FcmSentSuccess = result.Success;
                 notification.FcmMessageId = result.MessageId;
+                if (result.TokenInvalid && recipient.FcmToken == token)
+                {
+                    await ClearDeadTokenAsync(recipient.Id, token);
+                }
             }
 
             await _notificationRepository.AddRangeAsync(notifications, cancellationToken);
@@ -177,21 +194,47 @@ public class NotificationService : INotificationService
 
             foreach (var notification in notifications)
             {
-                await _realtimeNotifier.NotificationCreatedAsync(notification.UserId, Map(notification), cancellationToken);
+                var english = IsEnglishUser(users.First(u => u.Id == notification.UserId));
+                await _realtimeNotifier.NotificationCreatedAsync(notification.UserId, Map(notification, english), cancellationToken);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Không gửi được thông báo '{Title}'", request.Title);
+            _logger.LogError(ex, "Không gửi được thông báo '{Title}'", request.Title.Vi);
         }
     }
 
-    private static NotificationDto Map(Notification n) => new()
+    /// <summary>
+    /// Xóa token FCM đã chết (đọc lại user để không ghi đè token mới nếu thiết bị vừa đăng ký lại)
+    /// </summary>
+    private async Task ClearDeadTokenAsync(Guid userId, string deadToken)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null || user.FcmToken != deadToken) return;
+            user.FcmToken = null;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _userRepository.UpdateAsync(user);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Không xóa được FCM token hết hiệu lực của {UserId}", userId);
+        }
+    }
+
+    private static bool IsEnglishUser(User user)
+        => user.UiLanguage?.StartsWith("en", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>
+    /// english = true → bản tiếng Anh nếu có (thông báo cũ chưa có bản tiếng Anh thì giữ tiếng Việt)
+    /// </summary>
+    private static NotificationDto Map(Notification n, bool english) => new()
     {
         Id = n.Id,
         Type = n.Type,
-        Title = n.Title,
-        Message = n.Message,
+        Title = english && !string.IsNullOrEmpty(n.TitleEn) ? n.TitleEn : n.Title,
+        Message = english && !string.IsNullOrEmpty(n.MessageEn) ? n.MessageEn : n.Message,
         IncidentId = n.IncidentId,
         DataJson = n.DataJson,
         IsRead = n.IsRead,

@@ -113,6 +113,13 @@ public class IncidentsController : ControllerBase
             currentUserId = parsedGuid;
         }
 
+        // FR-CIT-02: khóa chống gửi trùng qua header (ưu tiên trường idempotencyKey trong body nếu có)
+        if (string.IsNullOrWhiteSpace(dto.IdempotencyKey)
+            && Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyHeader))
+        {
+            dto.IdempotencyKey = idempotencyHeader.ToString();
+        }
+
         var response = await _incidentService.CreateIncidentAsync(dto, currentUserId, cancellationToken);
         return this.ToHttpResult(response);
     }

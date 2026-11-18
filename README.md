@@ -98,6 +98,10 @@ docker run -d --name osrm -p 5001:5000 -v "${PWD}:/data" osrm/osrm-backend osrm-
 ```
 
 Sau đó đặt `"OsrmBaseUrl": "http://localhost:5001"` rồi khởi động lại backend.
+
+Máy dev hiện đã có sẵn bản tiền xử lý ở `D:\SEP490\osrm` (bản đồ Việt Nam tải 18/11/2026, ~5,6 GB sau tiền xử lý) và container `osrm` chạy cổng 5001 với `--restart unless-stopped`; máy chủ dùng khoảng 2,5 GB RAM, mỗi lượt chỉ đường ~2 ms. Chạy lại khi máy khởi động: `docker start osrm`. Trên Windows Git Bash, đặt `MSYS_NO_PATHCONV=1` trước lệnh `docker run -v`.
+
+**Lưu ý khi deploy Render (gói free):** backend trên Render không gọi được OSRM chạy trên máy cá nhân, và gói free không đủ RAM để chạy OSRM Việt Nam. Khi demo trên Render vẫn dùng máy chủ công cộng (hoặc thuê một VPS ≥ 4 GB RAM chạy container OSRM rồi đặt `Routing__OsrmBaseUrl`). Khi demo chạy backend trên máy local thì dùng bản tự host như trên.
 Nếu máy chủ chỉ đường lỗi, backend tự chuyển sang ước lượng theo chim bay và trả `isApproximateRoute: true` / `isApproximate: true` (FE vẽ nét đứt).
 
 ## API Documentation cho Frontend & Mobile

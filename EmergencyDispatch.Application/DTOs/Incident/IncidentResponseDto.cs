@@ -11,6 +11,12 @@ public class IncidentResponseDto
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? GuestCancellationToken { get; set; }
 
+    /// <summary>
+    /// true = yêu cầu gửi lại cùng Idempotency-Key, đây là sự cố đã tạo trước đó (không tạo mới)
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IdempotentReplay { get; set; }
+
     /// <summary>Loại sự cố người báo tự chọn (nếu có)</summary>
     public Domain.Enums.IncidentEventType? ReportedEventType { get; set; }
 

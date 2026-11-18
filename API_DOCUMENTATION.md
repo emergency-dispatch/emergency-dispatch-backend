@@ -1717,3 +1717,13 @@ Seed hệ thống:
 - **Yêu cầu hiện trường** tự hủy khi sự cố / lượt kết thúc; `GET /api/field-requests` bỏ yêu cầu của sự cố đã đóng.
 - Migration dữ liệu `20261118014043_Close_Stale_Escalation_Logs`.
 
+## 20. Cập nhật 19/11/2026
+
+- **`GET /api/dispatch/my-assignments?scope=active|history|all`**: phạm vi theo tổ nhận lệnh lưu trên lượt (kể cả xe / tổ đã xóa mềm) + lượt có báo cáo do mình nộp. Không có `scope` → 50 lượt mới nhất. `scope` sai → 400.
+- **Mới `GET /api/dispatch/my-assignments/history`** (`pageIndex`, `pageSize` 1–100, `from`, `to` theo `DispatchedAt`) → `PaginatedResultDto<DispatchAssignmentResponseDto>` các lượt đã kết thúc.
+- **`DispatchAssignmentResponseDto`** thêm `stationTeamDeleted`, `rescueUnitDeleted`; `CompletionReportDto` / lịch sử báo cáo thêm `stationTeamDeleted`. Tên tổ, biển số của tổ / xe đã xóa mềm không còn null. `GET /api/dispatch/assignments/{id}`, `GET /api/dispatch/assignments/incident/{id}`, lịch sử báo cáo nghiệm thu đọc cả tổ / xe đã xóa mềm; báo cáo của tổ đã xóa vẫn hiện trong lịch sử trạm.
+- **`POST /api/incidents`**: header `Idempotency-Key` hoặc body `idempotencyKey` (8–64 ký tự `[A-Za-z0-9_-]`). Gửi lại cùng khóa, cùng người gửi → 200 sự cố cũ, `idempotentReplay: true`; khóa của người khác → 409; sai định dạng → 400. Cột `Incidents.IdempotencyKey` (unique, migration `20261118045252_Incident_Idempotency_Key`).
+- **Mới `GET /api/dispatch/assignments/{id}/route?fromLat&fromLng`** → `AssignmentRouteDto` (`points`, `steps[]` OSRM, `distanceKm`, `durationMinutes`, `isApproximate`). Quyền như `GET /api/dispatch/assignments/{id}`. Thiếu một trong hai tọa độ / ngoài phạm vi → 400; lượt không tồn tại → 404.
+- **Thông báo song ngữ**: `Notifications.TitleEn`, `MessageEn`; `Users.UiLanguage` (migration `20261118050714_Bilingual_Notifications`). `GET /api/notifications` trả theo ngôn ngữ request; realtime / push theo `UiLanguage` của người nhận (ghi khi đăng nhập, khi `PUT /api/users/fcm-token`). **Mới `PUT /api/users/ui-language`** `{ "language": "vi" | "en" }`.
+- **Push FCM**: token bị Firebase báo `Unregistered` / `SenderIdMismatch` được tự xóa khỏi tài khoản.
+- **Chỉ đường**: khuyên tự host OSRM (README mục "Chỉ đường đường bộ"); `Routing:OsrmBaseUrl`.

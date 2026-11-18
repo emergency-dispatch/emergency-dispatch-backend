@@ -35,6 +35,29 @@ public class CompletionReportFilterDto
 }
 
 /// <summary>
+/// Bộ lọc lịch sử nhiệm vụ của đội (GET /api/dispatch/my-assignments/history)
+/// </summary>
+public class MyAssignmentHistoryFilterDto
+{
+    /// <summary>
+    /// Thời điểm điều phối (UTC), từ
+    /// </summary>
+    public DateTime? From { get; set; }
+
+    /// <summary>
+    /// Thời điểm điều phối (UTC), đến
+    /// </summary>
+    public DateTime? To { get; set; }
+
+    public int PageIndex { get; set; } = 1;
+
+    /// <summary>
+    /// 1–100, mặc định 20
+    /// </summary>
+    public int PageSize { get; set; } = 20;
+}
+
+/// <summary>
 /// Một báo cáo nghiệm thu trong lịch sử: nội dung báo cáo + sự cố + tổ + người nộp + các xe được hoàn tất
 /// </summary>
 public class CompletionReportHistoryItemDto : CompletionReportDto

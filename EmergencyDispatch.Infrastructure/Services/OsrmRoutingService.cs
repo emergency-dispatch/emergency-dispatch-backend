@@ -37,10 +37,16 @@ public class OsrmRoutingService : IRoutingService
 
     private static string Coord(double lat, double lng) => string.Create(CultureInfo.InvariantCulture, $"{lng:F6},{lat:F6}");
 
-    public async Task<RouteResult> GetRouteAsync(double fromLat, double fromLng, double toLat, double toLng, CancellationToken cancellationToken = default)
+    public Task<RouteResult> GetRouteAsync(double fromLat, double fromLng, double toLat, double toLng, CancellationToken cancellationToken = default)
+        => FetchRouteAsync(fromLat, fromLng, toLat, toLng, includeSteps: false, cancellationToken);
+
+    public Task<RouteResult> GetNavigationRouteAsync(double fromLat, double fromLng, double toLat, double toLng, CancellationToken cancellationToken = default)
+        => FetchRouteAsync(fromLat, fromLng, toLat, toLng, includeSteps: true, cancellationToken);
+
+    private async Task<RouteResult> FetchRouteAsync(double fromLat, double fromLng, double toLat, double toLng, bool includeSteps, CancellationToken cancellationToken)
     {
         // Làm tròn 4 chữ số (~11 m) để các lần gọi liên tiếp khi xe đứng yên dùng lại kết quả
-        var key = string.Create(CultureInfo.InvariantCulture, $"route:{fromLat:F4},{fromLng:F4}:{toLat:F4},{toLng:F4}");
+        var key = string.Create(CultureInfo.InvariantCulture, $"route{(includeSteps ? "+steps" : "")}:{fromLat:F4},{fromLng:F4}:{toLat:F4},{toLng:F4}");
         if (_cache.TryGetValue(key, out RouteResult? cached) && cached != null)
         {
             return cached;
@@ -49,7 +55,8 @@ public class OsrmRoutingService : IRoutingService
         try
         {
             var client = _httpClientFactory.CreateClient(HttpClientName);
-            var url = $"{_baseUrl}/route/v1/driving/{Coord(fromLat, fromLng)};{Coord(toLat, toLng)}?overview=full&geometries=geojson";
+            var url = $"{_baseUrl}/route/v1/driving/{Coord(fromLat, fromLng)};{Coord(toLat, toLng)}?overview=full&geometries=geojson"
+                      + (includeSteps ? "&steps=true" : "");
             using var response = await client.GetAsync(url, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
@@ -66,7 +73,8 @@ public class OsrmRoutingService : IRoutingService
                         Points = points,
                         DistanceKm = Math.Round(route.GetProperty("distance").GetDouble() / 1000.0, 3),
                         DurationMinutes = Math.Round(route.GetProperty("duration").GetDouble() / 60.0, 1),
-                        IsApproximate = false
+                        IsApproximate = false,
+                        Steps = includeSteps ? ParseSteps(route) : new List<RouteStepDto>()
                     };
                     _cache.Set(key, result, RouteCacheDuration);
                     return result;
@@ -132,6 +140,32 @@ public class OsrmRoutingService : IRoutingService
             _logger.LogWarning("Không gọi được OSRM /table tại {Url}: {Message}", _baseUrl, ex.Message);
             return null;
         }
+    }
+
+    private static List<RouteStepDto> ParseSteps(JsonElement route)
+    {
+        var steps = new List<RouteStepDto>();
+        if (!route.TryGetProperty("legs", out var legs) || legs.ValueKind != JsonValueKind.Array) return steps;
+        foreach (var leg in legs.EnumerateArray())
+        {
+            if (!leg.TryGetProperty("steps", out var legSteps) || legSteps.ValueKind != JsonValueKind.Array) continue;
+            foreach (var s in legSteps.EnumerateArray())
+            {
+                var maneuver = s.TryGetProperty("maneuver", out var m) ? m : default;
+                var location = maneuver.ValueKind == JsonValueKind.Object && maneuver.TryGetProperty("location", out var loc) ? loc : default;
+                steps.Add(new RouteStepDto
+                {
+                    Type = maneuver.ValueKind == JsonValueKind.Object && maneuver.TryGetProperty("type", out var t) ? t.GetString() ?? string.Empty : string.Empty,
+                    Modifier = maneuver.ValueKind == JsonValueKind.Object && maneuver.TryGetProperty("modifier", out var mod) ? mod.GetString() : null,
+                    RoadName = s.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty,
+                    DistanceMeters = s.TryGetProperty("distance", out var d) ? Math.Round(d.GetDouble(), 1) : 0,
+                    DurationSeconds = s.TryGetProperty("duration", out var du) ? Math.Round(du.GetDouble(), 1) : 0,
+                    Latitude = location.ValueKind == JsonValueKind.Array ? Math.Round(location[1].GetDouble(), 6) : 0,
+                    Longitude = location.ValueKind == JsonValueKind.Array ? Math.Round(location[0].GetDouble(), 6) : 0
+                });
+            }
+        }
+        return steps;
     }
 
     /// <summary>

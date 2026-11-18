@@ -1,3 +1,4 @@
+using EmergencyDispatch.Domain.Enums;
 using System.Text.RegularExpressions;
 using EmergencyDispatch.Application.Localization;
 
@@ -52,6 +53,75 @@ public class LocalizationTests
     public void Localize_UnknownText_IsReturnedUnchanged()
     {
         Assert.Equal("zzz-not-in-catalog", TestHelpers.WithCulture("en-US", () => LocalizationHelper.Localize("zzz-not-in-catalog")));
+    }
+
+    [Fact]
+    public void LocalizedText_RendersBothLanguages_WithNestedAndDataArgs()
+    {
+        var text = new LocalizedText("[{0}] Xe {1} từ chối sự cố \"{2}\" ({3}). {4}", "SC-261118-0001", "51B-003.14", "Kho A", RejectionReason.TooFar,
+            new LocalizedText("Còn {0} xe đang xử lý.", 2));
+
+        Assert.Equal("[SC-261118-0001] Xe 51B-003.14 từ chối sự cố \"Kho A\" (TooFar). Còn 2 xe đang xử lý.", text.Vi);
+        Assert.Equal("[SC-261118-0001] Vehicle 51B-003.14 rejected incident \"Kho A\" (TooFar). 2 vehicle(s) still on the incident.", text.En);
+        Assert.Equal(text.Vi, text.ToString());
+    }
+
+    [Fact]
+    public void LocalizedText_KeepsUserTextAndPadding_TranslatesCatalogArgs()
+    {
+        var text = new LocalizedText("chi viện {0} xe{1}{2}", 2, " FireTruck", " — cần thêm nước");
+        var fromOther = new LocalizedText("{0} — {1} (từ {2}). Lý do: {3}", "Kho A", "Q7", "trạm khác", "đường cấm");
+
+        Assert.Equal("backup of 2 vehicle(s) FireTruck — cần thêm nước", text.En);
+        Assert.Equal("chi viện 2 xe FireTruck — cần thêm nước", text.Vi);
+        Assert.Equal("Kho A — Q7 (from another station). Reason: đường cấm", fromOther.En);
+        Assert.Equal("Plain text", ((LocalizedText)"Plain text").En);
+    }
+
+    /// <summary>
+    /// Notification templates (new LocalizedText("...") and literal Title / Message of NotificationRequest) need an English entry,
+    /// otherwise English users get the Vietnamese text.
+    /// </summary>
+    [Fact]
+    public void EveryNotificationTemplate_HasEnglishTranslation()
+    {
+        var services = Path.Combine(TestHelpers.SolutionDir(), "EmergencyDispatch.Application", "Services");
+        var templates = new Regex("new LocalizedText\\(\\s*\"((?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.Compiled);
+        var requestLiterals = new Regex("(?:Title|Message)\\s*=\\s*(?:[^;\\n]*?\\?\\s*)?\"((?:[^\"\\\\]|\\\\.)*)\"(?:\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\")?", RegexOptions.Compiled);
+        var helperLiterals = new Regex("Notify(?:Requester|CommandCenter)Async\\([^,]+,\\s*\"((?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.Compiled);
+        var missing = new SortedSet<string>();
+
+        foreach (var file in Directory.EnumerateFiles(services, "*.cs"))
+        {
+            var source = File.ReadAllText(file);
+            var found = new List<string>();
+            found.AddRange(templates.Matches(source).Select(m => m.Groups[1].Value));
+            found.AddRange(helperLiterals.Matches(source).Select(m => m.Groups[1].Value));
+            // Title / Message literal trong khối new NotificationRequest { ... }
+            foreach (Match block in Regex.Matches(source, "new NotificationRequest\\s*\\{(.*?)\\n\\s*\\}", RegexOptions.Singleline))
+            {
+                foreach (Match m in requestLiterals.Matches(block.Groups[1].Value))
+                {
+                    found.Add(m.Groups[1].Value);
+                    if (m.Groups[2].Success) found.Add(m.Groups[2].Value);
+                }
+            }
+
+            foreach (var raw in found)
+            {
+                var text = Regex.Unescape(raw).Trim();
+                if (text.Length == 0 || !Regex.IsMatch(text, "[a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]", RegexOptions.IgnoreCase))
+                {
+                    continue; // mẫu chỉ có tham số, ví dụ "{0}: {1}"
+                }
+                if (!LocalizationCatalog.ViToEn.ContainsKey(text))
+                {
+                    missing.Add($"{Path.GetFileName(file)}: {text}");
+                }
+            }
+        }
+
+        Assert.True(missing.Count == 0, $"{missing.Count} notification templates have no English entry:\n" + string.Join("\n", missing));
     }
 
     /// <summary>

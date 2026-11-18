@@ -143,6 +143,11 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     Task<Guid?> GetIdByCodeAsync(string code, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Id sự cố đã tạo với khóa chống gửi trùng này (kể cả đã xóa mềm); null nếu chưa có
+    /// </summary>
+    Task<Guid?> GetIdByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Mã hiển thị SC-... của sự cố (kể cả đã xóa mềm); null nếu không có
     /// </summary>
     Task<string?> GetCodeAsync(Guid id, CancellationToken cancellationToken = default);

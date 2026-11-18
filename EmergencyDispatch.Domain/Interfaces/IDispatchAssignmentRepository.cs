@@ -18,6 +18,34 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
     /// </summary>
     Task<IReadOnlyList<DispatchAssignment>> GetFreshByIncidentIdAsync(Guid incidentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DispatchAssignment>> GetByRescueUnitIdAsync(Guid rescueUnitId);
+
+    /// <summary>
+    /// Một lượt để XEM (AsNoTracking): kèm sự cố, xe, tổ, báo cáo nghiệm thu, kể cả xe / tổ đã xóa mềm (lịch sử vẫn hiện biển số, tên tổ).
+    /// Không dùng cho thao tác ghi
+    /// </summary>
+    Task<DispatchAssignment?> GetForViewAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Các lượt của một sự cố để XEM, kể cả xe / tổ đã xóa mềm (như GetForViewAsync)
+    /// </summary>
+    Task<IReadOnlyList<DispatchAssignment>> GetByIncidentForViewAsync(Guid incidentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// "Nhiệm vụ của tôi": lượt của xe thuộc trạm stationId mà đội nhận lệnh là tổ teamId
+    /// hoặc không có tổ (tổ lưu trên lượt; lượt cũ chưa lưu tổ thì lấy tổ hiện tại của xe; không có tổ = xe chưa gán tổ, mọi nhân viên trạm).
+    /// Cộng thêm lượt có báo cáo nghiệm thu do submittedByUserId nộp (xem lại được cả khi tổ đã giải thể / đã đổi trạm).
+    /// Kể cả xe / tổ đã xóa mềm. active: true = đang chạy, false = đã kết thúc, null = tất cả. Mới nhất trước
+    /// </summary>
+    Task<(IReadOnlyList<DispatchAssignment> Items, int TotalCount)> GetCrewAssignmentsAsync(
+        Guid stationId,
+        Guid? teamId,
+        Guid? submittedByUserId,
+        bool? active,
+        DateTime? from,
+        DateTime? to,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
     Task<DispatchAssignment?> GetActiveAssignmentByUnitIdAsync(Guid rescueUnitId);
     Task<IReadOnlyList<DispatchAssignment>> GetAllActiveAsync();
 

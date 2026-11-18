@@ -590,8 +590,9 @@ public class DispatchService : IDispatchService
             await _notificationService.NotifyCrewAsync(crewGroup.Key.StationId, crewGroup.Key.StationTeamId, new NotificationRequest
             {
                 Type = NotificationType.JobAssigned,
-                Title = $"LỆNH ĐIỀU PHỐI {incident.Severity}",
-                Message = $"{incident.Title} — {incident.LocationAddress}. {teamPool.NameOf(crewGroup.Key.StationTeamId)}, xe: {string.Join(", ", crewGroup.Select(u => u.PlateNumber))}.",
+                Title = new LocalizedText("LỆNH ĐIỀU PHỐI {0}", incident.Severity),
+                Message = new LocalizedText("{0} — {1}. {2}, xe: {3}.", incident.Title, incident.LocationAddress,
+                    teamPool.NameOf(crewGroup.Key.StationTeamId), string.Join(", ", crewGroup.Select(u => u.PlateNumber))),
                 IncidentId = incident.Id,
                 Data = new { assignmentIds = assignments.Where(a => crewGroup.Any(u => u.Id == a.RescueUnitId)).Select(a => a.Id) },
                 HighPriority = true
@@ -616,7 +617,8 @@ public class DispatchService : IDispatchService
                 {
                     Type = NotificationType.JobAssigned,
                     Title = "XE TRẠM BẠN ĐƯỢC ĐIỀU HỖ TRỢ",
-                    Message = $"Xe {supportPlates} được điều tới sự cố {incident.Title} ({incident.ResponsibleStation?.Name ?? "trạm khác"} phụ trách) — {incident.LocationAddress}.",
+                    Message = new LocalizedText("Xe {0} được điều tới sự cố {1} ({2} phụ trách) — {3}.", supportPlates, incident.Title,
+                        incident.ResponsibleStation?.Name ?? "trạm khác", incident.LocationAddress),
                     IncidentId = incident.Id,
                     HighPriority = true
                 }, cancellationToken);
@@ -634,7 +636,7 @@ public class DispatchService : IDispatchService
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "Đã điều động đội cứu hộ",
-                Message = $"[{incident.Code}] Trung tâm đã điều {units.Count} xe ({plates}) tới vị trí của bạn.",
+                Message = new LocalizedText("[{0}] Trung tâm đã điều {1} xe ({2}) tới vị trí của bạn.", incident.Code, units.Count, plates),
                 IncidentId = incident.Id
             }, cancellationToken);
         }
@@ -759,7 +761,7 @@ public class DispatchService : IDispatchService
         var settled = incident == null
             ? IncidentSettlement.StillActive
             : await SettleIncidentAfterAssignmentEndedAsync(incident, rescuerUserId, rescuer?.Role.ToString() ?? UserRole.RescueStaff.ToString(),
-                $"Xe {unit?.PlateNumber} từ chối nhiệm vụ ({dto.Reason})", cancellationToken);
+                new LocalizedText("Xe {0} từ chối nhiệm vụ ({1})", unit?.PlateNumber, dto.Reason), cancellationToken);
         if (settled != IncidentSettlement.StillActive) remainingActive = 0;
 
         var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
@@ -774,12 +776,12 @@ public class DispatchService : IDispatchService
         {
             Type = NotificationType.StatusUpdate,
             Title = "Đội cứu hộ từ chối nhiệm vụ",
-            Message = $"[{incident?.Code}] Xe {unit?.PlateNumber} từ chối sự cố \"{incident?.Title}\" ({dto.Reason}). " +
-                      (settled == IncidentSettlement.Closed
-                          ? "Sự cố đã tự đóng vì tổ khác đã nghiệm thu."
-                          : remainingActive > 0 ? $"Còn {remainingActive} xe đang xử lý."
-                          : incident?.Status == IncidentStatus.Escalated ? "Sự cố đang leo thang — cần điều xe thay thế ngay."
-                          : "Cần điều xe thay thế."),
+            Message = new LocalizedText("[{0}] Xe {1} từ chối sự cố \"{2}\" ({3}). {4}", incident?.Code, unit?.PlateNumber, incident?.Title, dto.Reason,
+                settled == IncidentSettlement.Closed
+                    ? new LocalizedText("Sự cố đã tự đóng vì tổ khác đã nghiệm thu.")
+                    : remainingActive > 0 ? new LocalizedText("Còn {0} xe đang xử lý.", remainingActive)
+                    : incident?.Status == IncidentStatus.Escalated ? new LocalizedText("Sự cố đang leo thang — cần điều xe thay thế ngay.")
+                    : new LocalizedText("Cần điều xe thay thế.")),
             IncidentId = incident?.Id,
             Data = new { assignmentId = assignment.Id, reason = dto.Reason.ToString(), incidentClosed = settled == IncidentSettlement.Closed },
             HighPriority = settled == IncidentSettlement.ReturnedToQueue
@@ -799,7 +801,7 @@ public class DispatchService : IDispatchService
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var assignment = await _assignmentRepository.GetByIdWithDetailsAsync(id);
+        var assignment = await _assignmentRepository.GetForViewAsync(id, cancellationToken);
         if (assignment == null)
         {
             return ApiResponseDto<DispatchAssignmentResponseDto>.FailureResult("Không tìm thấy thông tin phân công.");
@@ -808,9 +810,49 @@ public class DispatchService : IDispatchService
         return ApiResponseDto<DispatchAssignmentResponseDto>.SuccessResult(MapToAssignmentDto(assignment, assignment.Incident, assignment.RescueUnit));
     }
 
+    public const string InvalidRouteOriginMessage = "Tọa độ xuất phát không hợp lệ: cần gửi đủ fromLat và fromLng trong phạm vi hợp lệ.";
+
+    public async Task<ApiResponseDto<AssignmentRouteDto>> GetAssignmentRouteAsync(
+        Guid assignmentId, double? fromLat, double? fromLng, CancellationToken cancellationToken = default)
+    {
+        if (fromLat.HasValue != fromLng.HasValue
+            || fromLat is < -90 or > 90 || fromLng is < -180 or > 180)
+        {
+            return ApiResponseDto<AssignmentRouteDto>.FailureResult(InvalidRouteOriginMessage);
+        }
+
+        var assignment = await _assignmentRepository.GetForViewAsync(assignmentId, cancellationToken);
+        if (assignment?.Incident == null)
+        {
+            return ApiResponseDto<AssignmentRouteDto>.NotFoundResult("Không tìm thấy thông tin phân công.");
+        }
+
+        // Ưu tiên GPS app gửi lên (mới nhất); không có thì vị trí xe gần nhất; xe chưa gửi GPS thì vị trí trạm
+        var unit = assignment.RescueUnit;
+        var originLat = fromLat ?? (unit is { CurrentLat: not 0 } ? unit.CurrentLat : unit?.Station?.Latitude ?? assignment.Incident.Latitude);
+        var originLng = fromLng ?? (unit is { CurrentLng: not 0 } ? unit.CurrentLng : unit?.Station?.Longitude ?? assignment.Incident.Longitude);
+        var route = await _routingService.GetNavigationRouteAsync(originLat, originLng,
+            assignment.Incident.Latitude, assignment.Incident.Longitude, cancellationToken);
+
+        return ApiResponseDto<AssignmentRouteDto>.SuccessResult(new AssignmentRouteDto
+        {
+            AssignmentId = assignment.Id,
+            FromLat = originLat,
+            FromLng = originLng,
+            ToLat = assignment.Incident.Latitude,
+            ToLng = assignment.Incident.Longitude,
+            Points = route.Points,
+            Steps = route.Steps,
+            DistanceKm = route.DistanceKm,
+            DurationMinutes = route.DurationMinutes,
+            IsApproximate = route.IsApproximate
+        });
+    }
+
     public async Task<bool> IsCrewOfAssignmentAsync(Guid assignmentId, Guid userId, CancellationToken cancellationToken = default)
     {
-        var assignment = await _assignmentRepository.GetByIdWithDetailsAsync(assignmentId);
+        // Bản xem: xe / tổ đã xóa mềm vẫn được nạp, nên tổ vẫn xem lại được nhiệm vụ của xe đã xóa
+        var assignment = await _assignmentRepository.GetForViewAsync(assignmentId, cancellationToken);
         var user = await _userRepository.GetByIdAsync(userId);
         if (assignment == null || user is not { Role: UserRole.RescueStaff })
         {
@@ -824,47 +866,88 @@ public class DispatchService : IDispatchService
         Guid incidentId,
         CancellationToken cancellationToken = default)
     {
-        var list = await _assignmentRepository.GetByIncidentIdAsync(incidentId);
+        var list = await _assignmentRepository.GetByIncidentForViewAsync(incidentId, cancellationToken);
         var incident = await _incidentRepository.GetByIdAsync(incidentId);
 
-        var dtos = list.Select(a => MapToAssignmentDto(a, incident, a.RescueUnit)).ToList();
+        var dtos = list.Select(a => MapToAssignmentDto(a, incident ?? a.Incident, a.RescueUnit)).ToList();
         return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(dtos);
     }
 
+    public const int MyAssignmentsDefaultLimit = 50;
+    public const int MyAssignmentsMaxPageSize = 100;
+    public const string InvalidAssignmentScopeMessage = "Giá trị scope không hợp lệ (active | history | all).";
+
     public async Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> GetMyAssignmentsAsync(
         Guid rescuerUserId,
+        string? scope = null,
         CancellationToken cancellationToken = default)
     {
+        bool? active;
+        switch (scope?.Trim().ToLowerInvariant())
+        {
+            case null or "" or "all": active = null; break;
+            case "active": active = true; break;
+            case "history": active = false; break;
+            default: return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult(InvalidAssignmentScopeMessage);
+        }
+
         var rescuer = await _userRepository.GetByIdAsync(rescuerUserId);
         if (rescuer == null)
         {
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.FailureResult("Không tìm thấy thông tin tài khoản.");
         }
-
-        IReadOnlyList<DispatchAssignment> list;
-        if (rescuer.StationId.HasValue)
+        if (!rescuer.StationId.HasValue)
         {
-            // Chỉ nhiệm vụ của xe thuộc tổ mình (xe chưa gán tổ: mọi nhân viên trạm), không thấy nhiệm vụ của tổ khác
-            var teamId = await _userRepository.GetTeamIdAsync(rescuer.Id, cancellationToken);
-            var stationUnits = await _rescueUnitRepository.GetByStationIdAsync(rescuer.StationId.Value);
-            var unitIds = stationUnits.Where(u => CrewScope.CanWorkOn(rescuer.StationId, teamId, u)).Select(u => u.Id).ToHashSet();
-
-            var allActive = new List<DispatchAssignment>();
-            foreach (var uid in unitIds)
-            {
-                var assignments = await _assignmentRepository.GetByRescueUnitIdAsync(uid);
-                allActive.AddRange(assignments);
-            }
-            list = allActive.OrderByDescending(a => a.DispatchedAt).ToList();
-        }
-        else
-        {
-            list = new List<DispatchAssignment>();
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(new List<DispatchAssignmentResponseDto>());
         }
 
-        var dtos = list.Select(a => MapToAssignmentDto(a, a.Incident, a.RescueUnit)).ToList();
+        // Lượt đang chạy luôn đủ (mỗi tổ tối đa một lượt); danh sách có lịch sử giới hạn 50 lượt mới nhất — xem trang /history
+        var teamId = await _userRepository.GetTeamIdAsync(rescuer.Id, cancellationToken);
+        var (items, _) = await _assignmentRepository.GetCrewAssignmentsAsync(
+            rescuer.StationId.Value, teamId, CrewSubmitter(rescuer), active, null, null, 0,
+            active == true ? MyAssignmentsMaxPageSize : MyAssignmentsDefaultLimit, cancellationToken);
+
+        var dtos = items.Select(a => MapToAssignmentDto(a, a.Incident, a.RescueUnit)).ToList();
         return ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(dtos);
     }
+
+    public async Task<ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>> GetMyAssignmentHistoryAsync(
+        Guid rescuerUserId,
+        MyAssignmentHistoryFilterDto filter,
+        CancellationToken cancellationToken = default)
+    {
+        if (filter.From.HasValue && filter.To.HasValue && filter.From > filter.To)
+        {
+            return ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>.FailureResult("Thời gian bắt đầu phải trước thời gian kết thúc.");
+        }
+
+        var pageIndex = Math.Max(1, filter.PageIndex);
+        var pageSize = Math.Clamp(filter.PageSize, 1, MyAssignmentsMaxPageSize);
+        var rescuer = await _userRepository.GetByIdAsync(rescuerUserId);
+        if (rescuer == null)
+        {
+            return ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>.FailureResult("Không tìm thấy thông tin tài khoản.");
+        }
+        if (!rescuer.StationId.HasValue)
+        {
+            return ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>.SuccessResult(
+                new PaginatedResultDto<DispatchAssignmentResponseDto>(new List<DispatchAssignmentResponseDto>(), 0, pageIndex, pageSize));
+        }
+
+        var teamId = await _userRepository.GetTeamIdAsync(rescuer.Id, cancellationToken);
+        var (items, total) = await _assignmentRepository.GetCrewAssignmentsAsync(
+            rescuer.StationId.Value, teamId, CrewSubmitter(rescuer), false, filter.From, filter.To,
+            (pageIndex - 1) * pageSize, pageSize, cancellationToken);
+
+        var dtos = items.Select(a => MapToAssignmentDto(a, a.Incident, a.RescueUnit)).ToList();
+        return ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>.SuccessResult(
+            new PaginatedResultDto<DispatchAssignmentResponseDto>(dtos, total, pageIndex, pageSize));
+    }
+
+    /// <summary>
+    /// Nhân viên cứu hộ xem lại được nhiệm vụ có báo cáo do mình nộp (kể cả khi tổ đã giải thể); Operator / Admin không cần
+    /// </summary>
+    private static Guid? CrewSubmitter(User viewer) => viewer.Role == UserRole.RescueStaff ? viewer.Id : null;
 
     public const string CompletionReportForbiddenMessage = "Bạn không có quyền xem báo cáo nghiệm thu này.";
     private const int MaxCompletionReportPageSize = 100;
@@ -956,6 +1039,7 @@ public class DispatchService : IDispatchService
             Id = r.Id,
             StationTeamId = r.StationTeamId,
             StationTeamName = r.StationTeam?.Name,
+            StationTeamDeleted = r.StationTeam?.IsDeleted == true,
             ActionsSummary = r.ActionsSummary,
             VictimsAssistedCount = r.VictimsAssistedCount,
             EquipmentUsed = r.EquipmentUsed,
@@ -1188,7 +1272,7 @@ public class DispatchService : IDispatchService
         {
             await _fieldRequestService.CancelOpenAsync(incident.Id, crewItems.Select(c => c.Item.Id).ToList(), "Tự hủy: xe đã bị thu hồi.", cancellationToken);
             settled = await SettleIncidentAfterAssignmentEndedAsync(incident, rescuerUserId, rescuer?.Role.ToString() ?? UserRole.Operator.ToString(),
-                $"{actorName} thu hồi xe {string.Join(", ", crewItems.Select(c => c.Unit?.PlateNumber))}", cancellationToken);
+                new LocalizedText("{0} thu hồi xe {1}", actorName, string.Join(", ", crewItems.Select(c => c.Unit?.PlateNumber))), cancellationToken);
         }
 
         var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
@@ -1213,8 +1297,8 @@ public class DispatchService : IDispatchService
                 Type = NotificationType.StatusUpdate,
                 Title = dto.Status == DispatchAssignmentStatus.EnRoute ? "Xe cứu hộ đang trên đường" : "Đội cứu hộ đã tới hiện trường",
                 Message = dto.Status == DispatchAssignmentStatus.EnRoute
-                    ? $"[{incident.Code}] Xe {unit?.PlateNumber} đang di chuyển tới vị trí của bạn (dự kiến ~{assignment.EstimatedArrivalMinutes ?? 0:F0} phút)."
-                    : $"[{incident.Code}] Xe {unit?.PlateNumber} đã có mặt tại hiện trường. Đội cứu hộ đang triển khai.",
+                    ? new LocalizedText("[{0}] Xe {1} đang di chuyển tới vị trí của bạn (dự kiến ~{2:F0} phút).", incident.Code, unit?.PlateNumber, assignment.EstimatedArrivalMinutes ?? 0)
+                    : new LocalizedText("[{0}] Xe {1} đã có mặt tại hiện trường. Đội cứu hộ đang triển khai.", incident.Code, unit?.PlateNumber),
                 IncidentId = incident.Id,
                 Data = new { assignmentId = assignment.Id, status = dto.Status.ToString() }
             }, cancellationToken);
@@ -1239,7 +1323,7 @@ public class DispatchService : IDispatchService
     /// Khóa giống nghiệm thu nên hai tổ kết thúc cùng lúc vẫn đóng đúng một lần.
     /// </summary>
     private async Task<IncidentSettlement> SettleIncidentAfterAssignmentEndedAsync(
-        Incident incident, Guid actorId, string actorRole, string endedBy, CancellationToken cancellationToken)
+        Incident incident, Guid actorId, string actorRole, LocalizedText endedBy, CancellationToken cancellationToken)
     {
         await using var lockScope = await _incidentRepository.BeginLockedTransactionAsync(incident.Id, cancellationToken);
         await _incidentRepository.ReloadAsync(incident, cancellationToken);
@@ -1298,7 +1382,7 @@ public class DispatchService : IDispatchService
             await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
             await AfterIncidentClosedAsync(incident, actorId, cancellationToken);
             await NotifyCommandCenterAsync(incident, "SỰ CỐ ĐÃ TỰ ĐÓNG",
-                $"[{incident.Code}] {incident.Title} — {endedBy}. Các tổ còn lại đã nghiệm thu nên sự cố được đóng.", false, cancellationToken);
+                new LocalizedText("[{0}] {1} — {2}. Các tổ còn lại đã nghiệm thu nên sự cố được đóng.", incident.Code, incident.Title, endedBy), false, cancellationToken);
             return IncidentSettlement.Closed;
         }
 
@@ -1368,7 +1452,7 @@ public class DispatchService : IDispatchService
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "Cứu hộ đã hoàn tất",
-                Message = $"[{incident.Code}] Sự cố \"{incident.Title}\" đã được xử lý xong. Cảm ơn bạn đã báo tin.",
+                Message = new LocalizedText("[{0}] Sự cố \"{1}\" đã được xử lý xong. Cảm ơn bạn đã báo tin.", incident.Code, incident.Title),
                 IncidentId = incident.Id
             }, cancellationToken);
         }
@@ -1377,7 +1461,7 @@ public class DispatchService : IDispatchService
     /// <summary>
     /// Báo Operator trạm phụ trách + Admin
     /// </summary>
-    private async Task NotifyCommandCenterAsync(Incident incident, string title, string message, bool highPriority, CancellationToken cancellationToken)
+    private async Task NotifyCommandCenterAsync(Incident incident, LocalizedText title, LocalizedText message, bool highPriority, CancellationToken cancellationToken)
     {
         var recipients = (await _userRepository.GetActiveByRolesAsync(new[] { UserRole.Operator, UserRole.Admin }) ?? new List<User>())
             .Where(u => u.Role == UserRole.Admin || incident.ResponsibleStationId == null || u.StationId == incident.ResponsibleStationId)
@@ -1650,7 +1734,8 @@ public class DispatchService : IDispatchService
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "TỔ ĐÃ NGHIỆM THU NHIỆM VỤ",
-                Message = $"{rescuer?.FullName ?? "Thành viên tổ"} đã chụp ảnh và ký xác nhận thay tổ {crewTeam.Name}, hoàn tất nhiệm vụ tại {incident.LocationAddress} (xe {string.Join(", ", completedPlates)}).",
+                Message = new LocalizedText("{0} đã chụp ảnh và ký xác nhận thay tổ {1}, hoàn tất nhiệm vụ tại {2} (xe {3}).",
+                    rescuer?.FullName ?? "Thành viên tổ", crewTeam.Name, incident.LocationAddress, string.Join(", ", completedPlates)),
                 IncidentId = incident.Id
             }, cancellationToken);
         }
@@ -1975,6 +2060,8 @@ public class DispatchService : IDispatchService
             RescueUnit = unitDto,
             StationTeamId = assignment.StationTeamId ?? unit?.StationTeamId,
             StationTeamName = assignment.StationTeam?.Name,
+            StationTeamDeleted = assignment.StationTeam?.IsDeleted == true,
+            RescueUnitDeleted = unit?.IsDeleted == true,
             DispatchedAt = assignment.DispatchedAt,
             AcceptedAt = assignment.AcceptedAt,
             ArrivedAt = assignment.ArrivedAt,
@@ -1989,11 +2076,12 @@ public class DispatchService : IDispatchService
             RejectionReason = assignment.RejectionReason,
             RejectionNotes = assignment.RejectionNotes,
             RejectedAt = assignment.RejectedAt,
-            CompletionReport = assignment.CompletionReport == null ? null : new CompletionReportDto
+            CompletionReport = assignment.CompletionReport is not { IsDeleted: false } ? null : new CompletionReportDto
             {
                 Id = assignment.CompletionReport.Id,
                 StationTeamId = assignment.CompletionReport.StationTeamId,
                 StationTeamName = assignment.CompletionReport.StationTeam?.Name,
+                StationTeamDeleted = assignment.CompletionReport.StationTeam?.IsDeleted == true,
                 ActionsSummary = assignment.CompletionReport.ActionsSummary,
                 VictimsAssistedCount = assignment.CompletionReport.VictimsAssistedCount,
                 EquipmentUsed = assignment.CompletionReport.EquipmentUsed,

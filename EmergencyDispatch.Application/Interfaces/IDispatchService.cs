@@ -62,6 +62,12 @@ public interface IDispatchService
     /// Nhân viên cứu hộ thuộc tổ nhận lượt này (lượt không có tổ: nhân viên trạm của xe) hoặc đã nộp báo cáo nghiệm thu của lượt
     /// — được xem lại lượt của chính mình bất cứ lúc nào (khớp my-assignments)
     /// </summary>
+    /// <summary>
+    /// Tuyến đường bộ + các bước rẽ từ vị trí xe (hoặc fromLat/fromLng do app gửi) tới hiện trường của lượt điều phối.
+    /// Backend gọi OSRM nội bộ; máy chủ chỉ đường lỗi → đoạn thẳng ước lượng (IsApproximate). Quyền xem do controller kiểm tra
+    /// </summary>
+    Task<ApiResponseDto<AssignmentRouteDto>> GetAssignmentRouteAsync(Guid assignmentId, double? fromLat, double? fromLng, CancellationToken cancellationToken = default);
+
     Task<bool> IsCrewOfAssignmentAsync(Guid assignmentId, Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -72,10 +78,21 @@ public interface IDispatchService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lấy danh sách nhiệm vụ phân công cho nhân viên / trạm của người dùng đang đăng nhập
+    /// Nhiệm vụ của đội người dùng đang đăng nhập (tổ nhận lệnh lưu trên lượt, kể cả xe / tổ đã xóa mềm).
+    /// scope: active = đang chạy (nhẹ, dùng khi polling), history = đã kết thúc, all/null = cả hai.
+    /// Danh sách có lịch sử giới hạn 50 lượt mới nhất; xem đầy đủ qua GetMyAssignmentHistoryAsync
     /// </summary>
     Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> GetMyAssignmentsAsync(
         Guid rescuerUserId,
+        string? scope = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lịch sử nhiệm vụ đã kết thúc của đội (phân trang, mới nhất trước, lọc theo thời điểm điều phối)
+    /// </summary>
+    Task<ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>> GetMyAssignmentHistoryAsync(
+        Guid rescuerUserId,
+        MyAssignmentHistoryFilterDto filter,
         CancellationToken cancellationToken = default);
 
     /// <summary>

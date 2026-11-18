@@ -55,6 +55,12 @@ public class User : BaseEntity
     // Thiết bị & Push Notification
     public string? FcmToken { get; set; }
 
+    /// <summary>
+    /// Ngôn ngữ giao diện ("vi" / "en") để gửi push / thông báo đúng ngôn ngữ. Ghi khi đăng nhập, đăng ký FCM token
+    /// hoặc đổi ngôn ngữ (PUT /api/users/ui-language). Khác PreferredLanguage (ngôn ngữ nói trong hồ sơ y tế)
+    /// </summary>
+    public string? UiLanguage { get; set; }
+
     // Xác thực Email & Khôi phục mật khẩu
     public bool IsEmailVerified { get; set; } = false;
     public string? EmailVerificationToken { get; set; }

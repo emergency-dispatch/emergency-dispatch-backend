@@ -88,6 +88,34 @@ public class DispatchController : ControllerBase
     }
 
     /// <summary>
+    /// Chỉ đường cho tổ: tuyến đường bộ + các bước rẽ từ vị trí xe (hoặc fromLat/fromLng của thiết bị) tới hiện trường.
+    /// Backend gọi OSRM (tự host được), FE không cần gọi máy chủ OSRM công cộng
+    /// </summary>
+    [HttpGet("assignments/{id:guid}/route")]
+    [Authorize(Roles = "RescueStaff,Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<AssignmentRouteDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<AssignmentRouteDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<AssignmentRouteDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponseDto<AssignmentRouteDto>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAssignmentRoute(Guid id, [FromQuery] double? fromLat, [FromQuery] double? fromLng,
+        CancellationToken cancellationToken)
+    {
+        var incidentId = (await _dispatchService.GetAssignmentByIdAsync(id, cancellationToken)).Data?.IncidentId;
+        if (incidentId == null)
+        {
+            return NotFound(ApiResponseDto<AssignmentRouteDto>.NotFoundResult("Không tìm thấy thông tin phân công."));
+        }
+        if (!await _incidentService.CanAccessIncidentAsync(incidentId.Value, GetCurrentUserId(), cancellationToken)
+            && !await _dispatchService.IsCrewOfAssignmentAsync(id, GetCurrentUserId(), cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseDto<AssignmentRouteDto>.ForbiddenResult("Bạn không có quyền xem lượt điều phối này."));
+        }
+
+        return this.ToHttpResult(await _dispatchService.GetAssignmentRouteAsync(id, fromLat, fromLng, cancellationToken));
+    }
+
+    /// <summary>
     /// Lấy chi tiết lượt điều phối theo ID
     /// </summary>
     [HttpGet("assignments/{id:guid}")]
@@ -168,15 +196,26 @@ public class DispatchController : ControllerBase
     /// <summary>
     /// Lấy danh sách các nhiệm vụ được phân công cho nhân viên cứu hộ đang đăng nhập
     /// </summary>
+    /// <remarks>
+    /// scope = active (chỉ lượt đang chạy, dùng khi polling) | history (đã kết thúc) | all (mặc định).
+    /// Danh sách có lịch sử chỉ trả 50 lượt mới nhất; xem đầy đủ qua GET my-assignments/history
+    /// </remarks>
     [HttpGet("my-assignments")]
     [Authorize(Roles = "RescueStaff,Operator,Admin")]
     [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetMyAssignments(CancellationToken cancellationToken)
-    {
-        var rescuerUserId = GetCurrentUserId();
-        var result = await _dispatchService.GetMyAssignmentsAsync(rescuerUserId, cancellationToken);
-        return Ok(result);
-    }
+    [ProducesResponseType(typeof(ApiResponseDto<List<DispatchAssignmentResponseDto>>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetMyAssignments([FromQuery] string? scope, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _dispatchService.GetMyAssignmentsAsync(GetCurrentUserId(), scope, cancellationToken));
+
+    /// <summary>
+    /// Lịch sử nhiệm vụ đã kết thúc của đội (phân trang, mới nhất trước), kể cả xe / tổ đã xóa
+    /// </summary>
+    [HttpGet("my-assignments/history")]
+    [Authorize(Roles = "RescueStaff,Operator,Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<PaginatedResultDto<DispatchAssignmentResponseDto>>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetMyAssignmentHistory([FromQuery] MyAssignmentHistoryFilterDto filter, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _dispatchService.GetMyAssignmentHistoryAsync(GetCurrentUserId(), filter, cancellationToken));
 
     /// <summary>
     /// Lịch sử báo cáo nghiệm thu (mới nhất trước, phân trang). Admin: toàn bộ, lọc stationId tùy chọn;

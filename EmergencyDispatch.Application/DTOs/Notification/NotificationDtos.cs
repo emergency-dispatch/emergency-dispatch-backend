@@ -1,3 +1,4 @@
+using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Domain.Enums;
 
 namespace EmergencyDispatch.Application.DTOs.Notification;
@@ -24,8 +25,12 @@ public class NotificationDto
 public class NotificationRequest
 {
     public NotificationType Type { get; set; } = NotificationType.System;
-    public string Title { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Mẫu tiếng Việt (+ tham số) — gán chuỗi thường cũng được. Bản tiếng Anh lấy từ LocalizationCatalog
+    /// </summary>
+    public LocalizedText Title { get; set; } = string.Empty;
+    public LocalizedText Message { get; set; } = string.Empty;
     public Guid? IncidentId { get; set; }
     public object? Data { get; set; }
 
@@ -43,4 +48,9 @@ public class PushSendResult
     public bool Success { get; set; }
     public string? MessageId { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>
+    /// FCM báo token không còn dùng được (app đã gỡ / token hết hạn) → nên xóa token khỏi tài khoản
+    /// </summary>
+    public bool TokenInvalid { get; set; }
 }

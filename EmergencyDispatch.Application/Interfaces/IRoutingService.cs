@@ -17,6 +17,11 @@ public sealed class RouteResult
     public double DistanceKm { get; init; }
     public double DurationMinutes { get; init; }
     public bool IsApproximate { get; init; }
+
+    /// <summary>
+    /// Các bước rẽ (chỉ có khi gọi GetNavigationRouteAsync và máy chủ chỉ đường trả về được)
+    /// </summary>
+    public List<RouteStepDto> Steps { get; init; } = new();
 }
 
 /// <summary>
@@ -25,6 +30,11 @@ public sealed class RouteResult
 public interface IRoutingService
 {
     Task<RouteResult> GetRouteAsync(double fromLat, double fromLng, double toLat, double toLng, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Như GetRouteAsync nhưng kèm các bước rẽ (OSRM steps=true) cho màn dẫn đường của tổ
+    /// </summary>
+    Task<RouteResult> GetNavigationRouteAsync(double fromLat, double fromLng, double toLat, double toLng, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Quãng đường / thời gian đường bộ từ nhiều điểm xuất phát tới một đích (một lần gọi OSRM /table).

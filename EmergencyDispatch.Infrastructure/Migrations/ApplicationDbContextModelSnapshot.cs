@@ -782,6 +782,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<int>("EventType")
                         .HasColumnType("integer");
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("IncidentTypeCode")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
@@ -917,6 +921,11 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasDatabaseName("IX_Incidents_CreatedAt");
 
                     b.HasIndex("DuplicateOfIncidentId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Incidents_IdempotencyKey")
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
 
                     b.HasIndex("IncidentTypeCode");
 
@@ -1296,11 +1305,18 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("MessageEn")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Title")
                         .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("TitleEn")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
@@ -2049,6 +2065,10 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
+
+                    b.Property<string>("UiLanguage")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");

@@ -363,6 +363,28 @@ public class UserService : IUserService
         }
 
         user.FcmToken = fcmToken.Trim();
+        // Thiết bị đăng ký push gửi kèm ngôn ngữ đang dùng (Accept-Language) → push đúng ngôn ngữ
+        user.UiLanguage = LocalizationHelper.IsEnglish ? "en" : "vi";
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user);
+        return true;
+    }
+
+    public async Task<bool> UpdateUiLanguageAsync(Guid userId, string language)
+    {
+        var normalized = language?.Trim().ToLowerInvariant();
+        if (normalized is not ("vi" or "en"))
+        {
+            throw new ArgumentException("Ngôn ngữ chỉ nhận 'vi' hoặc 'en'.");
+        }
+
+        var user = await _userRepository.GetByIdAsync(userId);
+        if (user == null)
+        {
+            return false;
+        }
+
+        user.UiLanguage = normalized;
         user.UpdatedAt = DateTime.UtcNow;
         await _userRepository.UpdateAsync(user);
         return true;

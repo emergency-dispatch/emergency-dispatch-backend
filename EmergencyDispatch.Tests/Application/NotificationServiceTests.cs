@@ -41,6 +41,77 @@ public class NotificationServiceTests
     };
 
     [Fact]
+    public async Task NotifyUsers_StoresBothLanguages_PushesAndBroadcastsInRecipientLanguage()
+    {
+        var vi = U(fcm: "tok-vi");
+        var en = U(fcm: "tok-en");
+        en.UiLanguage = "en";
+        var pushes = new List<(string Token, string Title, string Body)>();
+        _push.Setup(p => p.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, IReadOnlyDictionary<string, string>, bool, CancellationToken>((t, ti, b, _, _, _) => pushes.Add((t, ti, b)))
+            .ReturnsAsync(new PushSendResult { Success = true });
+        var realtime = new Dictionary<Guid, NotificationDto>();
+        _rt.Setup(r => r.NotificationCreatedAsync(It.IsAny<Guid>(), It.IsAny<NotificationDto>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, NotificationDto, CancellationToken>((id, dto, _) => realtime[id] = dto);
+
+        await _svc.NotifyUsersAsync(new[] { vi.Id, en.Id }, new NotificationRequest
+        {
+            Title = "LỆNH ĐIỀU PHỐI ĐÃ HỦY",
+            Message = new EmergencyDispatch.Application.Localization.LocalizedText("Lý do: {0}", "trạm khác")
+        });
+
+        var saved = _saved.Single(n => n.UserId == en.Id);
+        Assert.Equal("LỆNH ĐIỀU PHỐI ĐÃ HỦY", saved.Title);
+        Assert.Equal("DISPATCH ORDER CANCELLED", saved.TitleEn);
+        Assert.Equal("Lý do: trạm khác", saved.Message);
+        Assert.Equal("Reason: another station", saved.MessageEn);
+        Assert.Contains(("tok-vi", "LỆNH ĐIỀU PHỐI ĐÃ HỦY", "Lý do: trạm khác"), pushes);
+        Assert.Contains(("tok-en", "DISPATCH ORDER CANCELLED", "Reason: another station"), pushes);
+        Assert.Equal("DISPATCH ORDER CANCELLED", realtime[en.Id].Title);
+        Assert.Equal("LỆNH ĐIỀU PHỐI ĐÃ HỦY", realtime[vi.Id].Title);
+    }
+
+    [Fact]
+    public async Task NotifyUsers_DeadFcmToken_IsClearedFromAccount()
+    {
+        var u = U(fcm: "dead-token");
+        _push.Setup(p => p.SendAsync("dead-token", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PushSendResult { Success = false, TokenInvalid = true });
+
+        await _svc.NotifyUsersAsync(new[] { u.Id }, Req());
+
+        Assert.Null(u.FcmToken);
+        _users.Verify(x => x.UpdateAsync(u), Times.Once);
+        Assert.Single(_saved);   // thông báo trong app vẫn được lưu
+    }
+
+    [Fact]
+    public async Task GetMyNotifications_UsesRequestLanguage_FallsBackToVietnameseForOldRows()
+    {
+        var userId = Guid.NewGuid();
+        var withEn = new Notification { UserId = userId, Title = "Tiêu đề", Message = "Nội dung", TitleEn = "Title", MessageEn = "Body" };
+        var old = new Notification { UserId = userId, Title = "Cũ", Message = "Chỉ tiếng Việt" };
+        _repo.Setup(r => r.GetByUserAsync(userId, false, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<Notification> { withEn, old }, 2));
+        var culture = System.Globalization.CultureInfo.CurrentUICulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentUICulture = new System.Globalization.CultureInfo("en-US");
+            var en = (await _svc.GetMyNotificationsAsync(userId, false, 1, 20)).Items.ToList();
+            System.Globalization.CultureInfo.CurrentUICulture = new System.Globalization.CultureInfo("vi-VN");
+            var vi = (await _svc.GetMyNotificationsAsync(userId, false, 1, 20)).Items.ToList();
+
+            Assert.Equal(new[] { "Title", "Cũ" }, en.Select(n => n.Title));
+            Assert.Equal(new[] { "Body", "Chỉ tiếng Việt" }, en.Select(n => n.Message));
+            Assert.Equal(new[] { "Tiêu đề", "Cũ" }, vi.Select(n => n.Title));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentUICulture = culture;
+        }
+    }
+
+    [Fact]
     public async Task NotifyUsers_SavesOnePerActiveUser_PushesAndBroadcasts()
     {
         var a = U();

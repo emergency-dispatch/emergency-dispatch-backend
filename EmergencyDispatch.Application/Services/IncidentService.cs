@@ -121,6 +121,38 @@ public class IncidentService : IIncidentService
         _guestTokens = guestTokens;
     }
 
+    public const string InvalidIdempotencyKeyMessage = "Idempotency-Key không hợp lệ: cần 8–64 ký tự gồm chữ, số, '-' hoặc '_'.";
+    public const string IdempotencyKeyConflictMessage = "Idempotency-Key này đã được dùng cho một yêu cầu SOS khác.";
+    public const string IdempotentReplayMessage = "Yêu cầu SOS này đã được tiếp nhận trước đó.";
+    private static readonly System.Text.RegularExpressions.Regex IdempotencyKeyPattern =
+        new("^[A-Za-z0-9_-]{8,64}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Sự cố đã tạo với khóa này → trả lại cho đúng người gửi (cùng tài khoản; khách: cùng số điện thoại nếu có);
+    /// khóa thuộc người khác → 409. null = chưa có sự cố với khóa này
+    /// </summary>
+    private async Task<ApiResponseDto<IncidentResponseDto>?> TryReplayIdempotentAsync(
+        string idempotencyKey, Guid? userId, string? normalizedPhone, CancellationToken cancellationToken)
+    {
+        var existingId = await _incidentRepository.GetIdByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
+        if (existingId == null) return null;
+
+        var existing = await _incidentRepository.GetIncidentWithDetailsAsync(existingId.Value, cancellationToken);
+        var sameReporter = existing != null
+                           && existing.ReportedByUserId == userId
+                           && (userId.HasValue || normalizedPhone == null || existing.ReporterPhone == null
+                               || existing.ReporterPhone == normalizedPhone);
+        if (!sameReporter)
+        {
+            return ApiResponseDto<IncidentResponseDto>.ConflictResult(IdempotencyKeyConflictMessage);
+        }
+
+        var dto = MapToResponseDto(existing!, revealPhone: true);
+        dto.IdempotentReplay = true;
+        if (!userId.HasValue) dto.GuestCancellationToken = _guestTokens.Create(existing!.Id);
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(dto, IdempotentReplayMessage);
+    }
+
     public async Task<ApiResponseDto<IncidentResponseDto>> CreateIncidentAsync(
         CreateIncidentDto dto,
         Guid? userId = null,
@@ -157,8 +189,22 @@ public class IncidentService : IIncidentService
             }
         }
 
-        // FR-OP-03 / BR-05: chặn SOS từ số điện thoại đang trong danh sách đen
+        // FR-CIT-02: gửi lại cùng khóa (mạng chập chờn, client tự gửi lại) → trả sự cố đã tạo, không tạo sự cố mới.
+        // Xét trước giới hạn 3 phút / danh sách đen để lần gửi lại không bị báo lỗi "vừa gửi SOS"
         var normalizedPhone = PhoneMasking.Normalize(dto.ReporterPhone);
+        string? idempotencyKey = null;
+        if (!string.IsNullOrWhiteSpace(dto.IdempotencyKey))
+        {
+            idempotencyKey = dto.IdempotencyKey.Trim();
+            if (!IdempotencyKeyPattern.IsMatch(idempotencyKey))
+            {
+                return ApiResponseDto<IncidentResponseDto>.FailureResult(InvalidIdempotencyKeyMessage);
+            }
+            var replay = await TryReplayIdempotentAsync(idempotencyKey, userId, normalizedPhone, cancellationToken);
+            if (replay != null) return replay;
+        }
+
+        // FR-OP-03 / BR-05: chặn SOS từ số điện thoại đang trong danh sách đen
         var now = DateTime.UtcNow;
         if (normalizedPhone != null)
         {
@@ -227,6 +273,7 @@ public class IncidentService : IIncidentService
             Severity = SeverityLevel.Unclassified,
             ReportedEventType = reportedCategory,
             ReportedIncidentTypeCode = reportedCode,
+            IdempotencyKey = idempotencyKey,
             CreatedAt = DateTime.UtcNow
         };
         incident.LatestReportAt = incident.CreatedAt;
@@ -260,6 +307,12 @@ public class IncidentService : IIncidentService
         var duplicateSettings = await _settingsService.GetDuplicateDetectionAsync(cancellationToken);
         await using var areaLock = await _incidentRepository.BeginAreaLockAsync(incident.Latitude, incident.Longitude,
             Math.Max(duplicateSettings?.RadiusMeters ?? 0, 100), cancellationToken);
+        // Hai lần gửi cùng khóa gần như đồng thời: cùng vị trí → cùng khóa khu vực → lần sau chờ lần trước lưu xong rồi xét lại tại đây
+        if (idempotencyKey != null)
+        {
+            var replay = await TryReplayIdempotentAsync(idempotencyKey, userId, normalizedPhone, cancellationToken);
+            if (replay != null) return replay;
+        }
         var link = await _followUpService.FindLinkParentAsync(incident, cancellationToken);
         var isLinked = link.HasValue;
         var willAnalyze = hasPhoto && !isLinked;
@@ -384,7 +437,8 @@ public class IncidentService : IIncidentService
             {
                 Type = NotificationType.System,
                 Title = "SOS NGOÀI KHU VỰC PHỤC VỤ",
-                Message = $"{incident.Title} — {incident.LocationAddress} nằm ngoài \"{serviceArea.Name}\" {outsideKm:F1} km. Cần xác minh và phối hợp đơn vị ngoài khu vực nếu cần.",
+                Message = new LocalizedText("{0} — {1} nằm ngoài \"{2}\" {3:F1} km. Cần xác minh và phối hợp đơn vị ngoài khu vực nếu cần.",
+                    incident.Title, incident.LocationAddress, serviceArea.Name, outsideKm),
                 IncidentId = incident.Id,
                 HighPriority = true
             }, cancellationToken);
@@ -950,7 +1004,7 @@ public class IncidentService : IIncidentService
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "Sự cố đã được xác minh",
-                Message = $"[{incident.Code}] Trung tâm đã xác minh báo cáo của bạn và đang điều động lực lượng cứu hộ.",
+                Message = new LocalizedText("[{0}] Trung tâm đã xác minh báo cáo của bạn và đang điều động lực lượng cứu hộ.", incident.Code),
                 IncidentId = incident.Id
             }, cancellationToken);
         }
@@ -1307,7 +1361,8 @@ public class IncidentService : IIncidentService
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "LỆNH ĐIỀU PHỐI ĐÃ HỦY",
-                Message = $"[{incident.Code}] Sự cố \"{incident.Title}\" đã bị hủy ({note}). Xe {string.Join(", ", crewGroup.Select(a => a.RescueUnit!.PlateNumber))} dừng nhiệm vụ và quay về trạm.",
+                Message = new LocalizedText("[{0}] Sự cố \"{1}\" đã bị hủy ({2}). Xe {3} dừng nhiệm vụ và quay về trạm.", incident.Code, incident.Title, note,
+                    string.Join(", ", crewGroup.Select(a => a.RescueUnit!.PlateNumber))),
                 IncidentId = incident.Id,
                 Data = new { assignmentIds = crewGroup.Select(a => a.Id), cancelled = true },
                 HighPriority = true
@@ -1644,7 +1699,7 @@ public class IncidentService : IIncidentService
         {
             Type = NotificationType.NewIncident,
             Title = "SỰ CỐ ĐƯỢC CHUYỂN TỚI TRẠM BẠN",
-            Message = $"{incident.Title} — {incident.LocationAddress} (từ {from?.Name ?? "trạm khác"}). Lý do: {reason}",
+            Message = new LocalizedText("{0} — {1} (từ {2}). Lý do: {3}", incident.Title, incident.LocationAddress, from?.Name ?? "trạm khác", reason),
             IncidentId = incident.Id,
             HighPriority = incident.Severity is SeverityLevel.Level3 or SeverityLevel.Unclassified
         }, cancellationToken);

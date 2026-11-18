@@ -251,7 +251,7 @@ public class EscalationServiceTests
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(NotificationType.Escalation, sent!.Type);
         Assert.True(sent.HighPriority);
-        Assert.Contains("Đường D2", sent.Message);
+        Assert.Contains("Đường D2", sent.Message.Vi);
     }
 
     [Fact]

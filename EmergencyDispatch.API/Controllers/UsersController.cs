@@ -82,6 +82,36 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Đổi ngôn ngữ giao diện ("vi" / "en"): thông báo trong app và push về sau dùng ngôn ngữ này
+    /// </summary>
+    [HttpPut("ui-language")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateUiLanguage([FromBody] EmergencyDispatch.Application.DTOs.User.UpdateUiLanguageDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+        {
+            return Unauthorized(ApiResponseDto<object>.Fail("Không xác định được danh tính người dùng."));
+        }
+
+        try
+        {
+            if (!await _userService.UpdateUiLanguageAsync(userId, dto.Language))
+            {
+                return NotFound(ApiResponseDto<object>.Fail("Không tìm thấy người dùng."));
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponseDto<object>.Fail(ex.Message));
+        }
+
+        return Ok(ApiResponseDto<object>.Ok(null!, "Đã cập nhật ngôn ngữ."));
+    }
+
+    /// <summary>
     /// Đăng ký hoặc cập nhật FCM Device Token cho thiết bị (phục vụ nhận Push Notification âm thanh còi hú)
     /// </summary>
     [HttpPut("fcm-token")]

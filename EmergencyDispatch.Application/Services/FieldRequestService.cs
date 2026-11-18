@@ -164,7 +164,7 @@ public class FieldRequestService : IFieldRequestService
         {
             Type = NotificationType.StatusUpdate,
             Title = request.Type == FieldRequestType.Backup ? "YÊU CẦU CHI VIỆN TỪ HIỆN TRƯỜNG" : "Yêu cầu từ hiện trường",
-            Message = $"Xe {result.PlateNumber} ({saved.Incident?.Title}): {Describe(request)}",
+            Message = new LocalizedText("Xe {0} ({1}): {2}", result.PlateNumber, saved.Incident?.Title, Describe(request)),
             IncidentId = request.IncidentId,
             Data = new { fieldRequestId = request.Id },
             HighPriority = request.Type == FieldRequestType.Backup
@@ -252,7 +252,7 @@ public class FieldRequestService : IFieldRequestService
 
         var result = Map(request);
         await PublishAsync("Acknowledged", result, cancellationToken);
-        await NotifyRequesterAsync(request, "Trung tâm đã tiếp nhận yêu cầu", $"Yêu cầu {Describe(request)} đang được xử lý.", cancellationToken);
+        await NotifyRequesterAsync(request, "Trung tâm đã tiếp nhận yêu cầu", new LocalizedText("Yêu cầu {0} đang được xử lý.", Describe(request)), cancellationToken);
         return ApiResponseDto<FieldRequestDto>.SuccessResult(result, "Đã tiếp nhận yêu cầu.");
     }
 
@@ -279,7 +279,8 @@ public class FieldRequestService : IFieldRequestService
 
         var result = Map(request);
         await PublishAsync("Fulfilled", result, cancellationToken);
-        await NotifyRequesterAsync(request, "Yêu cầu đã được đáp ứng", trimmed ?? $"Trung tâm đã đáp ứng yêu cầu {Describe(request)}.", cancellationToken);
+        await NotifyRequesterAsync(request, "Yêu cầu đã được đáp ứng",
+            trimmed ?? new LocalizedText("Trung tâm đã đáp ứng yêu cầu {0}.", Describe(request)), cancellationToken);
         return ApiResponseDto<FieldRequestDto>.SuccessResult(result, "Đã đánh dấu đáp ứng yêu cầu.");
     }
 
@@ -312,7 +313,7 @@ public class FieldRequestService : IFieldRequestService
 
         var result = Map(request);
         await PublishAsync("Declined", result, cancellationToken);
-        await NotifyRequesterAsync(request, "Yêu cầu bị từ chối", $"Lý do: {trimmed}", cancellationToken);
+        await NotifyRequesterAsync(request, "Yêu cầu bị từ chối", new LocalizedText("Lý do: {0}", trimmed), cancellationToken);
         return ApiResponseDto<FieldRequestDto>.SuccessResult(result, "Đã từ chối yêu cầu.");
     }
 
@@ -388,7 +389,7 @@ public class FieldRequestService : IFieldRequestService
                 $"Đáp ứng yêu cầu {Describe(request)}. {note}", cancellationToken);
 
             await PublishAsync("Fulfilled", Map(request), cancellationToken);
-            await NotifyRequesterAsync(request, "Đã điều xe chi viện", note, cancellationToken);
+            await NotifyRequesterAsync(request, "Đã điều xe chi viện", new LocalizedText("Đã điều thêm xe: {0}", string.Join(", ", plates)), cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -465,7 +466,7 @@ public class FieldRequestService : IFieldRequestService
                 {
                     Type = NotificationType.Escalation,
                     Title = "YÊU CẦU HIỆN TRƯỜNG QUÁ HẠN",
-                    Message = $"Xe {result.PlateNumber} ({request.Incident?.Title}) chờ {minutes} phút: {Describe(request)}",
+                    Message = new LocalizedText("Xe {0} ({1}) chờ {2} phút: {3}", result.PlateNumber, request.Incident?.Title, minutes, Describe(request)),
                     IncidentId = request.IncidentId,
                     Data = new { fieldRequestId = request.Id },
                     HighPriority = true
@@ -571,7 +572,7 @@ public class FieldRequestService : IFieldRequestService
         }
     }
 
-    private Task NotifyRequesterAsync(FieldRequest request, string title, string message, CancellationToken cancellationToken)
+    private Task NotifyRequesterAsync(FieldRequest request, LocalizedText title, LocalizedText message, CancellationToken cancellationToken)
         => _notificationService.NotifyUsersAsync(new[] { request.RequestedByUserId }, new NotificationRequest
         {
             Type = NotificationType.StatusUpdate,
@@ -583,9 +584,14 @@ public class FieldRequestService : IFieldRequestService
 
     private string OperatorRole() => _currentUser.Role?.ToString() ?? UserRole.Operator.ToString();
 
-    private static string Describe(FieldRequest r) => r.Type == FieldRequestType.Backup
-        ? $"chi viện {r.Quantity} xe{(r.RequestedUnitType is { } t ? $" {t}" : string.Empty)}{(r.Description != null ? $" — {r.Description}" : string.Empty)}"
-        : $"khác — {r.Description}";
+    /// <summary>
+    /// Mô tả ngắn của yêu cầu (song ngữ). Nội suy vào chuỗi → bản tiếng Việt (audit)
+    /// </summary>
+    private static LocalizedText Describe(FieldRequest r) => r.Type == FieldRequestType.Backup
+        ? new LocalizedText("chi viện {0} xe{1}{2}", r.Quantity,
+            r.RequestedUnitType is { } t ? $" {t}" : string.Empty,
+            r.Description != null ? $" — {r.Description}" : string.Empty)
+        : new LocalizedText("khác — {0}", r.Description);
 
     internal static FieldRequestDto Map(FieldRequest r) => new()
     {

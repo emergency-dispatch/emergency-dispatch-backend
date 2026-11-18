@@ -432,6 +432,15 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<Guid?> GetIdByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        return await _context.Incidents
+            .IgnoreQueryFilters()
+            .Where(i => i.IdempotencyKey == idempotencyKey)
+            .Select(i => (Guid?)i.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetClosedHistoryAsync(
         IReadOnlyCollection<IncidentStatus> statuses,
         DateTime? from,

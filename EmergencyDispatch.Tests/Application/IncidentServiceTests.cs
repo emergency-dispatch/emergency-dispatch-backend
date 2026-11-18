@@ -130,6 +130,74 @@ public class IncidentServiceTests
         Assert.InRange((DateTime.UtcNow - since).TotalMinutes, 2.9, 3.1);
     }
 
+    // =============== Idempotency-Key (FR-CIT-02) ===============
+    private const string IdemKey = "3f2b8c1e-0a4d-4f7e-9b6a-1c2d3e4f5a6b";
+
+    [Fact]
+    public async Task Create_WithIdempotencyKey_StoresKeyOnNewIncident()
+    {
+        Incident? saved = null;
+        _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
+        var dto = Sos();
+        dto.IdempotencyKey = $"  {IdemKey} ";
+
+        var r = await _svc.CreateIncidentAsync(dto);
+
+        Assert.True(r.Success);
+        Assert.Equal(IdemKey, saved!.IdempotencyKey);
+        Assert.False(r.Data!.IdempotentReplay);
+    }
+
+    [Fact]
+    public async Task Create_SameKeySameGuest_ReturnsExistingIncident_EvenWithin3MinuteBlock()
+    {
+        var existing = Existing(IncidentStatus.AiProcessing, i => { i.ReporterPhone = "0901234567"; i.IdempotencyKey = IdemKey; });
+        _incidents.Setup(i => i.GetIdByIdempotencyKeyAsync(IdemKey, It.IsAny<CancellationToken>())).ReturnsAsync(existing.Id);
+        _incidents.Setup(i => i.HasRecentActiveIncidentAsync(It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var dto = Sos();
+        dto.IdempotencyKey = IdemKey;
+
+        var r = await _svc.CreateIncidentAsync(dto);
+
+        Assert.True(r.Success, r.Message);
+        Assert.Equal(existing.Id, r.Data!.Id);
+        Assert.True(r.Data.IdempotentReplay);
+        Assert.False(string.IsNullOrEmpty(r.Data.GuestCancellationToken));
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+        _rt.Verify(n => n.IncidentCreatedAsync(It.IsAny<IncidentResponseDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_SameKeyOtherReporter_IsConflict()
+    {
+        var existing = Existing(IncidentStatus.AiProcessing, i => { i.ReportedByUserId = Guid.NewGuid(); i.IdempotencyKey = IdemKey; });
+        _incidents.Setup(i => i.GetIdByIdempotencyKeyAsync(IdemKey, It.IsAny<CancellationToken>())).ReturnsAsync(existing.Id);
+        var dto = Sos();
+        dto.IdempotencyKey = IdemKey;
+
+        var r = await _svc.CreateIncidentAsync(dto);
+
+        Assert.Equal(ApiErrorCodes.Conflict, r.ErrorCode);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("short")]
+    [InlineData("has space inside key")]
+    [InlineData("khóa-có-dấu-tiếng-việt")]
+    public async Task Create_InvalidIdempotencyKey_IsRejected(string key)
+    {
+        var dto = Sos();
+        dto.IdempotencyKey = key;
+
+        var r = await _svc.CreateIncidentAsync(dto);
+
+        Assert.False(r.Success);
+        Assert.Contains("Idempotency-Key", r.Message);   // bản VI hoặc EN tùy culture khi chạy test
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+    }
+
     [Fact]
     public async Task Create_WithoutMedia_IsPendingUnclassified_NotQueuedForAi()
     {
@@ -538,7 +606,7 @@ public class IncidentServiceTests
             crew, It.IsAny<CancellationToken>()), Times.Once);
         Assert.NotNull(push);
         Assert.True(push!.HighPriority);
-        Assert.StartsWith("[SC-261118-0007]", push.Message);
+        Assert.StartsWith("[SC-261118-0007]", push.Message.Vi);
         esc.Verify(e => e.ResolveOpenLogsAsync(inc.Id, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
         requests.Verify(f => f.CancelOpenAsync(inc.Id, null, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }

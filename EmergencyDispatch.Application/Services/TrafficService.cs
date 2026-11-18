@@ -219,8 +219,9 @@ public class TrafficService : ITrafficService
         {
             Type = NotificationType.TrafficTask,
             Title = "NHIỆM VỤ GIẢI TỎA ÙN TẮC",
-            Message = $"Xe {unit.PlateNumber}: phân luồng, giải tỏa \"{hotspot.Title}\" tại {hotspot.LocationAddress}."
-                      + (string.IsNullOrEmpty(notes) ? string.Empty : $" Ghi chú: {notes}"),
+            Message = string.IsNullOrEmpty(notes)
+                ? new LocalizedText("Xe {0}: phân luồng, giải tỏa \"{1}\" tại {2}.", unit.PlateNumber, hotspot.Title, hotspot.LocationAddress)
+                : new LocalizedText("Xe {0}: phân luồng, giải tỏa \"{1}\" tại {2}. Ghi chú: {3}", unit.PlateNumber, hotspot.Title, hotspot.LocationAddress, notes),
             Data = new { hotspotId = hotspot.Id, rescueUnitId = unit.Id, action = "Assigned" },
             HighPriority = true
         }, cancellationToken);
@@ -292,7 +293,7 @@ public class TrafficService : ITrafficService
             {
                 Type = NotificationType.TrafficTask,
                 Title = "RÚT LỆNH GIẢI TỎA ÙN TẮC",
-                Message = $"Xe {unit.PlateNumber} được rút khỏi điểm nghẽn \"{hotspot.Title}\". Lý do: {reason}",
+                Message = new LocalizedText("Xe {0} được rút khỏi điểm nghẽn \"{1}\". Lý do: {2}", unit.PlateNumber, hotspot.Title, reason),
                 Data = new { hotspotId = hotspot.Id, rescueUnitId = unit.Id, action = "Unassigned" },
                 HighPriority = true
             }, cancellationToken);

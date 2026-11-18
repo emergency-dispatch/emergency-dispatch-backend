@@ -68,6 +68,13 @@ public class FcmPushNotificationSender : IPushNotificationSender
             var id = await FirebaseMessaging.GetMessaging(_app).SendAsync(message, cancellationToken);
             return new PushSendResult { Success = true, MessageId = id };
         }
+        catch (FirebaseMessagingException ex) when (ex.MessagingErrorCode is MessagingErrorCode.Unregistered
+                                                         or MessagingErrorCode.SenderIdMismatch)
+        {
+            // Token chết (gỡ app, đăng nhập thiết bị khác, khác project Firebase): báo để xóa, không gửi lại mãi
+            _logger.LogInformation("FCM token {Token} không còn hiệu lực ({Code}) — sẽ xóa khỏi tài khoản", Shorten(deviceToken), ex.MessagingErrorCode);
+            return new PushSendResult { Success = false, Error = ex.Message, TokenInvalid = true };
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Gửi FCM thất bại tới {Token}", Shorten(deviceToken));

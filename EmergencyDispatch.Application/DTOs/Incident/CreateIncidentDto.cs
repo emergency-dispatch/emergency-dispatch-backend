@@ -67,4 +67,10 @@ public class CreateIncidentDto
     /// Mã loại sự cố chi tiết từ GET /api/incident-types (tùy chọn), ví dụ FireExplosion, TrafficAccident, Other hoặc loại Admin thêm
     /// </summary>
     public string? IncidentTypeCode { get; set; }
+
+    /// <summary>
+    /// Khóa chống gửi trùng do client sinh (khuyên dùng UUID v4, 8–64 ký tự chữ / số / '-' / '_').
+    /// Có thể gửi qua header Idempotency-Key thay cho trường này. Gửi lại cùng khóa → nhận lại sự cố đã tạo
+    /// </summary>
+    public string? IdempotencyKey { get; set; }
 }

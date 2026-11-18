@@ -22,6 +22,11 @@ public interface IUserService
     Task<UserResponseDto> UnlockUserAsync(Guid id, UserRole actorRole);
     Task<bool> UpdateFcmTokenAsync(Guid userId, string fcmToken);
 
+    /// <summary>
+    /// Đổi ngôn ngữ giao diện ("vi" / "en") dùng cho thông báo / push. Ngôn ngữ khác → ArgumentException
+    /// </summary>
+    Task<bool> UpdateUiLanguageAsync(Guid userId, string language);
+
     // Quản lý điều phối nhân sự, gán trạm & Tổ làm việc (Staff & Operator & Admin)
     Task<UserResponseDto> AssignStaffToStationAndTeamAsync(Guid userId, AssignStaffToStationAndTeamDto dto, UserRole actorRole);
     Task<IReadOnlyList<TeamMemberSummaryDto>> GetStaffByStationAsync(Guid stationId);

@@ -398,8 +398,8 @@ public class AutoDispatchService : IAutoDispatchService
             Type = NotificationType.StatusUpdate,
             Title = dispatched ? "AI ĐÃ TỰ ĐIỀU PHỐI" : "AI CHUYỂN SỰ CỐ CHO ĐIỀU PHỐI VIÊN",
             Message = dispatched
-                ? $"{incident.Title} — {incident.LocationAddress}. Xe: {plates}. Kiểm tra và hủy / đổi xe nếu cần."
-                : $"{incident.Title} — {incident.LocationAddress}. {incident.AutoDispatchNote}",
+                ? new LocalizedText("{0} — {1}. Xe: {2}. Kiểm tra và hủy / đổi xe nếu cần.", incident.Title, incident.LocationAddress, plates)
+                : new LocalizedText("{0} — {1}. {2}", incident.Title, incident.LocationAddress, incident.AutoDispatchNote),
             IncidentId = incident.Id,
             Data = new { autoDispatchState = incident.AutoDispatchState.ToString(), suspectedDuplicateOf = incident.SuspectedDuplicateOfIncidentId },
             HighPriority = true

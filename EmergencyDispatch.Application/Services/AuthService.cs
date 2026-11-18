@@ -271,6 +271,7 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Tài khoản chưa được kích hoạt.");
         }
 
+        await RememberUiLanguageAsync(user);
         var accessToken = _tokenService.GenerateAccessToken(user);
         var refreshToken = _tokenService.GenerateRefreshToken(user.Id);
         await _refreshTokenRepository.AddAsync(refreshToken);
@@ -282,6 +283,18 @@ public class AuthService : IAuthService
             ExpiresAt = refreshToken.ExpiresAt,
             User = MapToUserDto(user)
         };
+    }
+
+    /// <summary>
+    /// Ghi ngôn ngữ giao diện của request đăng nhập (Accept-Language / ?culture) để push về sau đúng ngôn ngữ
+    /// </summary>
+    private async Task RememberUiLanguageAsync(User user)
+    {
+        var language = LocalizationHelper.IsEnglish ? "en" : "vi";
+        if (user.UiLanguage == language) return;
+        user.UiLanguage = language;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user);
     }
 
     public async Task<AuthResponseDto> GoogleLoginAsync(GoogleLoginDto dto)
@@ -341,6 +354,7 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
         }
 
+        await RememberUiLanguageAsync(user);
         var accessToken = _tokenService.GenerateAccessToken(user);
         var refreshToken = _tokenService.GenerateRefreshToken(user.Id);
         await _refreshTokenRepository.AddAsync(refreshToken);

@@ -380,8 +380,8 @@ public class EscalationService : IEscalationService
                     new NotificationRequest
                     {
                         Type = NotificationType.Escalation,
-                        Title = $"LEO THANG KHẨN CẤP {incident.Severity}",
-                        Message = $"{incident.Title} — {incident.LocationAddress}: chưa có đơn vị tiếp nhận sau {elapsedMinutes} phút.",
+                        Title = new LocalizedText("LEO THANG KHẨN CẤP {0}", incident.Severity),
+                        Message = new LocalizedText("{0} — {1}: chưa có đơn vị tiếp nhận sau {2} phút.", incident.Title, incident.LocationAddress, elapsedMinutes),
                         IncidentId = incident.Id,
                         HighPriority = true
                     }, cancellationToken);
@@ -434,8 +434,8 @@ public class EscalationService : IEscalationService
             await _notificationService.NotifyRolesAsync(new[] { UserRole.Operator, UserRole.Admin }, new NotificationRequest
             {
                 Type = NotificationType.Escalation,
-                Title = $"LEO THANG CẤP 2 — CẦN TRẠM KHÁC HỖ TRỢ ({incident.Severity})",
-                Message = $"{incident.Title} — {incident.LocationAddress}: vẫn chưa có đơn vị nhận sau {elapsed} phút.",
+                Title = new LocalizedText("LEO THANG CẤP 2 — CẦN TRẠM KHÁC HỖ TRỢ ({0})", incident.Severity),
+                Message = new LocalizedText("{0} — {1}: vẫn chưa có đơn vị nhận sau {2} phút.", incident.Title, incident.LocationAddress, elapsed),
                 IncidentId = incident.Id,
                 HighPriority = true
             }, cancellationToken);
@@ -480,7 +480,7 @@ public class EscalationService : IEscalationService
                 {
                     Type = NotificationType.Escalation,
                     Title = "ĐIỂM NGHẼN TÊ LIỆT CHƯA CÓ ĐỘI GIẢI TỎA",
-                    Message = $"{hotspot.Title} — {hotspot.LocationAddress}: đường bị chặn hoàn toàn, chưa giao đội sau {elapsed} phút.",
+                    Message = new LocalizedText("{0} — {1}: đường bị chặn hoàn toàn, chưa giao đội sau {2} phút.", hotspot.Title, hotspot.LocationAddress, elapsed),
                     Data = new { trafficHotspotId = hotspot.Id },
                     HighPriority = true
                 }, cancellationToken);

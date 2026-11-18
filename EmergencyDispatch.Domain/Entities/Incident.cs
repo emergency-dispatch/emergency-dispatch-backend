@@ -107,6 +107,11 @@ public class Incident : BaseEntity
     public IncidentEventType? ReportedEventType { get; set; }
 
     /// <summary>
+    /// Khóa chống gửi trùng do client sinh (UUID) cho POST /api/incidents (FR-CIT-02). Gửi lại cùng khóa → trả sự cố cũ, không tạo mới
+    /// </summary>
+    public string? IdempotencyKey { get; set; }
+
+    /// <summary>
     /// Loại sự cố chi tiết người báo chọn (IncidentTypes.Code, danh mục Admin quản lý). ReportedEventType = nhóm của loại này
     /// </summary>
     public string? ReportedIncidentTypeCode { get; set; }

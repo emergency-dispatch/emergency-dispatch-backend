@@ -167,8 +167,8 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             await _notificationService.NotifyCrewAsync(stationId, teamId, new NotificationRequest
             {
                 Type = NotificationType.StatusUpdate,
-                Title = raised ? $"NÂNG MỨC ĐỘ SỰ CỐ → {dto.NewSeverity}" : $"Điều chỉnh mức độ sự cố → {dto.NewSeverity}",
-                Message = $"{incident.Title}: {oldSeverity} → {dto.NewSeverity}. Lý do: {reason}",
+                Title = raised ? new LocalizedText("NÂNG MỨC ĐỘ SỰ CỐ → {0}", dto.NewSeverity) : new LocalizedText("Điều chỉnh mức độ sự cố → {0}", dto.NewSeverity),
+                Message = new LocalizedText("{0}: {1} → {2}. Lý do: {3}", incident.Title, oldSeverity, dto.NewSeverity, reason),
                 IncidentId = incident.Id,
                 HighPriority = raised
             }, cancellationToken);
@@ -483,7 +483,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "Người báo bổ sung thông tin hiện trường",
-                Message = $"{target.Title}: {(note.Length > 0 ? note : "ảnh / video mới")}",
+                Message = new LocalizedText("{0}: {1}", target.Title, note.Length > 0 ? note : "ảnh / video mới"),
                 IncidentId = target.Id,
                 HighPriority = true
             }, cancellationToken);

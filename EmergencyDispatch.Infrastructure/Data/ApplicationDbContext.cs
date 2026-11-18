@@ -233,6 +233,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(u => u.CurrentMedications).HasDefaultValueSql("'{}'");
             entity.Property(u => u.MobilityLimitations).HasDefaultValueSql("'{}'");
             entity.Property(u => u.PreferredLanguage).HasMaxLength(50);
+            entity.Property(u => u.UiLanguage).HasMaxLength(5);
             entity.Property(u => u.DependentsNote).HasMaxLength(1000);
             entity.Property(u => u.EmergencyContactName).HasMaxLength(200);
             entity.Property(u => u.EmergencyContactPhone).HasMaxLength(20);
@@ -339,6 +340,10 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.HasIndex(i => new { i.Latitude, i.Longitude }).HasDatabaseName("IX_Incidents_GeoLocation");
             entity.HasIndex(i => i.CreatedAt).HasDatabaseName("IX_Incidents_CreatedAt");
             entity.HasIndex(i => i.Code).IsUnique().HasDatabaseName("IX_Incidents_Code");
+            entity.Property(i => i.IdempotencyKey).HasMaxLength(64);
+            entity.HasIndex(i => i.IdempotencyKey).IsUnique()
+                .HasFilter("\"IdempotencyKey\" IS NOT NULL")
+                .HasDatabaseName("IX_Incidents_IdempotencyKey");
             entity.HasIndex(i => i.Number).IsUnique().HasDatabaseName("IX_Incidents_Number");
             entity.Property(i => i.Code).HasMaxLength(20).IsRequired();
             entity.HasIndex(i => new { i.IsDeleted, i.Status }).HasDatabaseName("IX_Incidents_Active");
@@ -632,6 +637,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
             entity.Property(n => n.Title).HasMaxLength(300).IsRequired();
             entity.Property(n => n.Message).IsRequired();
+            entity.Property(n => n.TitleEn).HasMaxLength(300);
             entity.Property(n => n.FcmMessageId).HasMaxLength(200);
 
             entity.HasOne(n => n.User)

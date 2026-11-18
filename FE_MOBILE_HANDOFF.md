@@ -1571,7 +1571,7 @@ Backend vẫn dùng Guid làm khóa trong mọi API. Các mã dưới đây **ch
 - `DELETE /api/stations/{id}/teams/{teamId}` → **409** khi tổ đang bận.
 - `PUT /api/users/{id}/assign-station-team` làm nhân viên rời tổ đang bận → **400** cùng thông điệp, không đổi gì.
 - FE màn quản lý tổ (`stationTeamService.ts` và màn tổ của Operator/Admin): hiển thị `message` của 409/400, giữ nguyên form.
-- Xóa tổ giờ là **xóa mềm**: tổ biến mất khỏi danh sách, xe về "chưa gán tổ", tên tổ dùng lại được. Lượt điều phối / báo cáo cũ vẫn giữ `stationTeamId`, nhưng `stationTeamName` trả **null** vì tổ đã xóa. FE hiển thị "Tổ đã giải thể" khi có `stationTeamId` mà không có `stationTeamName`.
+- Xóa tổ giờ là **xóa mềm**: tổ biến mất khỏi danh sách, xe về "chưa gán tổ", tên tổ dùng lại được. Lượt điều phối / báo cáo cũ vẫn giữ `stationTeamId` và (từ mục 41) vẫn trả `stationTeamName` kèm cờ `stationTeamDeleted: true`.
 
 **5. Xe đang giải tỏa điểm nghẽn** (`/api/traffic/{id}/assign`): `PUT /api/rescue-units/{id}/status`, đổi trạm, xóa xe → **400** "Xe đang được giao giải tỏa điểm nghẽn giao thông. Hãy hủy giao hoặc đóng điểm nghẽn trước." Nút "Gỡ kẹt" trên màn xe nên ẩn khi xe đang giải tỏa (xem danh sách điểm nghẽn có `assignedRescueUnitId` = xe này).
 
@@ -1581,3 +1581,33 @@ Backend vẫn dùng Guid làm khóa trong mọi API. Các mã dưới đây **ch
 
 **8. Nhật ký gom / tách báo cáo trùng** ghi mã `SC-…` thay vì `#A1B2C3D4`. Nhật ký cũ giữ nguyên.
 
+## 41. Cập nhật 19/11/2026: nhiệm vụ của tổ phân trang, tổ / xe đã xóa, chống gửi SOS trùng, chỉ đường qua backend, thông báo song ngữ
+
+**1. `GET /api/dispatch/my-assignments` (web staff, `useStaffMission.ts` đang gọi 15 giây / lần).**
+- Thêm `?scope=active` (chỉ lượt đang chạy, rất nhẹ), `?scope=history` (đã kết thúc), `?scope=all` hoặc bỏ trống (như cũ). Giá trị khác → **400**.
+- Không truyền `scope` thì **chỉ trả 50 lượt mới nhất** (trước đây trả toàn bộ lịch sử).
+- Danh sách giờ tính theo **tổ nhận lệnh lưu trên lượt**: xe chuyển sang tổ khác thì lượt cũ vẫn thuộc tổ cũ; có thêm lượt có báo cáo do chính mình nộp.
+- **FE cần làm:** vòng polling 15 giây đổi sang `getMyAssignments('active')`; tab / danh sách "đã hoàn thành" gọi API lịch sử dưới đây.
+
+**2. API mới `GET /api/dispatch/my-assignments/history?pageIndex=1&pageSize=20&from=&to=`** → `PaginatedResultDto<DispatchAssignmentResponseDto>` (`items`, `totalCount`, `pageIndex`, `pageSize`, `hasNextPage`). `pageSize` tối đa 100; `from`/`to` lọc theo thời điểm điều phối (UTC); `from > to` → 400. **FE cần làm:** màn lịch sử nhiệm vụ (web staff, mobile staff) dùng API này, có "Tải thêm".
+
+**3. Tổ / xe đã xóa (giải thể) vẫn hiện tên.** `DispatchAssignmentResponseDto` có thêm `stationTeamDeleted` và `rescueUnitDeleted`; `completionReport.stationTeamDeleted`; lịch sử báo cáo nghiệm thu cũng có `stationTeamDeleted`. `stationTeamName` và biển số không còn null. **FE cần làm:** khi cờ = true, hiện "Tổ A (đã giải thể)" / "51B-… (đã xóa)", vì tên tổ có thể đã được tổ mới dùng lại. Nhân viên mở lại nhiệm vụ cũ của xe đã xóa giờ được 200 (trước 403).
+
+**4. Chống gửi SOS trùng: `POST /api/incidents` nhận header `Idempotency-Key`** (hoặc trường `idempotencyKey` trong body), 8–64 ký tự chữ / số / `-` / `_`, khuyên dùng UUID v4.
+- Gửi lại cùng khóa (mất mạng, timeout, bấm lại) → **200** trả lại đúng sự cố đã tạo, `data.idempotentReplay = true`, khách vẫn nhận `guestCancellationToken`. Không bị chặn "vừa gửi SOS, chờ 3 phút".
+- Khóa đã dùng bởi người khác → **409**; khóa sai định dạng → **400**.
+- **FE / mobile cần làm:** sinh UUID **một lần cho mỗi lần bấm gửi SOS**, giữ nguyên khi tự gửi lại (retry, hàng đợi offline), chỉ tạo khóa mới khi người dùng gửi SOS mới. Lưu ý giới hạn 5 SOS / phút / IP vẫn tính cả lần gửi lại.
+
+**5. Chỉ đường cho tổ qua backend: `GET /api/dispatch/assignments/{id}/route?fromLat=&fromLng=`** (RescueStaff của tổ, Operator / Admin có quyền xem sự cố; khác → 403).
+- Trả `points` (polyline lat/lng), `steps[]` (`type`, `modifier`, `roadName`, `distanceMeters`, `durationSeconds`, `latitude`, `longitude` — đúng các trường OSRM mà `routingService.ts` đang dùng), `distanceKm`, `durationMinutes`, `isApproximate`.
+- `fromLat`/`fromLng` tùy chọn (GPS thiết bị mới nhất); không gửi thì backend dùng vị trí xe, xe chưa có GPS thì vị trí trạm. Gửi một trong hai → 400.
+- Máy chủ chỉ đường lỗi → `isApproximate = true`, `points` là đoạn thẳng, `steps` rỗng (FE vẽ nét đứt như hiện tại).
+- **FE cần làm:** `routingService.calculateDrivingRoute` (đang gọi thẳng `router.project-osrm.org` từ trình duyệt) đổi sang gọi API này rồi dựng `TurnByTurnStep` từ `steps` bằng `mapManeuver` / `buildInstruction` sẵn có. Backend dùng OSRM tự host (bản đồ Việt Nam), không phụ thuộc máy chủ demo công cộng. Mobile làm chỉ đường sau này dùng cùng API.
+
+**6. Thông báo song ngữ.** Thông báo mới lưu cả tiếng Việt và tiếng Anh.
+- `GET /api/notifications` trả theo `Accept-Language` / `?culture=` của request (thông báo cũ chỉ có tiếng Việt).
+- Realtime `ReceiveNotification` và push FCM gửi theo **ngôn ngữ giao diện của người nhận**, backend ghi lại khi đăng nhập và khi `PUT /api/users/fcm-token` (theo `Accept-Language` của request).
+- API mới `PUT /api/users/ui-language` body `{ "language": "vi" | "en" }` (khác → 400).
+- **FE / mobile cần làm:** gửi `Accept-Language` đúng ngôn ngữ đang chọn ở mọi request (nhất là đăng nhập, đăng ký FCM token); khi người dùng đổi ngôn ngữ trong app thì gọi `PUT /api/users/ui-language`; khi đổi ngôn ngữ, tải lại danh sách thông báo.
+
+**7. Push FCM.** Backend tự xóa FCM token khi Firebase báo token đã chết (gỡ app, khác project). **Mobile cần làm** (chưa có): lấy *FCM device token* (không phải Expo push token, cần development build), gọi `PUT /api/users/fcm-token` sau khi đăng nhập và mỗi khi token đổi (`onTokenRefresh`); tạo kênh Android `EMERGENCY_DISPATCH` với âm `emergency_alarm`. Mỗi tài khoản giữ một token (thiết bị đăng ký sau cùng nhận push).
