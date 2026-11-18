@@ -475,6 +475,21 @@ public static partial class LocalizationCatalog
         { "AI tự điều phối một phần: chưa đủ số xe theo cấu hình của mức độ. Điều phối viên cần bổ sung xe.", "AI partially auto-dispatched: not enough units for the configured plan of this severity. The operator needs to add units." },
         { "Có {0} báo cáo nghiệm thu.", "{0} completion report(s)." },
         { "Không tìm thấy báo cáo nghiệm thu.", "Completion report not found." },
-        { "Bạn không có quyền xem báo cáo nghiệm thu này.", "You are not allowed to view this completion report." }
+        { "Bạn không có quyền xem báo cáo nghiệm thu này.", "You are not allowed to view this completion report." },
+        { "SỰ CỐ ĐÃ TỰ ĐÓNG", "INCIDENT AUTO-CLOSED" },
+        { "Gỡ kẹt trạng thái thủ công", "Manually released a stuck status" },
+        { "Đổi trạng thái thủ công", "Manual status change" },
+        { "Đội cứu hộ từ chối nhiệm vụ", "Rescue team rejected the assignment" },
+        { "Đã từ chối nhiệm vụ.", "Assignment rejected." },
+        { "Đã từ chối nhiệm vụ. Trung tâm điều phối sẽ giao xe thay thế.", "Assignment rejected. The dispatch center will assign a replacement unit." },
+        { "Xe cứu hộ đang trên đường", "Rescue unit on the way" },
+        { "Đội cứu hộ đã tới hiện trường", "Rescue team has arrived on scene" },
+        { "Sự cố vừa chuyển sang trạng thái '{0}', không thể hủy.", "The incident has just moved to '{0}' and can no longer be cancelled." },
+        { "lượt điều phối đang chạy", "an active assignment" },
+        { "Tổ \"{0}\" đang làm nhiệm vụ ({1}). Không rút xe, bớt thành viên hay xóa tổ cho tới khi nhiệm vụ kết thúc.", "Team \"{0}\" is on a mission ({1}). Vehicles and members cannot be removed and the team cannot be deleted until the mission ends." },
+        { "Xe {0} đang làm nhiệm vụ hoặc giải tỏa điểm nghẽn, không chuyển tổ được cho tới khi xong.", "Vehicle {0} is on a mission or clearing a traffic hotspot and cannot change team until it is done." },
+        { "Xe đang được giao giải tỏa điểm nghẽn giao thông. Hãy hủy giao hoặc đóng điểm nghẽn trước.", "The vehicle is assigned to clear a traffic hotspot. Unassign it or resolve the hotspot first." },
+        { "LỆNH ĐIỀU PHỐI ĐÃ HỦY", "DISPATCH ORDER CANCELLED" },
+        { "Sự cố vừa được xác minh, không tự hủy.", "The incident has just been verified and will not be auto-cancelled." }
     };
 }

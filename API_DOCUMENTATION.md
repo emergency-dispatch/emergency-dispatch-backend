@@ -987,7 +987,7 @@ Backend cung cấp 2 SignalR Hubs. Khi kết nối có token, server **tự đ�
 | GET | `/api/users/unassigned-staff?pageIndex=1&pageSize=20&search=` | `Admin`, `Operator` | Nhân viên cứu hộ đang hoạt động **chưa thuộc trạm nào** (mọi Operator đều xem được). Chỉ trả thông tin liên hệ: `id`, `fullName`, `email`, `phoneNumber`, `avatarUrl`, `role`, `status`; không có CCCD / hồ sơ y tế. `pageSize` tối đa 100 |
 | PUT | `/api/users/{id}/assign-station-team` | `Admin`, `Operator` | Gán nhân viên vào trạm và Tổ làm việc |
 | GET | `/api/users/station/{stationId}` | `Admin`, `Operator`, `RescueStaff` | Nhân viên của trạm kèm Tổ |
-| GET | `/api/users/my-team` | `RescueStaff`, `Operator`, `Admin` | Tổ làm việc, đồng đội và xe của trạm mình |
+| GET | `/api/users/my-team` | `RescueStaff`, `Operator`, `Admin` | Tổ làm việc, đồng đội và xe của trạm mình. Có `stationCode`; thành viên và `stationOperator` có `staffCode` |
 
 * **Body tạo tài khoản (POST)** (`role`: `Citizen`, `Operator`, `RescueStaff`, `Admin`):
 ```json
@@ -1685,7 +1685,7 @@ Seed hệ thống:
 - **Sự cố:** cột `Incidents.Number` (bigint, sequence `IncidentNumbers`) và `Incidents.Code` (`SC-yyMMdd-NNNN`, duy nhất), cấp tự động khi lưu sự cố mới (`ApplicationDbContext.SaveChanges`). Trả ở `code` (`IncidentResponseDto`, `MyReportDto`, `IncidentHistoryItemDto`, `LinkedToIncidentDto`) và `incidentCode` (lượt điều phối, báo cáo nghiệm thu, tracking, audit, escalation log / alert, số bị chặn).
 - **Nhân sự:** cột `Users.StaffNumber` (sequence `StaffNumbers`), cấp khi lưu tài khoản không phải Citizen. Trả `staffCode` = `NV-NNNN` ở `UserDto`, `UserResponseDto`, `StationTeamMemberDto`.
 - **Tổ:** `StationTeamDto.stationCode`, `stationName`.
-- **Tìm kiếm:** `searchTerm` / `search` của danh sách sự cố, lịch sử sự cố và báo cáo nghiệm thu khớp cả mã sự cố. `GET /api/audit-trail?incidentCode=` lọc theo mã.
+- **Tìm kiếm:** `searchTerm` / `search` của danh sách sự cố, lịch sử sự cố và báo cáo nghiệm thu khớp cả mã sự cố. `GET /api/audit-trail?incidentCode=` lọc theo mã đủ (đúng một sự cố) hoặc một phần mã (VD `0042`, mọi sự cố có mã chứa chuỗi đó).
 - **CSV / PDF báo cáo sự cố:** cột "Mã sự cố" dùng mã ngắn.
 - **Migration `Display_Codes`:** cấp số / mã cho dữ liệu cũ theo `CreatedAt` và đẩy sequence qua giá trị lớn nhất.
 
@@ -1695,3 +1695,25 @@ Seed hệ thống:
 * Các migration cũ giữ nguyên để bảo toàn lịch sử schema. Migration mới chưa được áp dụng trong lần chỉnh sửa này.
 * Khi triển khai, sao lưu dữ liệu trước khi áp dụng: danh sách liên hệ phụ và cấu hình tin nhắn sẽ bị loại khỏi database. Down migration chỉ khôi phục cấu trúc, không khôi phục đầy đủ dữ liệu đã bỏ.
 * API hiện tự chạy migration lúc khởi động; cần kiểm tra bản sao lưu và migration trước khi khởi động với database đang có dữ liệu.
+
+## 18. Cập nhật 18/11/2026
+
+- **Từ chối / thu hồi / đổi tiến độ** (`POST /api/dispatch/assignments/{id}/reject`, `PUT /api/dispatch/assignments/{id}/status`): lượt điều phối, trạng thái xe và nhật ký ghi trong một transaction có khóa sự cố. Hai thao tác đồng thời trên cùng lượt: một thành công, còn lại **409**, không lệch dữ liệu. Sự kiện realtime trạng thái xe phát sau khi commit.
+- **Sự cố `Escalated` mất tổ cuối** (từ chối hoặc thu hồi): giữ `Escalated`, ghi nhật ký "cần điều phối tổ thay thế ngay", thông báo trung tâm ưu tiên cao.
+- **`GET /api/dispatch/completion-reports`** (RescueStaff): thêm báo cáo của xe chưa gán tổ thuộc trạm mình.
+- **`GET /api/users/my-team`**: `stationCode`, `staffCode` (thành viên, `stationOperator`). `GET /api/users/station/{stationId}/staff`: `staffCode`.
+- **`GET /api/audit-trail?incidentCode=`**: nhận một phần mã.
+- **Thông báo**: nội dung bắt đầu bằng mã sự cố `[SC-yyMMdd-NNNN]`.
+
+## 19. Cập nhật 18/11/2026 (đợt 2)
+
+- **Phạm vi trạm** cho Operator ở `PUT /api/dispatch/assignments/{id}/status`, `POST .../reject`, `POST .../resolve`: được thao tác khi sự cố chưa gán trạm, thuộc trạm mình, hoặc xe của lượt thuộc trạm mình; ngược lại **403**. Admin không giới hạn.
+- **Quyền tổ** tính theo tổ lưu trên lượt (`StationTeamId` lúc phát lệnh), không theo tổ hiện tại của xe.
+- **`GET /api/dispatch/assignments/{id}`**: thêm điều kiện cho phép — nhân viên tổ nhận lượt hoặc người nộp báo cáo nghiệm thu, không giới hạn thời gian.
+- **`PUT /api/incidents/{id}/cancel`**: khóa sự cố; ghi `AssignmentStatusHistory` cho lượt bị thu hồi; realtime `ReceiveAssignmentStatus` (Cancelled) + push ưu tiên cao cho tổ; đóng log leo thang; tự hủy yêu cầu hiện trường. Sự cố vừa đóng trong lúc chờ khóa → **409**.
+- **`PUT /api/incidents/{id}/verify`** sự cố đang leo thang: đóng log leo thang, audit `DeEscalated`.
+- **Tổ đang bận**: `PUT/DELETE /api/stations/{id}/teams/{teamId}` → **409** khi bỏ thành viên / rút xe đang bận / xóa; `PUT /api/users/{id}/assign-station-team` → **400**. Xóa tổ là xóa mềm.
+- **Xe giải tỏa điểm nghẽn**: `PUT /api/rescue-units/{id}/status`, `PUT /api/rescue-units/{id}` (đổi trạm/trạng thái), `DELETE /api/rescue-units/{id}` → **400**.
+- **Yêu cầu hiện trường** tự hủy khi sự cố / lượt kết thúc; `GET /api/field-requests` bỏ yêu cầu của sự cố đã đóng.
+- Migration dữ liệu `20261118014043_Close_Stale_Escalation_Logs`.
+

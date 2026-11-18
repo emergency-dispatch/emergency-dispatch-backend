@@ -24,6 +24,45 @@ public class StationTeamService : IStationTeamService
     private readonly ISystemAuditService _auditService;
     private readonly ICurrentUserContext _currentUser;
     private readonly IRealtimeNotifier _realtimeNotifier;
+    private readonly IDispatchAssignmentRepository? _assignmentRepository;
+    private readonly ITrafficHotspotRepository? _hotspotRepository;
+
+    /// <summary>
+    /// Xe đang bận: có lượt điều phối đang chạy, đang ở trạng thái nhiệm vụ, hoặc đang giải tỏa điểm nghẽn
+    /// </summary>
+    private async Task<bool> IsUnitBusyAsync(RescueUnit unit, CancellationToken cancellationToken)
+        => RescueUnitService.IsOnMission(unit.Status)
+           || (_assignmentRepository != null && await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null)
+           || (_hotspotRepository != null && await _hotspotRepository.IsUnitOnHotspotAsync(unit.Id, cancellationToken));
+
+    /// <summary>
+    /// Tổ đang làm nhiệm vụ: còn lượt điều phối đang chạy giao cho tổ, hoặc một xe của tổ đang bận.
+    /// Trả về biển số xe / mã sự cố để báo lỗi; null = tổ rảnh
+    /// </summary>
+    private async Task<string?> TeamBusyReasonAsync(StationTeam team, CancellationToken cancellationToken)
+    {
+        if (_assignmentRepository != null)
+        {
+            var active = (await _assignmentRepository.GetAllActiveAsync() ?? Array.Empty<DispatchAssignment>())
+                .FirstOrDefault(a => a.StationTeamId == team.Id || team.RescueUnits.Any(u => u.Id == a.RescueUnitId));
+            if (active != null)
+            {
+                return team.RescueUnits.FirstOrDefault(u => u.Id == active.RescueUnitId)?.PlateNumber
+                       ?? LocalizationHelper.Localize("lượt điều phối đang chạy");
+            }
+        }
+        foreach (var unit in team.RescueUnits.Where(u => !u.IsDeleted))
+        {
+            if (await IsUnitBusyAsync(unit, cancellationToken))
+            {
+                return unit.PlateNumber;
+            }
+        }
+        return null;
+    }
+
+    public const string TeamBusyMessage = "Tổ \"{0}\" đang làm nhiệm vụ ({1}). Không rút xe, bớt thành viên hay xóa tổ cho tới khi nhiệm vụ kết thúc.";
+    public const string UnitBusyMessage = "Xe {0} đang làm nhiệm vụ hoặc giải tỏa điểm nghẽn, không chuyển tổ được cho tới khi xong.";
 
     public StationTeamService(
         IStationTeamRepository teamRepository,
@@ -32,8 +71,12 @@ public class StationTeamService : IStationTeamService
         IRescueUnitRepository rescueUnitRepository,
         ISystemAuditService auditService,
         ICurrentUserContext currentUser,
-        IRealtimeNotifier realtimeNotifier)
+        IRealtimeNotifier realtimeNotifier,
+        IDispatchAssignmentRepository? assignmentRepository = null,
+        ITrafficHotspotRepository? hotspotRepository = null)
     {
+        _assignmentRepository = assignmentRepository;
+        _hotspotRepository = hotspotRepository;
         _realtimeNotifier = realtimeNotifier;
         _currentUser = currentUser;
         _teamRepository = teamRepository;
@@ -131,10 +174,36 @@ public class StationTeamService : IStationTeamService
         var error = await ValidateAsync(stationId, teamId, dto, cancellationToken);
         if (error != null) return error;
 
+        // Tổ đang chạy nhiệm vụ: không rút xe / bớt người (tổ đang chạy sẽ mất quyền cập nhật tiến độ, nghiệm thu);
+        // đổi tên, đổi vai trò, thêm người, thêm xe rảnh vẫn được
+        var desiredUnitIds = dto.EffectiveRescueUnitIds();
+        var removedMembers = team.Members.Where(m => (dto.Members ?? new List<StationTeamMemberInputDto>()).All(d => d.StaffId != m.StaffId)).ToList();
+        var removedUnits = team.RescueUnits.Where(u => !desiredUnitIds.Contains(u.Id)).ToList();
+        // Bớt người: tổ đang chạy thì chặn (người rời tổ mất quyền nhiệm vụ). Rút xe: chỉ chặn xe đang bận, xe rảnh rút được
+        if (removedMembers.Count > 0 && await TeamBusyReasonAsync(team, cancellationToken) is { } busy)
+        {
+            return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize(TeamBusyMessage, team.Name, busy));
+        }
+        foreach (var removed in removedUnits)
+        {
+            if (await IsUnitBusyAsync(removed, cancellationToken))
+            {
+                return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize(TeamBusyMessage, team.Name, removed.PlateNumber));
+            }
+        }
+        foreach (var unitId in desiredUnitIds.Where(id => team.RescueUnits.All(u => u.Id != id)))
+        {
+            // Xe đưa từ tổ khác sang khi đang làm nhiệm vụ → tổ cũ mất xe giữa chừng
+            if (await _rescueUnitRepository.GetByIdAsync(unitId) is { } added && await IsUnitBusyAsync(added, cancellationToken))
+            {
+                return ApiResponseDto<StationTeamDto>.ConflictResult(LocalizationHelper.Localize(UnitBusyMessage, added.PlateNumber));
+            }
+        }
+
         var before = Snapshot(team);
         team.Name = dto.Name.Trim();
         team.UpdatedAt = DateTime.UtcNow;
-        await ApplyUnitsAsync(team, dto.EffectiveRescueUnitIds());
+        await ApplyUnitsAsync(team, desiredUnitIds);
 
         var desired = dto.Members.ToDictionary(m => m.StaffId, m => m.CrewRole);
         foreach (var existing in team.Members.ToList())
@@ -178,6 +247,11 @@ public class StationTeamService : IStationTeamService
             return ApiResponseDto<bool>.NotFoundResult("Không tìm thấy tổ.");
         }
 
+        if (await TeamBusyReasonAsync(team, cancellationToken) is { } busy)
+        {
+            return ApiResponseDto<bool>.ConflictResult(LocalizationHelper.Localize(TeamBusyMessage, team.Name, busy));
+        }
+
         var before = Snapshot(team);
         _teamRepository.Remove(team);
         await _teamRepository.SaveChangesAsync(cancellationToken);
@@ -187,14 +261,34 @@ public class StationTeamService : IStationTeamService
         return ApiResponseDto<bool>.SuccessResult(true, LocalizationHelper.Localize("Đã xóa tổ \"{0}\".", team.Name));
     }
 
+    public async Task EnsureCanReassignAsync(Guid staffId, Guid? stationId, string? teamName, CancellationToken cancellationToken = default)
+    {
+        var membership = await _teamRepository.GetMembershipAsync(staffId, cancellationToken);
+        var name = teamName?.Trim();
+        if (membership?.Team != null && LeavesTeam(membership, stationId, name)
+            && await _teamRepository.GetByIdAsync(membership.TeamId, cancellationToken) is { } team // kèm xe để xét xe đang giải tỏa
+            && await TeamBusyReasonAsync(team, cancellationToken) is { } busy)
+        {
+            throw new InvalidOperationException(LocalizationHelper.Localize(TeamBusyMessage, team.Name, busy));
+        }
+    }
+
+    private static bool LeavesTeam(StationTeamMember membership, Guid? stationId, string? name)
+        => stationId == null || membership.Team?.StationId != stationId || string.IsNullOrEmpty(name) || membership.Team?.Name != name;
+
     public async Task AssignByNameAsync(Guid staffId, Guid? stationId, string? teamName, CancellationToken cancellationToken = default)
     {
         var membership = await _teamRepository.GetMembershipAsync(staffId, cancellationToken);
         var name = teamName?.Trim();
 
         // Rời tổ khi đổi trạm, bỏ trạm, hoặc truyền tên rỗng
-        if (membership != null && (stationId == null || membership.Team?.StationId != stationId || string.IsNullOrEmpty(name) || membership.Team?.Name != name))
+        if (membership != null && LeavesTeam(membership, stationId, name))
         {
+            if (await _teamRepository.GetByIdAsync(membership.TeamId, cancellationToken) is { } leaving
+                && await TeamBusyReasonAsync(leaving, cancellationToken) is { } busy)
+            {
+                throw new InvalidOperationException(LocalizationHelper.Localize(TeamBusyMessage, leaving.Name, busy));
+            }
             _teamRepository.RemoveMember(membership);
             await _teamRepository.SaveChangesAsync(cancellationToken);
             membership = null;

@@ -366,7 +366,8 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
 
     public async Task<(IReadOnlyList<IncidentAuditTrail> Items, int TotalCount)> GetAuditTrailsAsync(
         Guid? incidentId, Guid? actorId, AuditAction? action, DateTime? from, DateTime? to,
-        int pageIndex, int pageSize, CancellationToken cancellationToken = default)
+        int pageIndex, int pageSize, CancellationToken cancellationToken = default,
+        string? incidentCodeContains = null, Guid? stationId = null)
     {
         var query = _context.IncidentAuditTrails
             .AsNoTracking()
@@ -379,6 +380,17 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         if (action.HasValue) query = query.Where(a => a.Action == action.Value);
         if (from.HasValue) query = query.Where(a => a.Timestamp >= from.Value);
         if (to.HasValue) query = query.Where(a => a.Timestamp <= to.Value);
+        if (!string.IsNullOrWhiteSpace(incidentCodeContains))
+        {
+            // Mã chỉ gồm chữ, số và '-': bỏ ký tự khác (kể cả % _ của LIKE)
+            var fragment = new string(incidentCodeContains.Where(c => char.IsLetterOrDigit(c) || c == '-').ToArray());
+            var pattern = $"%{fragment}%";
+            query = query.Where(a => EF.Functions.ILike(a.Incident!.Code, pattern));
+        }
+        if (stationId.HasValue)
+        {
+            query = query.Where(a => a.Incident!.ResponsibleStationId == null || a.Incident.ResponsibleStationId == stationId.Value);
+        }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -404,6 +416,12 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
 
         return await query.AsSplitQuery().ToListAsync(cancellationToken);
     }
+
+    public async Task<string?> GetCodeAsync(Guid id, CancellationToken cancellationToken = default)
+        => await _context.Incidents.IgnoreQueryFilters().AsNoTracking()
+            .Where(i => i.Id == id)
+            .Select(i => i.Code)
+            .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<Guid?> GetIdByCodeAsync(string code, CancellationToken cancellationToken = default)
     {

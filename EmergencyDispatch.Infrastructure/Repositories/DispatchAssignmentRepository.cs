@@ -149,6 +149,7 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
         Guid? incidentId,
         Guid? crewTeamId,
         Guid? crewUserId,
+        Guid? crewStationId,
         DateTime? from,
         DateTime? to,
         string? search,
@@ -164,10 +165,12 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
                                      || (c.Incident != null && c.Incident.ResponsibleStationId == stationId.Value)
                                      || c.Assignments.Any(a => a.RescueUnit != null && a.RescueUnit.StationId == stationId.Value));
         }
-        if (crewTeamId.HasValue || crewUserId.HasValue)
+        if (crewTeamId.HasValue || crewUserId.HasValue || crewStationId.HasValue)
         {
             query = query.Where(c => (crewTeamId.HasValue && c.StationTeamId == crewTeamId.Value)
-                                     || (crewUserId.HasValue && c.SubmittedByUserId == crewUserId.Value));
+                                     || (crewUserId.HasValue && c.SubmittedByUserId == crewUserId.Value)
+                                     || (crewStationId.HasValue && c.StationTeamId == null
+                                         && c.Assignments.Any(a => a.RescueUnit != null && a.RescueUnit.StationId == crewStationId.Value)));
         }
         if (teamId.HasValue) query = query.Where(c => c.StationTeamId == teamId.Value);
         if (incidentId.HasValue) query = query.Where(c => c.IncidentId == incidentId.Value);

@@ -43,4 +43,10 @@ public interface IFieldRequestService
     /// Escalation daemon: tự hủy yêu cầu của sự cố đã đóng; yêu cầu quá ngưỡng → báo Admin + Operator. Trả số yêu cầu được báo
     /// </summary>
     Task<int> ProcessOverdueAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tự hủy yêu cầu còn mở (Open / Acknowledged) khi sự cố đóng / bị hủy (assignmentIds = null: mọi yêu cầu của sự cố)
+    /// hoặc khi các lượt của tổ kết thúc (assignmentIds: chỉ yêu cầu của các lượt đó). Trả về số yêu cầu đã hủy
+    /// </summary>
+    Task<int> CancelOpenAsync(Guid incidentId, IReadOnlyCollection<Guid>? assignmentIds, string reason, CancellationToken cancellationToken = default);
 }

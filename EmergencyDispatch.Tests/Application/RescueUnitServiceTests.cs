@@ -219,4 +219,20 @@ public class RescueUnitServiceTests
         Assert.Equal(RescueUnitStatus.Available, u.Status);
         _units.Verify(x => x.SaveStatusAsync(u, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task UpdateStatus_UnitClearingHotspot_IsNotTreatedAsStuck()
+    {
+        var u = Existing(RescueUnitStatus.Dispatched);
+        var hotspots = new Mock<ITrafficHotspotRepository>();
+        hotspots.Setup(h => h.IsUnitOnHotspotAsync(u.Id, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var svc = new RescueUnitService(_units.Object, _stations.Object, _assign.Object, _audit.Object, _me.Object, _rt.Object, hotspotRepository: hotspots.Object);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => svc.UpdateStatusAsync(u.Id, new UpdateRescueUnitStatusDto { Status = RescueUnitStatus.Available }));
+
+        Assert.Equal(RescueUnitService.OnHotspotMessage, ex.Message);
+        Assert.Equal(RescueUnitStatus.Dispatched, u.Status);
+        _units.Verify(x => x.SaveStatusAsync(It.IsAny<RescueUnit>(), It.IsAny<CancellationToken>()), Times.Never);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.DeleteAsync(u.Id));
+    }
 }

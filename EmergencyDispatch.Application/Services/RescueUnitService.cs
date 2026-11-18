@@ -20,6 +20,16 @@ public class RescueUnitService : IRescueUnitService
 
     public const string UnknownUnitTypeMessage = "Loại phương tiện '{0}' không có trong danh mục hoặc đã bị ẩn.";
 
+    private readonly ITrafficHotspotRepository? _hotspotRepository;
+
+    public const string OnHotspotMessage = "Xe đang được giao giải tỏa điểm nghẽn giao thông. Hãy hủy giao hoặc đóng điểm nghẽn trước.";
+
+    /// <summary>
+    /// Xe đang được giao giải tỏa điểm nghẽn (trạng thái Dispatched nhưng không có lượt điều phối)
+    /// </summary>
+    private async Task<bool> IsOnHotspotAsync(Guid unitId)
+        => _hotspotRepository != null && await _hotspotRepository.IsUnitOnHotspotAsync(unitId);
+
     public RescueUnitService(
         IRescueUnitRepository rescueUnitRepository,
         IStationRepository stationRepository,
@@ -27,8 +37,10 @@ public class RescueUnitService : IRescueUnitService
         ISystemAuditService auditService,
         ICurrentUserContext currentUser,
         IRealtimeNotifier realtimeNotifier,
-        ITypeCatalogRepository? typeCatalog = null)
+        ITypeCatalogRepository? typeCatalog = null,
+        ITrafficHotspotRepository? hotspotRepository = null)
     {
+        _hotspotRepository = hotspotRepository;
         _typeCatalog = typeCatalog;
         _currentUser = currentUser;
         _realtimeNotifier = realtimeNotifier;
@@ -162,6 +174,10 @@ public class RescueUnitService : IRescueUnitService
         {
             throw new InvalidOperationException("Không thể đổi trạm hoặc trạng thái của xe đang thực hiện nhiệm vụ cứu nạn.");
         }
+        if ((dto.StationId != unit.StationId || dto.Status != unit.Status) && await IsOnHotspotAsync(unit.Id))
+        {
+            throw new InvalidOperationException(OnHotspotMessage);
+        }
         EnsureManualStatusAllowed(dto.Status, unit.Status);
 
         dto.UnitType = await EnsureUnitTypeAsync(dto.UnitType, currentCode: unit.UnitType);
@@ -237,6 +253,11 @@ public class RescueUnitService : IRescueUnitService
             {
                 throw new InvalidOperationException("Xe đang thực hiện nhiệm vụ: trạng thái được cập nhật tự động theo tiến độ nhiệm vụ.");
             }
+            // Xe giải tỏa điểm nghẽn không có lượt điều phối nhưng không phải xe "kẹt": không cho gỡ
+            if (await IsOnHotspotAsync(unit.Id))
+            {
+                throw new InvalidOperationException(OnHotspotMessage);
+            }
             stuck = IsOnMission(unit.Status);
             EnsureManualStatusAllowed(dto.Status, unit.Status);
         }
@@ -273,6 +294,10 @@ public class RescueUnitService : IRescueUnitService
         if (IsOnMission(unit.Status) || await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id) != null)
         {
             throw new InvalidOperationException("Không thể xóa xe đang trong nhiệm vụ cứu hộ khẩn cấp.");
+        }
+        if (await IsOnHotspotAsync(unit.Id))
+        {
+            throw new InvalidOperationException(OnHotspotMessage);
         }
 
         await _rescueUnitRepository.DeleteAsync(unit);

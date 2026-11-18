@@ -101,8 +101,10 @@ public class DispatchController : ControllerBase
             return NotFound(result);
         }
 
-        // Cùng quy tắc với assignments/incident/{id}: chỉ người báo, Operator/Staff liên quan và Admin
-        if (!await _incidentService.CanAccessIncidentAsync(result.Data.IncidentId, GetCurrentUserId(), cancellationToken))
+        // Cùng quy tắc với assignments/incident/{id}: chỉ người báo, Operator/Staff liên quan và Admin.
+        // Tổ nhận lượt luôn xem lại được lượt của mình (màn lịch sử nhiệm vụ), kể cả quá 30 phút sau khi hoàn tất
+        if (!await _incidentService.CanAccessIncidentAsync(result.Data.IncidentId, GetCurrentUserId(), cancellationToken)
+            && !await _dispatchService.IsCrewOfAssignmentAsync(id, GetCurrentUserId(), cancellationToken))
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseDto<DispatchAssignmentResponseDto>.ForbiddenResult("Bạn không có quyền xem lượt điều phối này."));

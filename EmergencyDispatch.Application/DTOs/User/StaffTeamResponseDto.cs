@@ -3,6 +3,11 @@ namespace EmergencyDispatch.Application.DTOs.User;
 public class TeamMemberSummaryDto
 {
     public Guid Id { get; set; }
+
+    /// <summary>
+    /// Mã nhân sự NV-NNNN (hiển thị thay cho Id)
+    /// </summary>
+    public string? StaffCode { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
@@ -28,6 +33,11 @@ public class StationVehicleSummaryDto
 public class StaffTeamResponseDto
 {
     public Guid? StationId { get; set; }
+
+    /// <summary>
+    /// Mã trạm (hiển thị thay cho StationId)
+    /// </summary>
+    public string? StationCode { get; set; }
     public string? StationName { get; set; }
     public string? StationAddress { get; set; }
     public string? StationPhoneNumber { get; set; }
@@ -62,6 +72,7 @@ public class StaffTeamResponseDto
 public class StationOperatorDto
 {
     public Guid Id { get; set; }
+    public string? StaffCode { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string? Email { get; set; }

@@ -1503,14 +1503,14 @@ Backend vẫn dùng Guid làm khóa trong mọi API. Các mã dưới đây **ch
 | Mã sự cố | `SC-yyMMdd-NNNN`, VD `SC-261117-0042` (ngày báo theo giờ VN + số thứ tự toàn hệ thống) | `code` | `IncidentResponseDto` (REST + `ReceiveIncidentUpdated`), `MyReportDto`, lịch sử sự cố / báo cáo (`/api/reports/...`, CSV/PDF), `LinkedToIncidentDto` |
 | | | `incidentCode` | `DispatchAssignmentResponseDto` (mọi API lượt điều phối, `my-assignments`, realtime nhiệm vụ), `CompletionReportHistoryItemDto`, `CitizenTrackingResponseDto`, `AuditTrailEntryDto`, `EscalationLogDto`, `EscalationAlertDto`, `BlockedNumberDto` |
 | | | `linkedToIncidentCode` | `MyReportDto` (sự cố gốc khi bị gom / trùng) |
-| Mã nhân sự | `NV-NNNN`; null với người dân | `staffCode` | `UserDto` (login / register / google: `data.user`), `UserResponseDto` (`/api/users/...`, profile), `StationTeamMemberDto` (`members[]` của tổ) |
-| Mã trạm | `Station.Code`, VD `ST-001` (đã có từ trước) | `stationCode`, `stationName` | `StationTeamDto` (mới thêm) |
+| Mã nhân sự | `NV-NNNN`; null với người dân | `staffCode` | `UserDto` (login / register / google: `data.user`), `UserResponseDto` (`/api/users/...`, profile), `StationTeamMemberDto` (`members[]` của tổ), `GET /api/users/my-team` (`myTeamMembers[]`, `teamMembers[]`, `stationOperator`), `GET /api/users/station/{id}/staff` |
+| Mã trạm | `Station.Code`, VD `ST-001` (đã có từ trước) | `stationCode`, `stationName` | `StationTeamDto`, `GET /api/users/my-team` (`stationCode`, bổ sung 18/11) |
 
 **Tìm kiếm theo mã**
 - `GET /api/incidents?searchTerm=SC-261117-0042`
 - `GET /api/reports/incidents?search=...`
 - `GET /api/dispatch/completion-reports?search=...`
-- Audit: `GET /api/audit-trail?incidentCode=SC-261117-0042`. Không phân biệt hoa thường; Admin không phải gõ Guid nữa. Mã không tồn tại thì trả danh sách rỗng.
+- Audit: `GET /api/audit-trail?incidentCode=SC-261117-0042`. Không phân biệt hoa thường; Admin không phải gõ Guid nữa. Từ 18/11 nhận cả **một phần mã** (VD `0042` hoặc `261117`): trả nhật ký của mọi sự cố có mã chứa chuỗi đó. Không khớp sự cố nào thì trả danh sách rỗng.
 
 **Danh sách chỗ FE cần đổi (theo rà soát FE ngày 17/11)**
 
@@ -1522,7 +1522,7 @@ Backend vẫn dùng Guid làm khóa trong mọi API. Các mã dưới đây **ch
 2. **Lượt điều phối** (không có mã riêng):
    - `components/staff/reports/StaffReportsView.tsx` 155 ("Mã nhiệm vụ"): thay bằng `incidentCode` + biển số xe (`rescueUnit.plateNumber`), VD `SC-261117-0042 · 51B-003.14`.
    - `components/staff/StaffQrHandover.tsx` 204 ("Mã bàn giao"): hiển thị như trên. Nếu QR cần id để quét thì vẫn mã hóa Guid trong QR, chỉ đổi phần chữ hiển thị.
-3. **Trạm:** `components/staff/team/StaffTeamView.tsx` 154 ("Mã trạm" = 8 ký tự Guid) → `stationCode` (kèm `stationName`).
+3. **Trạm:** `components/staff/team/StaffTeamView.tsx` 154 ("Mã trạm" = 8 ký tự Guid) → `teamData.stationCode` (kèm `stationName`). Màn này đọc `GET /api/users/my-team` (`StaffTeamResponseDto`), không phải `StationTeamDto`. Danh sách thành viên và Operator phụ trách trên màn này cũng có `staffCode`.
 4. **Nhân sự:**
    - Web `pages/staff/StaffPage.tsx` 167, 185, 201 và `components/staff/profile/StaffProfileView.tsx` 108 (`ED-` + 4 ký tự Guid): dùng `staffCode`.
    - Mobile `screens/staff/StaffDashboardScreen.tsx` 221 (đang gán cứng `staffId="ST-8821"`): truyền `user.staffCode`.
@@ -1534,3 +1534,50 @@ Backend vẫn dùng Guid làm khóa trong mọi API. Các mã dưới đây **ch
 
 - `components/staff/schedule/ShiftRequestsManager.tsx` (`#{req.id}`) hiện không được màn nào dùng, bỏ qua.
 - Bản ghi cũ đã được migration cấp mã theo thứ tự thời gian tạo, nên không có sự cố hoặc nhân sự nào thiếu mã.
+
+## 39. Cập nhật 18/11/2026: sửa sau đợt rà soát
+
+**1. `GET /api/users/my-team` có thêm mã.** `stationCode`; `staffCode` trong `myTeamMembers[]`, `teamMembers[]`, `stationOperator`. `GET /api/users/station/{stationId}/staff` cũng có `staffCode`. Mục 38 đã sửa lại chỗ chỉ sai `StationTeamDto` cho màn "Tổ của tôi".
+
+**2. Từ chối / thu hồi / đổi tiến độ không còn làm lệch trạng thái xe.** Lượt điều phối và trạng thái xe ghi chung một transaction. Hai người bấm cùng lúc thì một người thành công, người kia nhận **409** và dữ liệu không đổi. FE khi gặp 409 ở các nút này: tải lại nhiệm vụ (`GET /api/dispatch/assignments/{id}` hoặc `my-assignments`) rồi hiện trạng thái mới, không bấm lại tự động. Sự kiện realtime trạng thái xe giờ chỉ phát sau khi đã lưu, nên không còn sự kiện "ảo" khi lưu lỗi.
+
+**3. Lịch sử báo cáo nghiệm thu của nhân viên** (`GET /api/dispatch/completion-reports`) có thêm báo cáo của **xe chưa gán tổ thuộc trạm mình**, khớp với `my-assignments`. FE không cần đổi gì.
+
+**4. Sự cố đang leo thang mà tổ cuối từ chối / bị thu hồi.** Sự cố giữ trạng thái `Escalated` (vẫn trong hàng chờ, nhãn leo thang), không về `Verified`. Nhật ký sự cố có dòng "…Không còn tổ nào xử lý, sự cố vẫn đang leo thang — cần điều phối tổ thay thế ngay." Thông báo cho trung tâm là **ưu tiên cao**. Câu trả về giống trường hợp thường ("…sẽ giao xe thay thế" / "…đã trả về hàng chờ điều phối"). Hàng chờ Operator: sự cố `Escalated` không có lượt nào đang chạy cần nút "Giao xe" như sự cố `Verified`.
+
+**5. Lọc audit theo một phần mã**, xem mục 38. Ô lọc ở `IncidentAuditTab.tsx` có thể cho gõ `0042` thay vì cả mã.
+
+**6. Mã sự cố ở đầu nội dung thông báo**, dạng `[SC-261118-0003] …`, cho thông báo gửi người dân (xác minh, điều xe, xe đang tới, đã tới, hoàn tất) và thông báo cho trung tâm (tổ từ chối, sự cố tự đóng). FE không cần đổi gì; nếu muốn tô đậm thì tách phần `[...]` đầu chuỗi.
+
+**7. Mobile/Web: người dùng đã đăng nhập trước khi deploy.** User lưu sẵn trong AsyncStorage / localStorage chưa có `staffCode`. Khi mở app, nếu user đã lưu thiếu `staffCode` (và role khác Citizen) thì gọi lại `GET /api/users/me` để cập nhật, không bắt đăng nhập lại.
+
+## 40. Cập nhật 18/11/2026 (đợt 2): phạm vi trạm, hủy sự cố báo tổ, tổ đang bận, xe giải tỏa
+
+**1. Operator chỉ thao tác nhiệm vụ của trạm mình.** Thu hồi (`PUT /api/dispatch/assignments/{id}/status` = Cancelled), từ chối thay, đổi tiến độ thay và nghiệm thu thay giờ trả **403** "Sự cố này thuộc trạm khác phụ trách." nếu Operator không thuộc trạm phụ trách sự cố và xe cũng không phải xe trạm mình (xe đi hỗ trợ). Admin không bị giới hạn. Operator vẫn được từ chối / nghiệm thu thay tổ như trước. FE: hiển thị `message` khi nhận 403, không cần đổi luồng.
+
+**2. `GET /api/dispatch/assignments/{id}`: tổ nhận lượt luôn xem lại được lượt của mình**, kể cả quá 30 phút sau khi hoàn tất. Trước đây `StaffReportsView.tsx` (mở báo cáo nghiệm thu của nhiệm vụ cũ) bị 403. FE không cần đổi gì.
+
+**3. Hủy sự cố khi tổ đang chạy** (`PUT /api/incidents/{id}/cancel`):
+- Tổ nhận realtime `ReceiveAssignmentStatus` với `status = "Cancelled"` cho từng lượt bị thu hồi. `DispatchContext.tsx` đã upsert sự kiện này nên danh sách nhiệm vụ tự cập nhật.
+- Tổ nhận push / thông báo ưu tiên cao: tiêu đề `LỆNH ĐIỀU PHỐI ĐÃ HỦY`, nội dung `[SC-…] Sự cố "…" đã bị hủy (lý do). Xe … dừng nhiệm vụ và quay về trạm.`, `data = { assignmentIds, cancelled: true }`.
+- **FE web (staff):** khi nhiệm vụ đang mở (màn dẫn đường `StaffNavigationMap`, modal cảnh báo `StaffMissionAlertModal`) chuyển sang `Cancelled`, đóng màn đó và hiện thông báo "Lệnh đã bị hủy: {lý do}". Lý do nằm trong `notes` của lượt (`[THU HỒI XE]: …`).
+- **Mobile:** khi nhận push có `data.cancelled = true`, nếu đang hiện `EmergencyAlertModal` hoặc nhiệm vụ đó thì đóng lại.
+- Hủy đúng lúc tổ vừa nghiệm thu xong: trả **409** "Sự cố vừa chuyển sang trạng thái 'Completed', không thể hủy." FE tải lại sự cố.
+- Người dân bấm hủy đúng lúc Operator vừa điều xe: trả **400** "Đội cứu hộ đang trên đường tới vị trí của bạn…" (như trước, giờ kiểm tra cả sau khi khóa).
+
+**4. Tổ đang làm nhiệm vụ** (còn lượt chạy hoặc xe đang giải tỏa điểm nghẽn):
+- `PUT /api/stations/{id}/teams/{teamId}` bỏ thành viên khi tổ đang chạy, hoặc rút một xe đang bận khỏi tổ → **409** "Tổ "X" đang làm nhiệm vụ (51B-…). Không rút xe, bớt thành viên hay xóa tổ…". Đổi tên, đổi vai trò, thêm người, thêm xe rảnh, rút xe đang rảnh vẫn được.
+- Thêm vào tổ một xe đang làm nhiệm vụ của tổ khác → **409** "Xe … đang làm nhiệm vụ hoặc giải tỏa điểm nghẽn, không chuyển tổ được…".
+- `DELETE /api/stations/{id}/teams/{teamId}` → **409** khi tổ đang bận.
+- `PUT /api/users/{id}/assign-station-team` làm nhân viên rời tổ đang bận → **400** cùng thông điệp, không đổi gì.
+- FE màn quản lý tổ (`stationTeamService.ts` và màn tổ của Operator/Admin): hiển thị `message` của 409/400, giữ nguyên form.
+- Xóa tổ giờ là **xóa mềm**: tổ biến mất khỏi danh sách, xe về "chưa gán tổ", tên tổ dùng lại được. Lượt điều phối / báo cáo cũ vẫn giữ `stationTeamId`, nhưng `stationTeamName` trả **null** vì tổ đã xóa. FE hiển thị "Tổ đã giải thể" khi có `stationTeamId` mà không có `stationTeamName`.
+
+**5. Xe đang giải tỏa điểm nghẽn** (`/api/traffic/{id}/assign`): `PUT /api/rescue-units/{id}/status`, đổi trạm, xóa xe → **400** "Xe đang được giao giải tỏa điểm nghẽn giao thông. Hãy hủy giao hoặc đóng điểm nghẽn trước." Nút "Gỡ kẹt" trên màn xe nên ẩn khi xe đang giải tỏa (xem danh sách điểm nghẽn có `assignedRescueUnitId` = xe này).
+
+**6. Yêu cầu hiện trường (chi viện…) tự hủy** khi sự cố đóng / bị hủy, hoặc khi lượt của tổ gửi yêu cầu kết thúc (từ chối, bị thu hồi, đã nghiệm thu). Realtime yêu cầu `Cancelled` được phát như khi tổ tự hủy; `responseNote` = "Tự hủy: …". `GET /api/field-requests` không còn trả yêu cầu của sự cố đã đóng. FE không cần đổi gì.
+
+**7. Log leo thang** được đóng khi Operator xác minh sự cố đang leo thang và khi hủy sự cố đang leo thang. Nhật ký sự cố có dòng `DeEscalated` "Hạ thang: Operator đã xác minh sự cố…". Log cũ bị treo đã được migration `Close_Stale_Escalation_Logs` đóng. Màn leo thang của Admin sẽ thấy số "chưa xử lý" giảm. FE không cần đổi gì.
+
+**8. Nhật ký gom / tách báo cáo trùng** ghi mã `SC-…` thay vì `#A1B2C3D4`. Nhật ký cũ giữ nguyên.
+

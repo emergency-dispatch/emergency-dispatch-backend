@@ -400,6 +400,21 @@ public class FieldRequestService : IFieldRequestService
     // =====================================================================================
     // Escalation daemon
     // =====================================================================================
+    public async Task<int> CancelOpenAsync(Guid incidentId, IReadOnlyCollection<Guid>? assignmentIds, string reason, CancellationToken cancellationToken = default)
+    {
+        var open = (await _requestRepository.GetByIncidentAsync(incidentId, cancellationToken) ?? Array.Empty<FieldRequest>())
+            .Where(r => r.Status is FieldRequestStatus.Open or FieldRequestStatus.Acknowledged)
+            .Where(r => assignmentIds == null || assignmentIds.Contains(r.AssignmentId))
+            .ToList();
+        foreach (var request in open)
+        {
+            await ResolveAsync(request, FieldRequestStatus.Cancelled, reason, null, SystemRole,
+                AuditAction.FieldRequestCancelled, $"Hệ thống tự hủy yêu cầu {Describe(request)}: {reason}", cancellationToken);
+            await PublishAsync("Cancelled", Map(request), cancellationToken);
+        }
+        return open.Count;
+    }
+
     public async Task<int> ProcessOverdueAsync(CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetEscalationSettingsAsync(cancellationToken);

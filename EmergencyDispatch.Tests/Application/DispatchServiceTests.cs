@@ -452,7 +452,7 @@ public class DispatchServiceTests
     public async Task Status_StaffCannotCancel_CommandCenterCan()
     {
         var (a, _, u, staff) = Mission(DispatchAssignmentStatus.Accepted);
-        var op = new User { Role = UserRole.Operator };
+        var op = new User { Role = UserRole.Operator, StationId = _stationA };
         _users.Setup(x => x.GetByIdAsync(op.Id)).ReturnsAsync(op);
 
         var byStaff = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, staff.Id);
@@ -461,6 +461,104 @@ public class DispatchServiceTests
         Assert.Equal(ApiErrorCodes.Forbidden, byStaff.ErrorCode);
         Assert.True(byOp.Success);
         Assert.Equal(RescueUnitStatus.Available, u.Status);
+    }
+
+    // ===================== Phạm vi trạm của Operator (thu hồi / từ chối / nghiệm thu thay) =====================
+    [Fact]
+    public async Task CommandCenter_OperatorOfOtherStation_IsForbidden_OnRecallRejectResolve()
+    {
+        var (a, inc, u, _) = Mission(DispatchAssignmentStatus.Accepted);
+        var opB = new User { Role = UserRole.Operator, StationId = _stationB, FullName = "Op B" };
+        _users.Setup(x => x.GetByIdAsync(opB.Id)).ReturnsAsync(opB);
+
+        var recall = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, opB.Id);
+        var reject = await _svc.RejectAssignmentAsync(a.Id, new RejectAssignmentDto { Reason = RejectionReason.TooFar }, opB.Id);
+        var resolve = await _svc.ResolveAssignmentAsync(a.Id, new ResolveDispatchDto { ResolutionSummary = "Đã xử lý xong", EvidenceMediaUrls = new() { "https://images.unsplash.com/x.jpg" } }, opB.Id);
+
+        Assert.Equal(ApiErrorCodes.Forbidden, recall.ErrorCode);
+        Assert.Equal(ApiErrorCodes.Forbidden, reject.ErrorCode);
+        Assert.Equal(ApiErrorCodes.Forbidden, resolve.ErrorCode);
+        Assert.Equal(DispatchAssignmentStatus.Accepted, a.Status);
+        Assert.Equal(RescueUnitStatus.Dispatched, u.Status);
+        Assert.Equal(IncidentStatus.Dispatched, inc.Status);
+    }
+
+    [Fact]
+    public async Task CommandCenter_OperatorOfSupportUnitStation_CanRecall_AdminAlways()
+    {
+        var (a, _, u, _) = Mission(DispatchAssignmentStatus.Accepted);
+        u.StationId = _stationB; // xe trạm B đi hỗ trợ sự cố trạm A
+        var opB = new User { Role = UserRole.Operator, StationId = _stationB, FullName = "Op B" };
+        _users.Setup(x => x.GetByIdAsync(opB.Id)).ReturnsAsync(opB);
+
+        var r = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, opB.Id);
+        Assert.True(r.Success, r.Message);
+
+        var (a2, _, _, _) = Mission(DispatchAssignmentStatus.Accepted);
+        var admin = new User { Role = UserRole.Admin, FullName = "Admin" };
+        _users.Setup(x => x.GetByIdAsync(admin.Id)).ReturnsAsync(admin);
+        Assert.True((await _svc.RejectAssignmentAsync(a2.Id, new RejectAssignmentDto { Reason = RejectionReason.TooFar }, admin.Id)).Success);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Admin, null, null, null, true)]
+    [InlineData(UserRole.Operator, "A", null, "A", true)]   // sự cố chưa gán trạm
+    [InlineData(UserRole.Operator, "A", "A", "B", true)]    // sự cố trạm mình
+    [InlineData(UserRole.Operator, "B", "A", "B", true)]    // xe trạm mình đi hỗ trợ
+    [InlineData(UserRole.Operator, "B", "A", "A", false)]
+    [InlineData(UserRole.Operator, null, "A", "A", false)]  // chưa được phân trạm
+    public void OperatorScope_CheckAssignment(UserRole role, string? actor, string? incidentStation, string? unitStation, bool allowed)
+    {
+        Guid? G(string? k) => k == null ? null : k == "A" ? _stationA : _stationB;
+        Assert.Equal(allowed, OperatorScope.CheckAssignment(role, G(actor), G(incidentStation), G(unitStation)) == null);
+    }
+
+    // ===================== Quyền tổ theo tổ lưu trên lượt =====================
+    [Fact]
+    public async Task Crew_IsTeamStoredOnAssignment_NotCurrentTeamOfVehicle()
+    {
+        var (a, _, u, staff) = Mission(DispatchAssignmentStatus.Dispatched);
+        var teamOld = Guid.NewGuid();
+        var teamNew = Guid.NewGuid();
+        a.StationTeamId = teamOld;
+        u.StationTeamId = teamNew; // xe bị chuyển tổ khi đang làm nhiệm vụ (dữ liệu cũ)
+        var newcomer = new User { Role = UserRole.RescueStaff, StationId = _stationA, FullName = "Tổ mới" };
+        _users.Setup(x => x.GetByIdAsync(newcomer.Id)).ReturnsAsync(newcomer);
+        _users.Setup(x => x.GetTeamIdAsync(staff.Id, It.IsAny<CancellationToken>())).ReturnsAsync(teamOld);
+        _users.Setup(x => x.GetTeamIdAsync(newcomer.Id, It.IsAny<CancellationToken>())).ReturnsAsync(teamNew);
+
+        var byNew = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Accepted }, newcomer.Id);
+        var byOld = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Accepted }, staff.Id);
+
+        Assert.Equal(ApiErrorCodes.Forbidden, byNew.ErrorCode);
+        Assert.True(byOld.Success, byOld.Message);
+        Assert.True(await _svc.IsCrewOfAssignmentAsync(a.Id, staff.Id));
+        Assert.False(await _svc.IsCrewOfAssignmentAsync(a.Id, newcomer.Id));
+    }
+
+    [Fact]
+    public async Task IsCrewOfAssignment_SubmitterOrCrew_True_CitizenFalse()
+    {
+        var (a, _, _, staff) = Mission(DispatchAssignmentStatus.Completed);
+        var submitter = new User { Role = UserRole.RescueStaff, StationId = _stationB };
+        _users.Setup(x => x.GetByIdAsync(submitter.Id)).ReturnsAsync(submitter);
+        a.CompletionReport = new CompletionReport { SubmittedByUserId = submitter.Id };
+        var citizen = new User { Role = UserRole.Citizen };
+        _users.Setup(x => x.GetByIdAsync(citizen.Id)).ReturnsAsync(citizen);
+
+        Assert.True(await _svc.IsCrewOfAssignmentAsync(a.Id, staff.Id));     // xe chưa gán tổ, cùng trạm
+        Assert.True(await _svc.IsCrewOfAssignmentAsync(a.Id, submitter.Id)); // người nộp báo cáo
+        Assert.False(await _svc.IsCrewOfAssignmentAsync(a.Id, citizen.Id));
+    }
+
+    [Fact]
+    public async Task Reject_CancelsOpenFieldRequestsOfThatAssignment()
+    {
+        var (a, inc, _, staff) = Mission(DispatchAssignmentStatus.Accepted);
+
+        await _svc.RejectAssignmentAsync(a.Id, new RejectAssignmentDto { Reason = RejectionReason.TooFar }, staff.Id);
+
+        _fieldRequests.Verify(f => f.CancelOpenAsync(inc.Id, It.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(a.Id)), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -491,6 +589,40 @@ public class DispatchServiceTests
         Assert.Equal(DispatchAssignmentStatus.Rejected, a.Status);
         Assert.Equal(RescueUnitStatus.Maintenance, u.Status);
         Assert.Equal(IncidentStatus.Verified, inc.Status);
+    }
+
+    [Fact]
+    public async Task Reject_LastTeam_OnEscalatedIncident_StaysEscalated_LogsAndAlertsHighPriority()
+    {
+        var (a, inc, _, staff) = Mission(DispatchAssignmentStatus.Dispatched);
+        inc.Status = IncidentStatus.Escalated;
+        EmergencyDispatch.Application.DTOs.Notification.NotificationRequest? sent = null;
+        _notify.Setup(n => n.NotifyRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>(), It.IsAny<EmergencyDispatch.Application.DTOs.Notification.NotificationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<UserRole>, EmergencyDispatch.Application.DTOs.Notification.NotificationRequest, CancellationToken>((_, n, _) => sent = n);
+
+        var r = await _svc.RejectAssignmentAsync(a.Id, new RejectAssignmentDto { Reason = RejectionReason.TooFar }, staff.Id);
+
+        Assert.True(r.Success);
+        Assert.Equal(IncidentStatus.Escalated, inc.Status);
+        Assert.Equal(EmergencyDispatch.Application.Localization.LocalizationHelper.Localize("Đã từ chối nhiệm vụ. Trung tâm điều phối sẽ giao xe thay thế."), r.Message);
+        Assert.True(sent!.HighPriority);
+        Assert.Contains("leo thang", sent.Message);
+        _incidents.Verify(i => i.AddAuditTrailAsync(It.Is<IncidentAuditTrail>(t => t.Description.Contains("vẫn đang leo thang")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Reject_WritesAssignmentAndUnitInsideIncidentLock_PublishesUnitAfterCommit()
+    {
+        var (a, inc, u, staff) = Mission(DispatchAssignmentStatus.Accepted);
+        var order = new List<string>();
+        _units.Setup(x => x.SaveStatusAsync(u, It.IsAny<CancellationToken>())).Callback(() => order.Add("unit"));
+        _lock.Setup(l => l.CommitAsync(It.IsAny<CancellationToken>())).Callback(() => order.Add("commit"));
+        _rt.Setup(x => x.RescueUnitStatusChangedAsync(It.IsAny<EmergencyDispatch.Application.DTOs.Incident.RescueUnitStatusEventDto>(), It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("publish"));
+
+        await _svc.RejectAssignmentAsync(a.Id, new RejectAssignmentDto { Reason = RejectionReason.TooFar }, staff.Id);
+
+        Assert.Equal(new[] { "unit", "commit", "publish" }, order.Take(3));
     }
 
     [Fact]
@@ -1162,7 +1294,8 @@ public class DispatchServiceTests
         Assert.Equal(op.Id, inc.ClosedByUserId);
         Assert.NotNull(inc.ResolutionTimeMs);
         Assert.Equal(RescueUnitStatus.Available, u.Status);
-        _lock.Verify(l => l.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        // 1 lần ghi lượt + xe (khóa sự cố), 1 lần chốt đóng sự cố
+        _lock.Verify(l => l.CommitAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
         _notify.Verify(n => n.NotifyUsersAsync(It.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(inc.ReportedByUserId!.Value)),
             It.Is<NotificationRequest>(m => m.Title == "Cứu hộ đã hoàn tất"), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -1223,7 +1356,8 @@ public class DispatchServiceTests
         await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, op.Id);
 
         Assert.Null(inc.ClosedAt);
-        _lock.Verify(l => l.CommitAsync(It.IsAny<CancellationToken>()), Times.Never);
+        // Chỉ commit phần ghi lượt + xe; bước chốt thấy sự cố đã đóng nên không ghi gì
+        _lock.Verify(l => l.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -1243,9 +1377,9 @@ public class DispatchServiceTests
     public async Task CompletionReports_Operator_IsForcedToOwnStation()
     {
         Guid? station = null;
-        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Callback((Guid? st, Guid? _, Guid? _, Guid? _, Guid? _, DateTime? _, DateTime? _, string? _, int _, int _, CancellationToken _) => station = st)
+            .Callback((Guid? st, Guid? _, Guid? _, Guid? _, Guid? _, Guid? _, DateTime? _, DateTime? _, string? _, int _, int _, CancellationToken _) => station = st)
             .ReturnsAsync((new List<CompletionReport>(), 0));
 
         var r = await _svc.GetCompletionReportsAsync(new CompletionReportFilterDto { StationId = Guid.NewGuid(), PageSize = 1000 }, Guid.NewGuid());
@@ -1262,10 +1396,11 @@ public class DispatchServiceTests
         var teamId = Guid.NewGuid();
         _me.SetupGet(m => m.Role).Returns(UserRole.RescueStaff);
         _users.Setup(x => x.GetTeamIdAsync(staff.Id, It.IsAny<CancellationToken>())).ReturnsAsync(teamId);
-        (Guid? st, Guid? ct, Guid? cu) seen = default;
-        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+        _me.SetupGet(m => m.StationId).Returns(_stationA);
+        (Guid? st, Guid? ct, Guid? cu, Guid? cs) seen = default;
+        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Callback((Guid? s, Guid? _, Guid? _, Guid? c, Guid? u, DateTime? _, DateTime? _, string? _, int _, int _, CancellationToken _) => seen = (s, c, u))
+            .Callback((Guid? s, Guid? _, Guid? _, Guid? c, Guid? u, Guid? cs, DateTime? _, DateTime? _, string? _, int _, int _, CancellationToken _) => seen = (s, c, u, cs))
             .ReturnsAsync((new List<CompletionReport>(), 0));
 
         await _svc.GetCompletionReportsAsync(new CompletionReportFilterDto(), staff.Id);
@@ -1273,6 +1408,7 @@ public class DispatchServiceTests
         Assert.Null(seen.st);
         Assert.Equal(teamId, seen.ct);
         Assert.Equal(staff.Id, seen.cu);
+        Assert.Equal(_stationA, seen.cs); // + báo cáo của xe chưa gán tổ ở trạm mình
     }
 
     [Fact]
@@ -1287,7 +1423,7 @@ public class DispatchServiceTests
             MediaItems = { new CompletionReportMedia { MediaUrl = "https://x/1.jpg" } }
         };
         report.Assignments.Add(new DispatchAssignment { IncidentId = inc.Id, RescueUnitId = unit.Id, RescueUnit = unit, Status = DispatchAssignmentStatus.Completed });
-        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+        _assign.Setup(a => a.GetCompletionReportsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new List<CompletionReport> { report }, 1));
 

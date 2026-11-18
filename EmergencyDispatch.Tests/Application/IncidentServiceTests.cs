@@ -502,6 +502,99 @@ public class IncidentServiceTests
         _rt.Verify(n => n.RescueUnitStatusChangedAsync(It.IsAny<RescueUnitStatusEventDto>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    private IncidentService ServiceWithCleanup(Mock<IEscalationRepository> esc, Mock<IFieldRequestService> requests)
+        => new(_incidents.Object, _users.Object, _blocked.Object, _ai.Object, _queue.Object, _rt.Object, _notify.Object,
+            new CreateIncidentDtoValidator(TestHelpers.Config(("Cloudinary:CloudName", "demo"))), new CreateOperatorIncidentDtoValidator(TestHelpers.Config(("Cloudinary:CloudName", "demo"))), NullLogger<IncidentService>.Instance,
+            _guest.Object, _stations.Object, _settings.Object, _me.Object, _followUp.Object, _routing.Object,
+            escalationRepository: esc.Object, fieldRequestService: requests.Object);
+
+    [Fact]
+    public async Task Cancel_WithRunningTeam_LocksNotifiesCrewRecordsHistory_ClosesEscalation_CancelsRequests()
+    {
+        var op = UserWith(UserRole.Operator);
+        var teamId = Guid.NewGuid();
+        var crew = new List<Guid> { Guid.NewGuid() };
+        var unit = new RescueUnit { PlateNumber = "51A-1", Status = RescueUnitStatus.Dispatched, StationId = _q7.Id, StationTeamId = teamId };
+        var assignment = new DispatchAssignment { RescueUnit = unit, RescueUnitId = unit.Id, StationTeamId = teamId, Status = DispatchAssignmentStatus.EnRoute };
+        var inc = Existing(IncidentStatus.Escalated, i => { i.Code = "SC-261118-0007"; i.DispatchAssignments.Add(assignment); });
+        var lockScope = new Mock<IIncidentLockScope>();
+        _incidents.Setup(i => i.BeginLockedTransactionAsync(inc.Id, It.IsAny<CancellationToken>())).ReturnsAsync(lockScope.Object);
+        _notify.Setup(n => n.GetCrewUserIdsAsync(_q7.Id, teamId, It.IsAny<CancellationToken>())).ReturnsAsync(crew);
+        var esc = new Mock<IEscalationRepository>();
+        var requests = new Mock<IFieldRequestService>();
+        NotificationRequest? push = null;
+        _notify.Setup(n => n.NotifyCrewAsync(_q7.Id, teamId, It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, Guid?, NotificationRequest, CancellationToken>((_, _, n, _) => push = n);
+
+        var r = await ServiceWithCleanup(esc, requests).CancelIncidentAsync(inc.Id, "Báo giả", op.Id, reasonCode: CancellationReason.FalseReport);
+
+        Assert.True(r.Success, r.Message);
+        Assert.Equal(DispatchAssignmentStatus.Cancelled, assignment.Status);
+        var h = Assert.Single(assignment.StatusHistories);
+        Assert.Equal(DispatchAssignmentStatus.EnRoute, h.OldStatus);
+        Assert.Equal(DispatchAssignmentStatus.Cancelled, h.NewStatus);
+        lockScope.Verify(l => l.CommitAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(n => n.AssignmentStatusChangedAsync(It.Is<EmergencyDispatch.Application.DTOs.Dispatch.DispatchAssignmentResponseDto>(d => d.Status == DispatchAssignmentStatus.Cancelled),
+            crew, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.NotNull(push);
+        Assert.True(push!.HighPriority);
+        Assert.StartsWith("[SC-261118-0007]", push.Message);
+        esc.Verify(e => e.ResolveOpenLogsAsync(inc.Id, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+        requests.Verify(f => f.CancelOpenAsync(inc.Id, null, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cancel_IncidentClosedWhileWaitingForLock_IsConflict_NothingChanged()
+    {
+        var op = UserWith(UserRole.Operator);
+        var unit = new RescueUnit { PlateNumber = "51A-1", Status = RescueUnitStatus.OnScene };
+        var assignment = new DispatchAssignment { RescueUnit = unit, Status = DispatchAssignmentStatus.OnScene };
+        var inc = Existing(IncidentStatus.InProgress, i => i.DispatchAssignments.Add(assignment));
+        _incidents.Setup(i => i.ReloadAsync(inc, It.IsAny<CancellationToken>()))
+            .Callback(() => inc.Status = IncidentStatus.Completed).Returns(Task.CompletedTask); // tổ vừa nghiệm thu xong
+
+        var r = await _svc.CancelIncidentAsync(inc.Id, "Báo giả", op.Id, reasonCode: CancellationReason.FalseReport);
+
+        Assert.Equal(ApiErrorCodes.Conflict, r.ErrorCode);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, assignment.Status);
+        Assert.Equal(RescueUnitStatus.OnScene, unit.Status);
+    }
+
+    [Fact]
+    public async Task Cancel_ByReporter_DispatchedWhileWaitingForLock_IsRejected()
+    {
+        var reporter = UserWith(UserRole.Citizen);
+        var inc = Existing(IncidentStatus.Verified, i => i.ReportedByUserId = reporter.Id);
+        _incidents.Setup(i => i.ReloadAsync(inc, It.IsAny<CancellationToken>()))
+            .Callback(() => inc.Status = IncidentStatus.Dispatched).Returns(Task.CompletedTask); // Operator vừa điều xe
+
+        var r = await _svc.CancelIncidentAsync(inc.Id, "Không cần nữa", reporter.Id);
+
+        Assert.False(r.Success);
+        Assert.Equal(IncidentStatus.Dispatched, inc.Status);
+        _incidents.Verify(i => i.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Verify_EscalatedUnverified_ClosesEscalationLogs()
+    {
+        var inc = Existing(IncidentStatus.Escalated, i =>
+        {
+            i.Severity = SeverityLevel.Level3;
+            i.EventType = IncidentEventType.FireExplosion;
+            i.AiClassification = new AiClassification { SeverityScore = SeverityLevel.Level3, EventType = IncidentEventType.FireExplosion };
+        });
+        var esc = new Mock<IEscalationRepository>();
+        esc.Setup(e => e.ResolveOpenLogsAsync(inc.Id, It.IsAny<DateTime>(), It.IsAny<CancellationToken>())).ReturnsAsync(2);
+
+        var r = await ServiceWithCleanup(esc, new Mock<IFieldRequestService>()).VerifyIncidentAsync(inc.Id, Verify(SeverityLevel.Level3, "Lửa lan sang nhà bên"), _operatorId);
+
+        Assert.True(r.Success, r.Message);
+        Assert.Equal(IncidentStatus.Verified, inc.Status);
+        esc.Verify(e => e.ResolveOpenLogsAsync(inc.Id, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+        _incidents.Verify(i => i.AddAuditTrailAsync(It.Is<IncidentAuditTrail>(a => a.Action == AuditAction.DeEscalated), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task Cancel_OperatorCannotUseSystemReasonCodes()
     {

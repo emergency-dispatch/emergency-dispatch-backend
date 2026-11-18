@@ -391,6 +391,16 @@ public class UserService : IUserService
             }
         }
 
+        // Nhân viên đang làm nhiệm vụ cùng tổ: không cho rời tổ / đổi trạm giữa chừng. Kiểm tra TRƯỚC khi ghi trạm mới
+        if (dto.TeamName != null || !dto.StationId.HasValue)
+        {
+            await _teamService.EnsureCanReassignAsync(user.Id, dto.StationId, dto.TeamName);
+        }
+        else if (user.TeamMembership?.Team != null && user.TeamMembership.Team.StationId != dto.StationId)
+        {
+            await _teamService.EnsureCanReassignAsync(user.Id, dto.StationId, null);
+        }
+
         if (dto.StationId.HasValue)
         {
             var station = await _stationRepository.GetByIdAsync(dto.StationId.Value)
@@ -457,6 +467,7 @@ public class UserService : IUserService
             .Select(u => new TeamMemberSummaryDto
             {
                 Id = u.Id,
+                StaffCode = u.StaffCode,
                 FullName = u.FullName,
                 Email = u.Email,
                 PhoneNumber = u.PhoneNumber,
@@ -483,6 +494,7 @@ public class UserService : IUserService
                     new()
                     {
                         Id = user.Id,
+                        StaffCode = user.StaffCode,
                         FullName = user.FullName,
                         Email = user.Email,
                         PhoneNumber = user.PhoneNumber,
@@ -514,6 +526,7 @@ public class UserService : IUserService
             .Select(s => new TeamMemberSummaryDto
             {
                 Id = s.Id,
+                StaffCode = s.StaffCode,
                 FullName = s.FullName,
                 Email = s.Email,
                 PhoneNumber = s.PhoneNumber,
@@ -537,6 +550,7 @@ public class UserService : IUserService
         return new StaffTeamResponseDto
         {
             StationId = station.Id,
+            StationCode = station.Code,
             StationName = station.Name,
             StationAddress = station.Address,
             StationPhoneNumber = station.PhoneNumber,
@@ -545,6 +559,7 @@ public class UserService : IUserService
                 : new StationOperatorDto
                 {
                     Id = station.HeadOperator.Id,
+                    StaffCode = station.HeadOperator.StaffCode,
                     FullName = station.HeadOperator.FullName,
                     PhoneNumber = station.HeadOperator.PhoneNumber,
                     Email = station.HeadOperator.Email,

@@ -51,6 +51,28 @@ public static class OperatorScope
     }
 
     /// <summary>
+    /// Trung tâm thao tác một lượt điều phối (thu hồi / từ chối thay / đổi tiến độ thay / nghiệm thu thay / xem):
+    /// Admin mọi lượt; Operator khi sự cố chưa gán trạm, thuộc trạm mình, hoặc xe của lượt là xe trạm mình (đi hỗ trợ).
+    /// null = được phép
+    /// </summary>
+    public static string? CheckAssignment(UserRole role, Guid? actorStationId, Guid? incidentStationId, Guid? unitStationId)
+    {
+        if (role != UserRole.Operator)
+        {
+            return null;
+        }
+        if (!incidentStationId.HasValue)
+        {
+            return null;
+        }
+        if (!actorStationId.HasValue)
+        {
+            return NoStationMessage;
+        }
+        return incidentStationId == actorStationId || unitStationId == actorStationId ? null : OtherStationIncidentMessage;
+    }
+
+    /// <summary>
     /// Trạm dùng để lọc danh sách: Operator → trạm mình; Admin / tác vụ nền → null (không lọc)
     /// </summary>
     public static Guid? FilterStationId(this ICurrentUserContext user)

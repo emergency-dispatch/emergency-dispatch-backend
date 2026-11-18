@@ -441,4 +441,25 @@ public class FieldRequestServiceTests
 
         Assert.Equal(FieldRequestStatus.Cancelled, req.Status);
     }
+
+    [Fact]
+    public async Task CancelOpen_OnlyOpenOrAcknowledged_FilteredByAssignment()
+    {
+        var open = Existing();
+        var ack = Existing(FieldRequestStatus.Acknowledged);
+        ack.IncidentId = open.IncidentId;
+        var done = Existing(FieldRequestStatus.Fulfilled);
+        done.IncidentId = open.IncidentId;
+
+        var onlyFirst = await _svc.CancelOpenAsync(open.IncidentId, new[] { open.AssignmentId }, "Tự hủy: tổ đã từ chối nhiệm vụ.");
+        Assert.Equal(1, onlyFirst);
+        Assert.Equal(FieldRequestStatus.Cancelled, open.Status);
+        Assert.Equal(FieldRequestStatus.Acknowledged, ack.Status);
+
+        var all = await _svc.CancelOpenAsync(open.IncidentId, null, "Tự hủy: sự cố đã đóng.");
+        Assert.Equal(1, all);
+        Assert.Equal(FieldRequestStatus.Cancelled, ack.Status);
+        Assert.Equal(FieldRequestStatus.Fulfilled, done.Status);
+    }
 }
+

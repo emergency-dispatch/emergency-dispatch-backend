@@ -59,6 +59,12 @@ public interface IDispatchService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Nhân viên cứu hộ thuộc tổ nhận lượt này (lượt không có tổ: nhân viên trạm của xe) hoặc đã nộp báo cáo nghiệm thu của lượt
+    /// — được xem lại lượt của chính mình bất cứ lúc nào (khớp my-assignments)
+    /// </summary>
+    Task<bool> IsCrewOfAssignmentAsync(Guid assignmentId, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lấy danh sách các lượt điều phối của một sự cố
     /// </summary>
     Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> GetAssignmentsByIncidentIdAsync(

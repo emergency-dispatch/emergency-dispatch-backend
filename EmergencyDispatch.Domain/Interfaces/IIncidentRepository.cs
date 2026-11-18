@@ -119,11 +119,14 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetByReporterAsync(Guid userId, IncidentStatus? status, int pageIndex, int pageSize, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Nhật ký kiểm toán theo bộ lọc (phân trang, mới nhất trước)
+    /// Nhật ký kiểm toán theo bộ lọc (phân trang, mới nhất trước).
+    /// incidentCodeContains: một phần mã sự cố (không phân biệt hoa thường).
+    /// stationId: chỉ sự cố trạm đó phụ trách hoặc chưa gán trạm (Operator)
     /// </summary>
     Task<(IReadOnlyList<IncidentAuditTrail> Items, int TotalCount)> GetAuditTrailsAsync(
         Guid? incidentId, Guid? actorId, AuditAction? action, DateTime? from, DateTime? to,
-        int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+        int pageIndex, int pageSize, CancellationToken cancellationToken = default,
+        string? incidentCodeContains = null, Guid? stationId = null);
 
     /// <summary>
     /// Sự cố kèm kết quả AI và phân công trong khoảng thời gian (phục vụ số liệu RQ2/RQ3)
@@ -138,6 +141,11 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     /// Id sự cố theo mã hiển thị (SC-yyMMdd-NNNN, không phân biệt hoa thường); null nếu không có
     /// </summary>
     Task<Guid?> GetIdByCodeAsync(string code, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mã hiển thị SC-... của sự cố (kể cả đã xóa mềm); null nếu không có
+    /// </summary>
+    Task<string?> GetCodeAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<(IReadOnlyList<Incident> Items, int TotalCount)> GetClosedHistoryAsync(
         IReadOnlyCollection<IncidentStatus> statuses,

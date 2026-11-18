@@ -63,10 +63,20 @@ public class StationTeamRepository : IStationTeamRepository
 
     public void RemoveMember(StationTeamMember member) => _context.StationTeamMembers.Remove(member);
 
+    /// <summary>
+    /// Xóa mềm tổ: giữ bản ghi để lượt điều phối / báo cáo nghiệm thu cũ vẫn trỏ đúng tổ (không SetNull mất lịch sử).
+    /// Xe về trạng thái chưa gán tổ, thành viên rời tổ (tên tổ được dùng lại vì chỉ mục duy nhất lọc IsDeleted)
+    /// </summary>
     public void Remove(StationTeam team)
     {
+        foreach (var unit in team.RescueUnits)
+        {
+            unit.StationTeamId = null;
+        }
+        team.RescueUnits.Clear();
         _context.StationTeamMembers.RemoveRange(team.Members);
-        _context.StationTeams.Remove(team);
+        team.IsDeleted = true;
+        team.UpdatedAt = DateTime.UtcNow;
     }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) => _context.SaveChangesAsync(cancellationToken);

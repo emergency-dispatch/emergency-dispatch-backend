@@ -297,4 +297,92 @@ public class StationTeamServiceTests
         _teams.Verify(t => t.RemoveMember(old), Times.Once);
         _teams.Verify(t => t.AddAsync(It.IsAny<StationTeam>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    // ===================== Tổ đang làm nhiệm vụ =====================
+    private (StationTeamService Svc, StationTeam Team, RescueUnit Unit, User A, User B) BusyTeam(DispatchAssignmentStatus? active)
+    {
+        var a = Staff();
+        var b = Staff();
+        var unit = Vehicle();
+        var team = new StationTeam { StationId = _station.Id, Name = "Tổ 1" };
+        team.RescueUnits.Add(unit);
+        unit.StationTeamId = team.Id;
+        team.Members.Add(new StationTeamMember { TeamId = team.Id, StaffId = a.Id, CrewRole = CrewRole.Commander });
+        team.Members.Add(new StationTeamMember { TeamId = team.Id, StaffId = b.Id });
+        _existing.Add(team);
+        var assigns = new Mock<IDispatchAssignmentRepository>();
+        var running = active is { } st
+            ? new List<DispatchAssignment> { new() { RescueUnitId = unit.Id, StationTeamId = team.Id, Status = st } }
+            : new List<DispatchAssignment>();
+        assigns.Setup(x => x.GetAllActiveAsync()).ReturnsAsync(running);
+        assigns.Setup(x => x.GetActiveAssignmentByUnitIdAsync(unit.Id)).ReturnsAsync(running.FirstOrDefault());
+        var svc = new StationTeamService(_teams.Object, _stations.Object, _users.Object, _units.Object, _audit.Object, _me.Object, _rt.Object, assigns.Object);
+        return (svc, team, unit, a, b);
+    }
+
+    [Fact]
+    public async Task Update_BusyTeam_CannotRemoveMemberOrVehicle_CanRenameAndChangeRole()
+    {
+        var (svc, team, unit, a, b) = BusyTeam(DispatchAssignmentStatus.EnRoute);
+        var c = Staff();
+
+        var dropMember = await svc.UpdateAsync(_station.Id, team.Id, Input("Tổ 1", unit.Id, (a.Id, CrewRole.Commander), (c.Id, CrewRole.Rescuer)));
+        var dropVehicle = await svc.UpdateAsync(_station.Id, team.Id, Input("Tổ 1", null, (a.Id, CrewRole.Commander), (b.Id, CrewRole.Rescuer)));
+        var rename = await svc.UpdateAsync(_station.Id, team.Id, Input("Tổ 1 mới", unit.Id, (a.Id, CrewRole.Rescuer), (b.Id, CrewRole.Commander)));
+
+        Assert.Equal(ApiErrorCodes.Conflict, dropMember.ErrorCode);
+        Assert.Equal(ApiErrorCodes.Conflict, dropVehicle.ErrorCode);
+        Assert.True(rename.Success, rename.Message);
+        Assert.Equal(team.Id, unit.StationTeamId);
+    }
+
+    [Fact]
+    public async Task Update_CannotTakeBusyVehicleFromAnotherTeam()
+    {
+        var (_, busyTeam, busyUnit, _, _) = BusyTeam(DispatchAssignmentStatus.OnScene);
+        var (svc, other, otherUnit, x, y) = BusyTeam(null);
+        _ = busyTeam;
+        // svc của tổ rảnh nhưng xe muốn lấy đang có lượt chạy
+        var assigns = new Mock<IDispatchAssignmentRepository>();
+        assigns.Setup(r => r.GetAllActiveAsync()).ReturnsAsync(new List<DispatchAssignment>());
+        assigns.Setup(r => r.GetActiveAssignmentByUnitIdAsync(busyUnit.Id)).ReturnsAsync(new DispatchAssignment { Status = DispatchAssignmentStatus.OnScene });
+        svc = new StationTeamService(_teams.Object, _stations.Object, _users.Object, _units.Object, _audit.Object, _me.Object, _rt.Object, assigns.Object);
+
+        var dto = Input("Tổ 1", otherUnit.Id, (x.Id, CrewRole.Commander), (y.Id, CrewRole.Rescuer));
+        dto.RescueUnitIds = new List<Guid> { otherUnit.Id, busyUnit.Id };
+        var r = await svc.UpdateAsync(_station.Id, other.Id, dto);
+
+        Assert.Equal(ApiErrorCodes.Conflict, r.ErrorCode);
+        Assert.NotEqual(other.Id, busyUnit.StationTeamId);
+    }
+
+    [Fact]
+    public async Task Delete_BusyTeam_IsConflict_IdleTeam_IsRemoved()
+    {
+        var (busySvc, busy, _, _, _) = BusyTeam(DispatchAssignmentStatus.Dispatched);
+        Assert.Equal(ApiErrorCodes.Conflict, (await busySvc.DeleteAsync(_station.Id, busy.Id)).ErrorCode);
+        _teams.Verify(t => t.Remove(busy), Times.Never);
+
+        var (idleSvc, idle, _, _, _) = BusyTeam(null);
+        Assert.True((await idleSvc.DeleteAsync(_station.Id, idle.Id)).Success);
+        _teams.Verify(t => t.Remove(idle), Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_BusyTeam_CanRemoveIdleVehicle()
+    {
+        var (svc, team, busyUnit, a, b) = BusyTeam(DispatchAssignmentStatus.EnRoute);
+        var idle = Vehicle();
+        team.RescueUnits.Add(idle);
+        idle.StationTeamId = team.Id;
+
+        var dto = Input("Tổ 1", busyUnit.Id, (a.Id, CrewRole.Commander), (b.Id, CrewRole.Rescuer));
+        dto.RescueUnitIds = new List<Guid> { busyUnit.Id };
+        var r = await svc.UpdateAsync(_station.Id, team.Id, dto);
+
+        Assert.True(r.Success, r.Message);
+        Assert.Null(idle.StationTeamId);
+        Assert.Equal(team.Id, busyUnit.StationTeamId);
+    }
 }
+

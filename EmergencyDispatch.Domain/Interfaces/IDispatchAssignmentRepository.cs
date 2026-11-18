@@ -39,7 +39,8 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
     /// <summary>
     /// Lịch sử báo cáo nghiệm thu (mới nhất trước), kèm sự cố, tổ, người nộp, ảnh, các xe được hoàn tất.
     /// stationId: báo cáo của tổ / xe trạm đó hoặc của sự cố trạm đó phụ trách.
-    /// crewTeamId / crewUserId (nhân viên cứu hộ): báo cáo của tổ mình hoặc do chính mình nộp.
+    /// crewTeamId / crewUserId / crewStationId (nhân viên cứu hộ): báo cáo của tổ mình, do chính mình nộp,
+    /// hoặc của xe chưa gán tổ thuộc trạm mình (giống phạm vi my-assignments).
     /// </summary>
     Task<(IReadOnlyList<CompletionReport> Items, int TotalCount)> GetCompletionReportsAsync(
         Guid? stationId,
@@ -47,6 +48,7 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
         Guid? incidentId,
         Guid? crewTeamId,
         Guid? crewUserId,
+        Guid? crewStationId,
         DateTime? from,
         DateTime? to,
         string? search,

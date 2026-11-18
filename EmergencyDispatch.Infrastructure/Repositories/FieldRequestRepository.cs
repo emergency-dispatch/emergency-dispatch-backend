@@ -25,6 +25,8 @@ public class FieldRequestRepository : GenericRepository<FieldRequest>, IFieldReq
     public async Task<IReadOnlyList<FieldRequest>> GetOpenAsync(Guid? responsibleStationId, CancellationToken cancellationToken = default)
         => await WithDetails()
             .Where(r => r.Status == FieldRequestStatus.Open || r.Status == FieldRequestStatus.Acknowledged)
+            // Sự cố đã đóng / hủy → yêu cầu không còn ý nghĩa, không hiện trong hàng chờ (dù chưa kịp tự hủy)
+            .Where(r => r.Incident!.Status != IncidentStatus.Completed && r.Incident.Status != IncidentStatus.Cancelled)
             .Where(r => !responsibleStationId.HasValue || r.Incident!.ResponsibleStationId == null || r.Incident.ResponsibleStationId == responsibleStationId)
             .OrderBy(r => r.CreatedAt)
             .ToListAsync(cancellationToken);

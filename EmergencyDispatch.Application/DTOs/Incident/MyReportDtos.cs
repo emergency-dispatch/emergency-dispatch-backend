@@ -87,7 +87,7 @@ public class AuditTrailFilterDto
     public Guid? IncidentId { get; set; }
 
     /// <summary>
-    /// Lọc theo mã sự cố (SC-yyMMdd-NNNN, không phân biệt hoa thường) thay cho IncidentId
+    /// Lọc theo mã sự cố, không phân biệt hoa thường: mã đủ SC-yyMMdd-NNNN → đúng sự cố đó; một phần mã (VD 0042) → mọi sự cố có mã chứa chuỗi này
     /// </summary>
     public string? IncidentCode { get; set; }
     public Guid? ActorId { get; set; }

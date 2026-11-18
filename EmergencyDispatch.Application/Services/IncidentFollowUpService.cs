@@ -209,7 +209,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             IncidentId = parent.Id,
             ActorRole = SystemRole,
             Action = AuditAction.ReportLinked,
-            Description = $"Gom báo cáo #{ShortId(report.Id)} (cách {distanceMeters:F0} m) vào sự cố này",
+            Description = $"Gom báo cáo {CodeOf(report)} (cách {distanceMeters:F0} m) vào sự cố này",
             NewStateJson = JsonSerializer.Serialize(new { linkedReportId = report.Id, distanceMeters = Math.Round(distanceMeters) })
         }, cancellationToken);
         await _incidentRepository.SaveChangesAsync(cancellationToken);
@@ -341,7 +341,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         }
 
         var parentId = report.DuplicateOfIncidentId.Value;
-        var text = string.IsNullOrWhiteSpace(note) ? $"Trùng với sự cố #{ShortId(parentId)}" : note.Trim();
+        var text = string.IsNullOrWhiteSpace(note) ? $"Trùng với sự cố {await CodeOfAsync(parentId, cancellationToken)}" : note.Trim();
         await CloseAsDuplicateAsync(report, actorUserId, _currentUser.Role?.ToString() ?? nameof(UserRole.Operator), text, AuditAction.DuplicateConfirmed, cancellationToken);
         await _incidentRepository.AdjustLinkedReportCountAsync(parentId, -1, null, cancellationToken);
         await PublishParentAsync(parentId, cancellationToken);
@@ -380,7 +380,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             if (report is { Status: IncidentStatus.Linked })
             {
                 await CloseAsDuplicateAsync(report, actorUserId, SystemRole,
-                    $"Đã xử lý cùng sự cố #{ShortId(parentIncidentId)}", AuditAction.DuplicateConfirmed, cancellationToken);
+                    $"Đã xử lý cùng sự cố {await CodeOfAsync(parentIncidentId, cancellationToken)}", AuditAction.DuplicateConfirmed, cancellationToken);
             }
         }
 
@@ -454,7 +454,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         };
         await _supplementRepository.AddAsync(supplement);
 
-        var description = $"Người báo bổ sung thông tin" + (target.Id != incident.Id ? $" (từ báo cáo gom #{ShortId(incident.Id)})" : string.Empty)
+        var description = $"Người báo bổ sung thông tin" + (target.Id != incident.Id ? $" (từ báo cáo gom {CodeOf(incident)})" : string.Empty)
                           + (note.Length > 0 ? $": {note}" : string.Empty) + (media.Count > 0 ? $" (+{media.Count} ảnh / video)" : string.Empty);
         await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
         {
@@ -546,7 +546,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             ActorId = actorUserId,
             ActorRole = actorRole,
             Action = action,
-            Description = $"Tách khỏi sự cố #{ShortId(parentId)}: {reason}",
+            Description = $"Tách khỏi sự cố {await CodeOfAsync(parentId, cancellationToken)}: {reason}",
             OldStateJson = JsonSerializer.Serialize(new { status = IncidentStatus.Linked.ToString(), parentIncidentId = parentId }),
             NewStateJson = JsonSerializer.Serialize(new { status = report.Status.ToString() }),
             IpAddress = _currentUser.IpAddress
@@ -557,7 +557,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             ActorId = actorUserId,
             ActorRole = actorRole,
             Action = action,
-            Description = $"Báo cáo #{ShortId(report.Id)} được tách thành sự cố riêng: {reason}",
+            Description = $"Báo cáo {CodeOf(report)} được tách thành sự cố riêng: {reason}",
             NewStateJson = JsonSerializer.Serialize(new { unlinkedReportId = report.Id })
         }, cancellationToken);
         await _incidentRepository.SaveChangesAsync(cancellationToken);
@@ -682,5 +682,13 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         CreatedAt = s.CreatedAt
     };
 
-    private static string ShortId(Guid id) => id.ToString("N")[..8].ToUpperInvariant();
+    private static string ShortId(Guid id) => "#" + id.ToString("N")[..8].ToUpperInvariant();
+
+    /// <summary>
+    /// Mã SC-... để ghi nhật ký; bản ghi chưa có mã (chưa lưu) → 8 ký tự Guid
+    /// </summary>
+    private static string CodeOf(Incident incident) => string.IsNullOrEmpty(incident.Code) ? ShortId(incident.Id) : incident.Code;
+
+    private async Task<string> CodeOfAsync(Guid id, CancellationToken cancellationToken)
+        => await _incidentRepository.GetCodeAsync(id, cancellationToken) is { Length: > 0 } code ? code : ShortId(id);
 }

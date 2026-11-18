@@ -14,4 +14,10 @@ public interface IStationTeamService
     /// Tương thích API cũ assign-station-team: đưa nhân viên vào tổ theo tên (tạo tổ nếu chưa có), null = rời tổ
     /// </summary>
     Task AssignByNameAsync(Guid staffId, Guid? stationId, string? teamName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Kiểm tra trước (chưa ghi gì): nếu AssignByNameAsync với tham số này làm nhân viên rời tổ đang làm nhiệm vụ
+    /// thì ném InvalidOperationException
+    /// </summary>
+    Task EnsureCanReassignAsync(Guid staffId, Guid? stationId, string? teamName, CancellationToken cancellationToken = default);
 }
