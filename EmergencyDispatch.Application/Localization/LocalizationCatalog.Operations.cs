@@ -147,6 +147,7 @@ public static partial class LocalizationCatalog
         { "AI không tự điều phối: loại sự cố không thuộc nhóm AI nhận diện (cháy nổ / tai nạn).", "AI did not auto-dispatch: the incident type is not one the AI recognizes (fire/explosion or accident)." },
         { "AI không tự điều phối: người báo chọn loại \"Khác\", cần Điều phối viên thẩm định.", "AI did not auto-dispatch: the reporter chose \"Other\", so an operator must review it." },
         { "AI không tự điều phối: Điều phối viên đang giữ ca xử lý sự cố tại thời điểm AI phân tích.", "AI did not auto-dispatch: an operator was handling the incident when the AI analysis finished." },
+        { "AI không tự điều phối: Điều phối viên đã tiếp nhận hoặc đang giữ ca xử lý sự cố.", "AI did not auto-dispatch: an operator has acknowledged or is currently handling the incident." },
         { "AI không tự điều phối: phân tích AI thất bại.", "AI did not auto-dispatch: the AI analysis failed." },
         { "AI không tự điều phối: độ tin cậy chỉ là ước lượng, không đo từ mô hình.", "AI did not auto-dispatch: the confidence is only an estimate, not measured from the model." },
         { "AI không tự điều phối: loại sự cố AI nhận diện khác loại của sự cố.", "AI did not auto-dispatch: the type identified by the AI differs from the incident type." },

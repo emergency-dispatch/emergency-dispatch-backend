@@ -739,6 +739,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<int>("AutoDispatchState")
                         .HasColumnType("integer");
 
+                    b.Property<int>("AutomaticStationTransferCount")
+                        .HasColumnType("integer");
+
                     b.Property<string>("CancellationNote")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -881,6 +884,34 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<int>("Source")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("StationAcknowledgedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("StationAcknowledgedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("StationAssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("StationAssignmentVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("StationResponseDueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StationTransferAlertCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime?>("StationTransferAlertedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("StationTransferChainId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("StationTransferLastCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -964,6 +995,8 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.HasIndex("Status", "Severity")
                         .HasDatabaseName("IX_Incidents_Queue");
+
+                    b.HasIndex("Status", "StationResponseDueAt");
 
                     b.ToTable("Incidents", t =>
                         {
@@ -1080,6 +1113,96 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasDatabaseName("IX_IncidentMedia_IncidentId");
 
                     b.ToTable("IncidentMedias");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentStationTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AssignmentVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("AutoDispatchAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ChainId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("FromStationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FromStationName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("IncidentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsAutomatic")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("PreviousAcknowledgedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PreviousAcknowledgedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("PreviousAssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<double?>("SelectionDistanceKm")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("SelectionMethod")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("ToStationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ToStationName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AutoDispatchAttemptedAt", "CreatedAt");
+
+                    b.HasIndex("IncidentId", "AssignmentVersion")
+                        .IsUnique();
+
+                    b.HasIndex("IncidentId", "ChainId");
+
+                    b.ToTable("IncidentStationTransfers");
                 });
 
             modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentStatusHistory", b =>
@@ -2434,6 +2557,17 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                 {
                     b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
                         .WithMany("MediaItems")
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Incident");
+                });
+
+            modelBuilder.Entity("EmergencyDispatch.Domain.Entities.IncidentStationTransfer", b =>
+                {
+                    b.HasOne("EmergencyDispatch.Domain.Entities.Incident", "Incident")
+                        .WithMany()
                         .HasForeignKey("IncidentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

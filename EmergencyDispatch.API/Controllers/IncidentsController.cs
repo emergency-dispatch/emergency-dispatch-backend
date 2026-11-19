@@ -413,6 +413,23 @@ public class IncidentsController : ControllerBase
         return id == Guid.Empty ? null : id;
     }
 
+    /// <summary>Confirm station ownership, independently of accepting a rescue assignment / Xác nhận trạm tiếp nhận.</summary>
+    [HttpPost("{id:guid}/acknowledge")]
+    [Authorize(Roles = "Admin,Operator")]
+    [ProducesResponseType(typeof(ApiResponseDto<StationAcknowledgementDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<StationAcknowledgementDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponseDto<StationAcknowledgementDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Acknowledge(Guid id, [FromBody] AcknowledgeIncidentDto dto,
+        [FromServices] IStationTransferService service, CancellationToken cancellationToken)
+        => this.ToHttpResult(await service.AcknowledgeAsync(id, GetCurrentUserId(), dto.ExpectedAssignmentVersion, cancellationToken));
+
+    /// <summary>Station handover history / Lịch sử chuyển trạm phụ trách.</summary>
+    [HttpGet("{id:guid}/station-transfers")]
+    [Authorize(Roles = "Admin,Operator")]
+    [ProducesResponseType(typeof(ApiResponseDto<List<IncidentStationTransferDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> StationTransfers(Guid id, [FromServices] IStationTransferService service, CancellationToken cancellationToken)
+        => this.ToHttpResult(await service.GetHistoryAsync(id, cancellationToken));
+
     private Guid GetCurrentUserId()
     {
         var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);

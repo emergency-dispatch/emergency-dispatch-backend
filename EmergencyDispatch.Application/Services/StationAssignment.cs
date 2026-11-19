@@ -5,9 +5,12 @@ using Microsoft.Extensions.Logging;
 
 namespace EmergencyDispatch.Application.Services;
 
+/// <summary>Selected station and the basis for its selection / Trạm được chọn và cơ sở lựa chọn.</summary>
+public sealed record StationSelection(Station Station, string Method, double? DistanceKm);
+
 /// <summary>
-/// Các hàm hỗ trợ cho mô hình "mỗi Operator phụ trách 1 trạm":
-/// chọn trạm phụ trách theo vị trí sự cố và kiểm tra khu vực phục vụ.
+/// Các hàm hỗ trợ chọn trạm phụ trách theo vị trí sự cố và kiểm tra khu vực phục vụ.
+/// Station ownership selection and service-area validation helpers.
 /// </summary>
 public static class StationAssignment
 {
@@ -22,6 +25,13 @@ public static class StationAssignment
         IRoutingService routingService, ILogger logger,
         CancellationToken cancellationToken = default)
     {
+        return (await SelectResponsibleStationAsync(stations, lat, lng, routingService, logger, cancellationToken))?.Station;
+    }
+
+    public static async Task<StationSelection?> SelectResponsibleStationAsync(
+        IEnumerable<Station> stations, double lat, double lng,
+        IRoutingService routingService, ILogger logger, CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         var candidates = stations
             .Where(s => s.IsActive && !s.IsDeleted)
@@ -31,7 +41,7 @@ public static class StationAssignment
         // A single station needs no routing comparison.
         if (candidates.Count <= 1)
         {
-            return candidates.FirstOrDefault();
+            return candidates.Count == 0 ? null : new StationSelection(candidates[0], "SingleCandidate", null);
         }
 
         IReadOnlyList<RoadLeg?>? legs = null;
@@ -64,14 +74,14 @@ public static class StationAssignment
         {
             logger.LogInformation("Assigned station {StationId} by road distance: {DistanceKm} km.",
                 routed.Station.Id, routed.Leg!.DistanceKm);
-            return routed.Station;
+            return new StationSelection(routed.Station, "RoadDistance", routed.Leg.DistanceKm);
         }
 
         var fallback = candidates.OrderBy(s => DistanceKm(lat, lng, s.Latitude, s.Longitude))
             .ThenBy(s => s.Id).First();
         logger.LogWarning("No valid road route available. Assigned station {StationId} by APPROXIMATE straight-line proximity; this is not a road-distance result.",
             fallback.Id);
-        return fallback;
+        return new StationSelection(fallback, "ApproximateStraightLine", DistanceKm(lat, lng, fallback.Latitude, fallback.Longitude));
     }
 
     /// <summary>

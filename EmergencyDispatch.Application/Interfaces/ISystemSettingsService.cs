@@ -27,4 +27,7 @@ public interface ISystemSettingsService
     Task<DuplicateDetectionSettingsDto> GetDuplicateDetectionAsync(CancellationToken cancellationToken = default);
     Task<SettingsRecordDto<DuplicateDetectionSettingsDto>> GetDuplicateDetectionRecordAsync(CancellationToken cancellationToken = default);
     Task<ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>> UpdateDuplicateDetectionAsync(DuplicateDetectionSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default);
+    Task<StationTransferSettingsDto> GetStationTransferSettingsAsync(CancellationToken cancellationToken = default);
+    Task<SettingsRecordDto<StationTransferSettingsDto>> GetStationTransferRecordAsync(CancellationToken cancellationToken = default);
+    Task<ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>> UpdateStationTransferAsync(StationTransferSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default);
 }

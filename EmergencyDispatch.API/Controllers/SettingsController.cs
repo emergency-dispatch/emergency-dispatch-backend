@@ -93,6 +93,19 @@ public class SettingsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<SettingsDefaultsDto>), StatusCodes.Status200OK)]
     public IActionResult GetDefaults() => Ok(ApiResponseDto<SettingsDefaultsDto>.Ok(new SettingsDefaultsDto()));
 
+    /// <summary>Read automatic station handover settings / Cấu hình tự chuyển trạm.</summary>
+    [HttpGet("station-transfer")]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetStationTransfer(CancellationToken cancellationToken)
+        => Ok(ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>.Ok(await _settingsService.GetStationTransferRecordAsync(cancellationToken)));
+
+    [HttpPut("station-transfer")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateStationTransfer([FromBody] StationTransferSettingsDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _settingsService.UpdateStationTransferAsync(dto, GetCurrentUserId(), cancellationToken));
+
     private Guid GetCurrentUserId()
         => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
 }

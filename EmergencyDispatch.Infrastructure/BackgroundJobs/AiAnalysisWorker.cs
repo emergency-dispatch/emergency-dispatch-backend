@@ -85,9 +85,17 @@ public sealed class AiAnalysisWorker : BackgroundService
             if (!job.QuickCheckOnly)
             {
                 var autoDispatch = scope.ServiceProvider.GetService<EmergencyDispatch.Application.Services.IAutoDispatchService>();
-                if (autoDispatch != null)
+                try
                 {
-                    await autoDispatch.TryAutoDispatchAsync(job.IncidentId, stoppingToken);
+                    if (autoDispatch != null)
+                        await autoDispatch.TryAutoDispatchAsync(job.IncidentId, stoppingToken);
+                }
+                finally
+                {
+                    // Start station waiting time after the AI auto-dispatch attempt, including a failed attempt.
+                    var handover = scope.ServiceProvider.GetService<IStationTransferService>();
+                    if (handover != null && !stoppingToken.IsCancellationRequested)
+                        await handover.MarkReadyForOperatorAsync(job.IncidentId, stoppingToken);
                 }
             }
         }

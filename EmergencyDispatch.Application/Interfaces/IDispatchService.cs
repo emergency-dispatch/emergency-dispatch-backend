@@ -10,6 +10,10 @@ namespace EmergencyDispatch.Application.Interfaces;
 /// </summary>
 public interface IDispatchService
 {
+    // Station-restricted search before radius expansion / Lọc trạm trước khi mở rộng bán kính.
+    Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetStationRecommendationsAsync(
+        Guid incidentId, Guid stationId, string? unitType, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Đề xuất danh sách phương tiện cứu hộ tối ưu cho sự cố (Hỗ trợ 2 thuật toán: Nearest-Available và Load-Aware)
     /// </summary>

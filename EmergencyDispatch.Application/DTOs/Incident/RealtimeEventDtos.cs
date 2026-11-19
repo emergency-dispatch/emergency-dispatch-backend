@@ -33,6 +33,9 @@ public class IncidentTransferredDto
     public string Reason { get; set; } = string.Empty;
     public string? TransferredByName { get; set; }
     public DateTime TransferredAt { get; set; }
+    public bool IsAutomatic { get; set; }
+    public string? ReasonCode { get; set; }
+    public int AssignmentVersion { get; set; }
 }
 
 /// <summary>
@@ -135,6 +138,9 @@ public class IncidentLockEventDto
 /// </summary>
 public class TransferIncidentDto
 {
+    public int? ExpectedAssignmentVersion { get; set; }
+    public bool ConfirmActiveAssignments { get; set; }
+
     [System.ComponentModel.DataAnnotations.Required]
     public Guid StationId { get; set; }
 

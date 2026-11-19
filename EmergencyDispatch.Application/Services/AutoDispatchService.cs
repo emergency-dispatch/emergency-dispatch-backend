@@ -29,6 +29,8 @@ public interface IAutoDispatchService
     /// nghi trùng / hết xe → đánh dấu Skipped và báo Operator; không đủ điều kiện → không làm gì (Operator xử lý như thường)
     /// </summary>
     Task<AutoDispatchOutcome> TryAutoDispatchAsync(Guid incidentId, CancellationToken cancellationToken = default);
+    /// <summary>Retry for the current receiving station only / Thử lại cho đúng trạm nhận hiện tại.</summary>
+    Task<AutoDispatchOutcome> TryAfterStationTransferAsync(Guid incidentId, Guid stationId, int assignmentVersion, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -53,7 +55,7 @@ public class AutoDispatchService : IAutoDispatchService
         ["unclassified"] = "AI không tự điều phối: chưa xác định được mức độ Level 1–3.",
         ["type-not-ai-recognizable"] = "AI không tự điều phối: loại sự cố không thuộc nhóm AI nhận diện (cháy nổ / tai nạn).",
         ["reporter-chose-other"] = "AI không tự điều phối: người báo chọn loại \"Khác\", cần Điều phối viên thẩm định.",
-        ["operator-handling"] = "AI không tự điều phối: Điều phối viên đang giữ ca xử lý sự cố tại thời điểm AI phân tích.",
+        ["operator-handling"] = "AI không tự điều phối: Điều phối viên đã tiếp nhận hoặc đang giữ ca xử lý sự cố.",
         ["ai-failed"] = "AI không tự điều phối: phân tích AI thất bại.",
         ["confidence-not-measured"] = "AI không tự điều phối: độ tin cậy chỉ là ước lượng, không đo từ mô hình.",
         ["ai-type-mismatch"] = "AI không tự điều phối: loại sự cố AI nhận diện khác loại của sự cố.",
@@ -91,9 +93,12 @@ public class AutoDispatchService : IAutoDispatchService
     /// <summary>
     /// Điều kiện AI (hàm thuần): null = đủ điều kiện; ngược lại là lý do không xét tự điều phối
     /// </summary>
-    public static string? IneligibleReason(Incident incident, DispatchSettingsDto settings, DateTime utcNow)
+    public static string? IneligibleReason(Incident incident, DispatchSettingsDto settings, DateTime utcNow, bool afterStationTransfer = false)
     {
-        if (incident.Status != IncidentStatus.AiProcessed || incident.VerifiedAt != null) return "not-awaiting-verification";
+        if ((incident.Status != IncidentStatus.AiProcessed && !(afterStationTransfer && incident.Status == IncidentStatus.Escalated))
+            || incident.VerifiedAt != null || incident.DispatchAssignments.Any(a => a.IsActive || a.Status == DispatchAssignmentStatus.Completed))
+            return "not-awaiting-verification";
+        if (incident.StationAcknowledgedAt.HasValue) return "operator-handling";
         if (incident.DuplicateOfIncidentId != null) return "linked-report";
         if (incident.IsOutOfServiceArea) return "out-of-service-area";
         if (incident.Severity is not (SeverityLevel.Level1 or SeverityLevel.Level2 or SeverityLevel.Level3)) return "unclassified";
@@ -109,7 +114,18 @@ public class AutoDispatchService : IAutoDispatchService
         return null;
     }
 
-    public async Task<AutoDispatchOutcome> TryAutoDispatchAsync(Guid incidentId, CancellationToken cancellationToken = default)
+    public Task<AutoDispatchOutcome> TryAutoDispatchAsync(Guid incidentId, CancellationToken cancellationToken = default)
+        => TryCoreAsync(incidentId, null, null, cancellationToken);
+
+    public Task<AutoDispatchOutcome> TryAfterStationTransferAsync(Guid incidentId, Guid stationId, int assignmentVersion, CancellationToken cancellationToken = default)
+        => TryCoreAsync(incidentId, stationId, assignmentVersion, cancellationToken);
+
+    private static bool MatchesStation(Incident incident, Guid? stationId, int? version)
+        => !stationId.HasValue || incident.ResponsibleStationId == stationId
+            && incident.StationAssignmentVersion == version
+            && incident.ResponsibleStation is { IsActive: true, IsDeleted: false };
+
+    private async Task<AutoDispatchOutcome> TryCoreAsync(Guid incidentId, Guid? stationId, int? assignmentVersion, CancellationToken cancellationToken)
     {
         var settings = await _settingsService.GetDispatchSettingsAsync(cancellationToken);
         if (!settings.AutoDispatchEnabled)
@@ -122,10 +138,11 @@ public class AutoDispatchService : IAutoDispatchService
         {
             return AutoDispatchOutcome.NotEligible;
         }
-        if (IneligibleReason(incident, settings, DateTime.UtcNow) is { } early)
+        if (!MatchesStation(incident, stationId, assignmentVersion)) return AutoDispatchOutcome.NotEligible;
+        if (IneligibleReason(incident, settings, DateTime.UtcNow, stationId.HasValue) is { } early)
         {
             _logger.LogDebug("Auto-dispatch bỏ qua sự cố {IncidentId}: {Reason}", incidentId, early);
-            await RecordNotEligibleAsync(incident, early, cancellationToken);
+            await RecordNotEligibleAsync(incident, early, cancellationToken, stationId.HasValue);
             return AutoDispatchOutcome.NotEligible;
         }
 
@@ -137,9 +154,10 @@ public class AutoDispatchService : IAutoDispatchService
         {
             await _incidentRepository.ReloadAsync(incident, cancellationToken);
             var now = DateTime.UtcNow;
-            if (IneligibleReason(incident, settings, now) is { } late)
+            if (!MatchesStation(incident, stationId, assignmentVersion)) return AutoDispatchOutcome.NotEligible;
+            if (IneligibleReason(incident, settings, now, stationId.HasValue) is { } late)
             {
-                if (await RecordNotEligibleAsync(incident, late, cancellationToken) && areaLock != null)
+                if (await RecordNotEligibleAsync(incident, late, cancellationToken, stationId.HasValue) && areaLock != null)
                 {
                     await areaLock.CommitAsync(cancellationToken);
                     committed = true;
@@ -158,7 +176,7 @@ public class AutoDispatchService : IAutoDispatchService
                 return AutoDispatchOutcome.SkippedDuplicate;
             }
 
-            var (unitIds, plannedUnits) = await PickUnitsAsync(incident, cancellationToken);
+            var (unitIds, plannedUnits) = await PickUnitsAsync(incident, cancellationToken, stationId);
             if (unitIds.Count == 0)
             {
                 await MarkSkippedAsync(incident, NoUnitsNote, "no-teams", null, new { reason = "NoUnits" }, cancellationToken);
@@ -216,6 +234,8 @@ public class AutoDispatchService : IAutoDispatchService
             {
                 IncidentId = incident.Id,
                 RescueUnitIds = unitIds,
+                RequiredStationId = stationId,
+                ExpectedStationAssignmentVersion = assignmentVersion,
                 Algorithm = DispatchAlgorithm.NearestAvailable,
                 Notes = "AI tự điều phối"
             }, cancellationToken);
@@ -228,7 +248,8 @@ public class AutoDispatchService : IAutoDispatchService
                 areaLock = null;
                 _incidentRepository.ClearChangeTracker();
                 var fresh = await _incidentRepository.GetIncidentWithDetailsAsync(incident.Id, cancellationToken);
-                if (fresh != null && fresh.Status == IncidentStatus.AiProcessed)
+                if (fresh != null && MatchesStation(fresh, stationId, assignmentVersion)
+                    && (fresh.Status == IncidentStatus.AiProcessed || stationId.HasValue && fresh.Status == IncidentStatus.Escalated))
                 {
                     await MarkSkippedAsync(fresh, AssignFailedNote, "assign-failed", null, new { reason = "AssignFailed", message = result.Message }, cancellationToken);
                     await AnnounceAsync(fresh, cancellationToken);
@@ -282,7 +303,7 @@ public class AutoDispatchService : IAutoDispatchService
     /// Chọn tổ theo kế hoạch điều phối của mức độ (Admin cấu hình: chức năng × số tổ), loại ưu tiên trước, xe gần nhất trước, tối đa 5.
     /// Chưa có kế hoạch → một xe gần nhất theo luật dự phòng. Trả kèm số xe kế hoạch để biết có thiếu xe không
     /// </summary>
-    private async Task<(List<Guid> Units, int Planned)> PickUnitsAsync(Incident incident, CancellationToken cancellationToken)
+    private async Task<(List<Guid> Units, int Planned)> PickUnitsAsync(Incident incident, CancellationToken cancellationToken, Guid? stationId = null)
     {
         var rules = DispatchScoring.ApplicableRules(await _dispatchService.GetUnitRulesAsync(incident, cancellationToken), incident.Severity);
         var plan = rules.Count > 0
@@ -297,10 +318,13 @@ public class AutoDispatchService : IAutoDispatchService
         {
             if (chosen.Count >= planned) break;
             var remaining = need;
-            var recommendations = await _dispatchService.GetRecommendationsAsync(incident.Id, DispatchAlgorithm.NearestAvailable, code, null, cancellationToken);
+            var recommendations = stationId.HasValue
+                ? await _dispatchService.GetStationRecommendationsAsync(incident.Id, stationId.Value, code, cancellationToken)
+                : await _dispatchService.GetRecommendationsAsync(incident.Id, DispatchAlgorithm.NearestAvailable, code, null, cancellationToken);
             foreach (var r in recommendations.Data ?? new List<RecommendedUnitResponseDto>())
             {
                 if (chosen.Count >= planned || remaining <= 0) break;
+                if (stationId.HasValue && r.StationId != stationId.Value) continue;
                 if (chosen.Contains(r.RescueUnitId) || !chosenTeams.Add(r.StationTeamId)) continue;
                 chosen.Add(r.RescueUnitId);
                 remaining--;
@@ -312,12 +336,13 @@ public class AutoDispatchService : IAutoDispatchService
 
     /// <summary>
     /// Lưu lý do không đủ điều kiện vào sự cố và cập nhật realtime (không gửi thông báo / cảnh báo).
-    /// Không ghi đè kết quả đã có (Dispatched / Skipped) và bỏ qua mã không cần lưu. true = đã lưu
+    /// Không ghi đè Dispatched; chỉ thay Skipped khi đang thử lại sau chuyển trạm. true = đã lưu
     /// </summary>
-    private async Task<bool> RecordNotEligibleAsync(Incident incident, string reason, CancellationToken cancellationToken)
+    private async Task<bool> RecordNotEligibleAsync(Incident incident, string reason, CancellationToken cancellationToken, bool replacePreviousSkip = false)
     {
         if (!NotEligibleNotes.TryGetValue(reason, out var note)
-            || incident.AutoDispatchState is not (AutoDispatchState.None or AutoDispatchState.NotEligible))
+            || (incident.AutoDispatchState is not (AutoDispatchState.None or AutoDispatchState.NotEligible)
+                && !(replacePreviousSkip && incident.AutoDispatchState == AutoDispatchState.Skipped)))
         {
             return false;
         }

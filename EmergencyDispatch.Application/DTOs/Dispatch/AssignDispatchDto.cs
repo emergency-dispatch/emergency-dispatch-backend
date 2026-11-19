@@ -7,6 +7,12 @@ namespace EmergencyDispatch.Application.DTOs.Dispatch;
 /// </summary>
 public class AssignDispatchDto
 {
+    // Internal safeguards for a handover retry; never accepted from API clients.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid? RequiredStationId { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int? ExpectedStationAssignmentVersion { get; set; }
+
     [Required(ErrorMessage = "Mã sự cố (IncidentId) là bắt buộc.")]
     public Guid IncidentId { get; set; }
 

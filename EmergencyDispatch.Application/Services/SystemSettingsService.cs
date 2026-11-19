@@ -20,6 +20,7 @@ public class SystemSettingsService : ISystemSettingsService
     public const string EscalationKey = "escalation";
     public const string ServiceAreaKey = "serviceArea";
     public const string DuplicateDetectionKey = "duplicateDetection";
+    public const string StationTransferKey = "stationTransfer";
     private const double WeightSumTolerance = 0.001;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -168,6 +169,36 @@ public class SystemSettingsService : ISystemSettingsService
         var errors = new List<string>();
         if (!(s.RadiusMeters >= 20 && s.RadiusMeters <= 2000)) errors.Add("Bán kính gom báo cáo trùng phải từ 20 đến 2000 m.");
         if (!(s.WindowMinutes >= 1 && s.WindowMinutes <= 120)) errors.Add("Khung thời gian gom báo cáo trùng phải từ 1 đến 120 phút.");
+        return errors;
+    }
+
+    public async Task<StationTransferSettingsDto> GetStationTransferSettingsAsync(CancellationToken cancellationToken = default)
+        => (await GetStationTransferRecordAsync(cancellationToken)).Values;
+
+    public Task<SettingsRecordDto<StationTransferSettingsDto>> GetStationTransferRecordAsync(CancellationToken cancellationToken = default)
+        => LoadAsync<StationTransferSettingsDto>(StationTransferKey, cancellationToken);
+
+    public async Task<ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>> UpdateStationTransferAsync(
+        StationTransferSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default)
+    {
+        var errors = ValidateStationTransfer(values);
+        if (errors.Count != 0)
+            return ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>.FailureResult(errors, StationTransferMessages.SettingsInvalid);
+        var before = await GetStationTransferSettingsAsync(cancellationToken);
+        await _repository.UpsertAsync(StationTransferKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
+        await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, StationTransferKey,
+            StationTransferMessages.SettingsSaved, before, values, cancellationToken);
+        var record = await GetStationTransferRecordAsync(cancellationToken);
+        await PublishSettingsAsync(StationTransferKey, record.UpdatedAt, record.UpdatedByName, cancellationToken);
+        return ApiResponseDto<SettingsRecordDto<StationTransferSettingsDto>>.SuccessResult(record, StationTransferMessages.SettingsSaved);
+    }
+
+    public static List<string> ValidateStationTransfer(StationTransferSettingsDto values)
+    {
+        var errors = new List<string>();
+        if (!double.IsFinite(values.ResponseTimeoutMultiplier) || values.ResponseTimeoutMultiplier is < 1 or > 10)
+            errors.Add(StationTransferMessages.InvalidMultiplier);
+        if (values.MaxAutomaticTransfers is < 1 or > 5) errors.Add(StationTransferMessages.InvalidLimit);
         return errors;
     }
 

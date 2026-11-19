@@ -79,12 +79,18 @@ public class DispatchService : IDispatchService
         _logger = logger;
     }
 
-    public async Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetRecommendationsAsync(
-        Guid incidentId,
-        DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
-        string? unitType = null,
-        double? maxDistanceKm = null,
-        CancellationToken cancellationToken = default)
+    public Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetRecommendationsAsync(
+        Guid incidentId, DispatchAlgorithm algorithm = DispatchAlgorithm.NearestAvailable,
+        string? unitType = null, double? maxDistanceKm = null, CancellationToken cancellationToken = default)
+        => GetRecommendationsCoreAsync(incidentId, algorithm, unitType, maxDistanceKm, null, cancellationToken);
+
+    public Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetStationRecommendationsAsync(
+        Guid incidentId, Guid stationId, string? unitType, CancellationToken cancellationToken = default)
+        => GetRecommendationsCoreAsync(incidentId, DispatchAlgorithm.NearestAvailable, unitType, null, stationId, cancellationToken);
+
+    private async Task<ApiResponseDto<List<RecommendedUnitResponseDto>>> GetRecommendationsCoreAsync(
+        Guid incidentId, DispatchAlgorithm algorithm, string? unitType, double? maxDistanceKm,
+        Guid? onlyStationId, CancellationToken cancellationToken)
     {
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
         if (incident == null)
@@ -144,6 +150,7 @@ public class DispatchService : IDispatchService
         // không có truy vấn không gian (VD test) → Haversine
         var postgisMeters = await _rescueUnitRepository.GetDistancesMetersAsync(incident.Latitude, incident.Longitude, radii[^1] * 1000, cancellationToken);
         var eligible = allUnits
+            .Where(u => !onlyStationId.HasValue || u.StationId == onlyStationId.Value)
             .Where(u => u.Status == RescueUnitStatus.Available && !tasksByUnit.ContainsKey(u.Id))
             .Where(u => matchingTypes == null || matchingTypes.Contains(u.UnitType))
             .Where(u => teamPool.Problem(u) == TeamProblem.None)
@@ -317,6 +324,11 @@ public class DispatchService : IDispatchService
             return ApiResponseDto<List<DispatchAssignmentResponseDto>>.NotFoundResult("Không tìm thấy sự cố cần điều phối.");
         }
 
+        if (dto.ExpectedStationAssignmentVersion.HasValue
+            && (incident.StationAssignmentVersion != dto.ExpectedStationAssignmentVersion
+                || incident.ResponsibleStationId != dto.RequiredStationId))
+            return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(StationTransferMessages.Changed);
+
         var scopeError = _currentUser.CheckIncident(incident.ResponsibleStationId);
         if (scopeError != null)
         {
@@ -377,6 +389,9 @@ public class DispatchService : IDispatchService
             {
                 return ApiResponseDto<List<DispatchAssignmentResponseDto>>.NotFoundResult(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ {0}.", unitId));
             }
+
+            if (dto.RequiredStationId.HasValue && unit.StationId != dto.RequiredStationId.Value)
+                return ApiResponseDto<List<DispatchAssignmentResponseDto>>.ConflictResult(StationTransferMessages.Changed);
 
             if (activeUnitIds.Contains(unit.Id))
             {
@@ -446,7 +461,10 @@ public class DispatchService : IDispatchService
         var reserved = new List<RescueUnit>();
         foreach (var unit in units)
         {
-            if (!await _rescueUnitRepository.TryReserveForDispatchAsync(unit.Id, cancellationToken))
+            var reservedForStation = dto.RequiredStationId.HasValue
+                ? await _rescueUnitRepository.TryReserveForStationDispatchAsync(unit.Id, dto.RequiredStationId.Value, cancellationToken)
+                : await _rescueUnitRepository.TryReserveForDispatchAsync(unit.Id, cancellationToken);
+            if (!reservedForStation)
             {
                 foreach (var r in reserved)
                 {
@@ -547,6 +565,7 @@ public class DispatchService : IDispatchService
 
         try
         {
+            if (operatorId.HasValue) StationTransferLifecycle.Acknowledge(incident, operatorId.Value, DateTime.UtcNow);
             await _incidentRepository.SaveChangesAsync(cancellationToken);
         }
         catch (ConcurrencyConflictException)
@@ -2121,6 +2140,15 @@ public class DispatchService : IDispatchService
             CreatedAt = incident.CreatedAt,
             UpdatedAt = incident.UpdatedAt,
             ResponsibleStationId = incident.ResponsibleStationId,
+            StationAssignedAt = incident.StationAssignedAt,
+            StationResponseDueAt = incident.StationResponseDueAt,
+            StationAcknowledgedAt = incident.StationAcknowledgedAt,
+            StationAcknowledgedByUserId = incident.StationAcknowledgedByUserId,
+            StationTransferChainId = incident.StationTransferChainId,
+            StationAssignmentVersion = incident.StationAssignmentVersion,
+            AutomaticStationTransferCount = incident.AutomaticStationTransferCount,
+            StationTransferAlertCode = incident.StationTransferAlertCode,
+            StationTransferAlertedAt = incident.StationTransferAlertedAt,
             ResponsibleStationName = incident.ResponsibleStation?.Name,
             IsOutOfServiceArea = incident.IsOutOfServiceArea,
             DistanceOutsideAreaKm = incident.DistanceOutsideAreaKm

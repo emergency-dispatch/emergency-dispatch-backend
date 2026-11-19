@@ -21,6 +21,7 @@ public interface IRescueUnitRepository : IGenericRepository<RescueUnit>
     /// Chuyển xe từ Available sang Dispatched một cách nguyên tử; false nếu xe đã bị Operator khác giao trước (MSG32)
     /// </summary>
     Task<bool> TryReserveForDispatchAsync(Guid unitId, CancellationToken cancellationToken = default);
+    Task<bool> TryReserveForStationDispatchAsync(Guid unitId, Guid stationId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Chỉ ghi các cột vị trí (CurrentLat, CurrentLng, LastLocationUpdateAt, UpdatedAt). Không đụng trạng thái xe:

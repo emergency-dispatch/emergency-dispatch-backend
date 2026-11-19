@@ -39,6 +39,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
     private readonly ILogger<IncidentFollowUpService> _logger;
 
     private readonly ITypeCatalogRepository? _typeCatalog;
+    private readonly IStationTransferService? _stationTransfers;
 
     public IncidentFollowUpService(
         IIncidentRepository incidentRepository,
@@ -53,8 +54,10 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         IGuestCancellationTokenService guestTokens,
         IConfiguration configuration,
         ILogger<IncidentFollowUpService> logger,
-        ITypeCatalogRepository? typeCatalog = null)
+        ITypeCatalogRepository? typeCatalog = null,
+        IStationTransferService? stationTransfers = null)
     {
+        _stationTransfers = stationTransfers;
         _typeCatalog = typeCatalog;
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
@@ -529,6 +532,10 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         report.DuplicateOfIncidentId = null;
         report.LinkedAt = null;
         report.UpdatedAt = now;
+        if (_stationTransfers != null)
+            await _stationTransfers.InitializeAsync(report, readyForOperator: photo == null,
+                acknowledgedBy: actorRole is nameof(UserRole.Operator) or nameof(UserRole.Admin) ? actorUserId : null,
+                cancellationToken: cancellationToken);
 
         await _incidentRepository.AddStatusHistoryAsync(new IncidentStatusHistory
         {

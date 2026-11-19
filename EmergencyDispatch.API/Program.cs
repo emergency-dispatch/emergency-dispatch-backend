@@ -163,6 +163,9 @@ builder.Services.AddScoped<IStationRepository, StationRepository>();
 builder.Services.AddScoped<IRescueUnitRepository, RescueUnitRepository>();
 builder.Services.AddScoped<IDispatchAssignmentRepository, DispatchAssignmentRepository>();
 builder.Services.AddScoped<IIncidentRepository, IncidentRepository>();
+builder.Services.AddScoped<IIncidentStationTransferRepository, IncidentStationTransferRepository>();
+builder.Services.AddScoped<IStationTransferService, StationTransferService>();
+builder.Services.AddScoped<IStationTransferDispatchService, StationTransferDispatchService>();
 builder.Services.AddScoped<ITrafficHotspotRepository, TrafficHotspotRepository>();
 builder.Services.AddScoped<IEscalationRepository, EscalationRepository>();
 builder.Services.AddScoped<IBlockedPhoneRepository, BlockedPhoneRepository>();
@@ -253,6 +256,7 @@ builder.Services.AddSingleton<IPushNotificationSender, EmergencyDispatch.Infrast
 builder.Services.AddSingleton<IAiAnalysisQueue, AiAnalysisQueue>();
 builder.Services.AddHostedService<EmergencyDispatch.API.Services.YoloProcessHostedService>();
 builder.Services.AddHostedService<AiAnalysisWorker>();
+builder.Services.AddHostedService<StationTransferWorker>();
 builder.Services.AddHostedService<HotspotCleanupWorker>();
 builder.Services.AddHostedService<EscalationWorker>();
 builder.Services.AddHostedService<VehicleCoolDownWorker>();

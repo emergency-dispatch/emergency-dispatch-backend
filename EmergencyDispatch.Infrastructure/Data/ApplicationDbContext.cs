@@ -136,6 +136,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
     // 3. Incident & AI
     public DbSet<Incident> Incidents => Set<Incident>();
+    public DbSet<IncidentStationTransfer> IncidentStationTransfers => Set<IncidentStationTransfer>();
     public DbSet<DispatchAssignment> DispatchAssignments => Set<DispatchAssignment>();
     public DbSet<IncidentMedia> IncidentMedias => Set<IncidentMedia>();
     public DbSet<AiClassification> AiClassifications => Set<AiClassification>();
@@ -328,6 +329,21 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         });
 
         // ==================== 7. INCIDENT ====================
+        modelBuilder.Entity<IncidentStationTransfer>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+            entity.HasOne(t => t.Incident).WithMany().HasForeignKey(t => t.IncidentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(t => new { t.IncidentId, t.AssignmentVersion }).IsUnique();
+            entity.HasIndex(t => new { t.IncidentId, t.ChainId });
+            entity.HasIndex(t => new { t.AutoDispatchAttemptedAt, t.CreatedAt });
+            entity.Property(t => t.ReasonCode).HasMaxLength(40);
+            entity.Property(t => t.Reason).HasMaxLength(500);
+            entity.Property(t => t.SelectionMethod).HasMaxLength(40);
+            entity.Property(t => t.FromStationName).HasMaxLength(200);
+            entity.Property(t => t.ToStationName).HasMaxLength(200);
+            entity.Property(t => t.ActorName).HasMaxLength(200);
+        });
+
         modelBuilder.Entity<Incident>(entity =>
         {
             entity.Property<uint>("Version").IsRowVersion();
@@ -405,6 +421,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                   .WithMany()
                   .HasForeignKey(i => i.ResponsibleStationId)
                   .OnDelete(DeleteBehavior.SetNull);
+            entity.Property(i => i.StationTransferAlertCode).HasMaxLength(40);
+            entity.HasIndex(i => new { i.Status, i.StationResponseDueAt });
             entity.HasIndex(i => new { i.ResponsibleStationId, i.Status }).HasDatabaseName("IX_Incidents_ResponsibleStation_Status");
 
             // Tự tham chiếu DuplicateOfIncident

@@ -195,6 +195,19 @@ public class Incident : BaseEntity
     public Guid? ResponsibleStationId { get; set; }
     public Station? ResponsibleStation { get; set; }
 
+    // Station ownership acknowledgement is independent of rescue assignment acceptance.
+    public DateTime? StationAssignedAt { get; set; }
+    public DateTime? StationResponseDueAt { get; set; }
+    public DateTime? StationAcknowledgedAt { get; set; }
+    public Guid? StationAcknowledgedByUserId { get; set; }
+    public Guid? StationTransferChainId { get; set; }
+    public int StationAssignmentVersion { get; set; }
+    public int AutomaticStationTransferCount { get; set; }
+    public string? StationTransferAlertCode { get; set; }
+    public DateTime? StationTransferAlertedAt { get; set; }
+    public DateTime? StationTransferLastCheckedAt { get; set; }
+
+
     /// <summary>
     /// Vị trí báo cáo nằm ngoài khu vực phục vụ đã cấu hình (vẫn tiếp nhận, nhưng cảnh báo Operator)
     /// </summary>

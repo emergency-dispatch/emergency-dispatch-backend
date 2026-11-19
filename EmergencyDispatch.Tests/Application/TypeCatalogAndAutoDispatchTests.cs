@@ -499,6 +499,126 @@ public class AutoDispatchServiceTests
         _incidents.Verify(i => i.ClearChangeTracker(), Times.Once);
         Assert.Equal(AutoDispatchState.Skipped, fresh.AutoDispatchState);
     }
+    private Incident TransferredFire(double confidence = 0.95, Action<Incident>? tweak = null)
+        => Fire(confidence, tweak: i =>
+        {
+            i.Status = IncidentStatus.Escalated;
+            var station = new Station { Name = "Receiving B" };
+            i.ResponsibleStationId = station.Id; i.ResponsibleStation = station;
+            i.StationAssignmentVersion = 2;
+            i.AutoDispatchState = AutoDispatchState.Skipped;
+            i.AutoDispatchReasonCode = "no-teams";
+            tweak?.Invoke(i);
+        });
+
+    private void RecommendReceivingStation(Incident incident, params Guid[] units)
+        => _dispatch.Setup(d => d.GetStationRecommendationsAsync(incident.Id, incident.ResponsibleStationId!.Value, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(units.Select(id => new RecommendedUnitResponseDto
+            { RescueUnitId = id, StationTeamId = TeamOf(id), StationId = incident.ResponsibleStationId!.Value, UnitType = RescueUnitType.FireTruck }).ToList()));
+
+    [Fact]
+    public async Task AfterTransfer_HighConfidenceEscalatedIncident_DispatchesToReceivingStationOnly()
+    {
+        var i = TransferredFire(); var unit = Guid.NewGuid(); RecommendReceivingStation(i, unit);
+        Assert.Equal(AutoDispatchOutcome.Dispatched, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+        _dispatch.Verify(d => d.AutoAssignAsync(It.Is<AssignDispatchDto>(x => x.RequiredStationId == i.ResponsibleStationId
+            && x.ExpectedStationAssignmentVersion == 2 && x.RescueUnitIds!.SequenceEqual(new[] { unit })), It.IsAny<CancellationToken>()), Times.Once);
+        _dispatch.Verify(d => d.GetRecommendationsAsync(It.IsAny<Guid>(), It.IsAny<DispatchAlgorithm>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AfterTransfer_LowConfidence_StaysForOperator_AndReplacesOldSkipReason()
+    {
+        var i = TransferredFire(0.89);
+        Assert.Equal(AutoDispatchOutcome.NotEligible, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+        Assert.Equal("below-threshold", i.AutoDispatchReasonCode); Assert.Equal(AutoDispatchState.NotEligible, i.AutoDispatchState);
+        _dispatch.Verify(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AfterTransfer_DoesNotDispatchFromAnotherStation_WhenReceivingStationHasNoTeam()
+    {
+        var i = TransferredFire(); RecommendReceivingStation(i);
+        Recommend(null, Guid.NewGuid()); // A globally available vehicle must not bypass the target-station search.
+        Assert.Equal(AutoDispatchOutcome.SkippedNoUnits, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+        Assert.Equal("no-teams", i.AutoDispatchReasonCode);
+        _dispatch.Verify(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AfterTransfer_DefensivelyIgnoresRecommendationFromWrongStation()
+    {
+        var i = TransferredFire();
+        _dispatch.Setup(d => d.GetStationRecommendationsAsync(i.Id, i.ResponsibleStationId!.Value, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ApiResponseDto<List<RecommendedUnitResponseDto>>.SuccessResult(new() { new()
+                { StationId = Guid.NewGuid(), RescueUnitId = Guid.NewGuid(), StationTeamId = Guid.NewGuid(), UnitType = RescueUnitType.FireTruck } }));
+        Assert.Equal(AutoDispatchOutcome.SkippedNoUnits, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AfterTransfer_StaleStationOrVersion_DoesNotWriteOrDispatch(bool wrongStation)
+    {
+        var i = TransferredFire();
+        Assert.Equal(AutoDispatchOutcome.NotEligible, await _svc.TryAfterStationTransferAsync(i.Id,
+            wrongStation ? Guid.NewGuid() : i.ResponsibleStationId!.Value, wrongStation ? 2 : 1));
+        _incidents.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _dispatch.Verify(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("acknowledged")]
+    [InlineData("verified")]
+    [InlineData("inactive")]
+    [InlineData("already-dispatched")]
+    [InlineData("heuristic")]
+    [InlineData("outside")]
+    [InlineData("linked")]
+    [InlineData("failed-ai")]
+    public async Task AfterTransfer_DoesNotBypassHandlingOrAiGuards(string reason)
+    {
+        var i = TransferredFire(tweak: i =>
+        {
+            if (reason == "acknowledged") i.StationAcknowledgedAt = DateTime.UtcNow;
+            if (reason == "verified") i.VerifiedAt = DateTime.UtcNow;
+            if (reason == "inactive") i.ResponsibleStation!.IsActive = false;
+            if (reason == "already-dispatched") i.DispatchAssignments.Add(new DispatchAssignment { Status = DispatchAssignmentStatus.Dispatched });
+            if (reason == "heuristic") i.AiClassification!.ConfidenceSource = "heuristic";
+            if (reason == "outside") i.IsOutOfServiceArea = true;
+            if (reason == "linked") i.DuplicateOfIncidentId = Guid.NewGuid();
+            if (reason == "failed-ai") i.AiClassification!.IsSuccess = false;
+        });
+        Assert.Equal(AutoDispatchOutcome.NotEligible, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+        _dispatch.Verify(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AfterTransfer_RechecksOwnershipAfterAreaLock()
+    {
+        var i = TransferredFire(); var stationId = i.ResponsibleStationId!.Value;
+        _incidents.Setup(r => r.ReloadAsync(i, It.IsAny<CancellationToken>())).Callback(() => i.StationAssignmentVersion++).Returns(Task.CompletedTask);
+        Assert.Equal(AutoDispatchOutcome.NotEligible, await _svc.TryAfterStationTransferAsync(i.Id, stationId, 2));
+        _dispatch.Verify(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AfterTransfer_SecondAttemptDoesNotCreateAnotherMission()
+    {
+        var i = TransferredFire(); RecommendReceivingStation(i, Guid.NewGuid());
+        Assert.Equal(AutoDispatchOutcome.Dispatched, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+        Assert.Equal(AutoDispatchOutcome.NotEligible, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+        _dispatch.Verify(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AfterTransfer_GlobalAutoDispatchSwitchStillApplies()
+    {
+        var i = TransferredFire(); _dispatchSettings.AutoDispatchEnabled = false;
+        Assert.Equal(AutoDispatchOutcome.Disabled, await _svc.TryAfterStationTransferAsync(i.Id, i.ResponsibleStationId!.Value, 2));
+        _dispatch.VerifyNoOtherCalls();
+    }
+
 }
 
 /// <summary>
@@ -541,4 +661,5 @@ public class IncidentTypeOnCreateTests
         Assert.Equal("FloodDrowning", ok.Data!.IncidentTypeCode);
         Assert.False(bad.Success);
     }
+
 }

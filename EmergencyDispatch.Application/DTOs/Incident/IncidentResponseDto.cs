@@ -94,6 +94,18 @@ public class IncidentResponseDto
     /// Trạm phụ trách theo vị trí (chỉ Operator trạm này và Admin xử lý); null = mọi Operator
     /// </summary>
     public Guid? ResponsibleStationId { get; set; }
+
+    // Station ownership acknowledgement is independent of rescue assignment acceptance.
+    public DateTime? StationAssignedAt { get; set; }
+    public DateTime? StationResponseDueAt { get; set; }
+    public DateTime? StationAcknowledgedAt { get; set; }
+    public Guid? StationAcknowledgedByUserId { get; set; }
+    public Guid? StationTransferChainId { get; set; }
+    public int StationAssignmentVersion { get; set; }
+    public int AutomaticStationTransferCount { get; set; }
+    public string? StationTransferAlertCode { get; set; }
+    public DateTime? StationTransferAlertedAt { get; set; }
+
     public string? ResponsibleStationName { get; set; }
 
     /// <summary>

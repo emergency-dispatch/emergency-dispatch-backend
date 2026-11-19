@@ -1727,3 +1727,54 @@ Seed hệ thống:
 - **Thông báo song ngữ**: `Notifications.TitleEn`, `MessageEn`; `Users.UiLanguage` (migration `20261118050714_Bilingual_Notifications`). `GET /api/notifications` trả theo ngôn ngữ request; realtime / push theo `UiLanguage` của người nhận (ghi khi đăng nhập, khi `PUT /api/users/fcm-token`). **Mới `PUT /api/users/ui-language`** `{ "language": "vi" | "en" }`.
 - **Push FCM**: token bị Firebase báo `Unregistered` / `SenderIdMismatch` được tự xóa khỏi tài khoản.
 - **Chỉ đường**: khuyên tự host OSRM (README mục "Chỉ đường đường bộ"); `Routing:OsrmBaseUrl`.
+
+
+## Station ownership handover (2026-11-18)
+
+Automatic handover transfers responsibility for an incident, not its rescue assignments.
+- `GET /api/settings/station-transfer`: Admin/Operator read `{data:{values,updatedAt,updatedByName}}`.
+- `PUT /api/settings/station-transfer`: Admin sets `{enabled,responseTimeoutMultiplier,maxAutomaticTransfers}`. Defaults: false, 2, 2.
+- `POST /api/incidents/{id}/acknowledge`: Admin/current-station Operator; body `{expectedAssignmentVersion?}`; returns station acknowledgement metadata.
+- `GET /api/incidents/{id}/station-transfers`: Admin/current-station Operator; ordered, read-only transfer history.
+- Existing `POST /api/incidents/{id}/transfer` adds optional `expectedAssignmentVersion` and `confirmActiveAssignments` (false by default).
+
+The incident response includes `stationAssignedAt`, `stationResponseDueAt`, `stationAcknowledgedAt`,
+`stationAcknowledgedByUserId`, `stationAssignmentVersion`, `stationTransferChainId`,
+`automaticStationTransferCount`, `stationTransferAlertCode`, and `stationTransferAlertedAt`.
+Stale versions return HTTP 409; an Operator from another station returns 403.
+The target station must be active and have an active Operator account. Active rescue work blocks automatic transfers;
+manual handover of such work requires Admin plus `confirmActiveAssignments:true` and preserves all missions.
+
+The worker runs every 30 seconds after AI/auto-dispatch has released an incident for manual handling.
+It handles no Operator, acknowledgement timeout, or a station made inactive by Admin, using OSRM station-to-incident
+road distance with the existing explicitly approximate fallback. It does not infer live presence from account status.
+The default deadline is 10 minutes by day / 5 minutes by night, based on escalation thresholds times multiplier.
+It excludes linked/closed incidents and any incident with a dispatched or completed rescue assignment.
+The automatic chain cannot revisit a station; reaching the limit or finding no replacement alerts Admin without closing the incident.
+Existing pre-migration incidents are not enrolled automatically. New records collect metadata even while automation is disabled.
+
+`ReceiveIncidentTransferred` adds `isAutomatic`, `reasonCode`, `assignmentVersion`; the target station also receives `ReceiveNewIncident`.
+Reasons are `Manual`, `NoOperator`, `NoResponse`, `StationUnavailable`; blocked alerts are `NoTarget` and `TransferLimit`.
+Responses and system messages follow `Accept-Language: vi/en`; notification storage retains both languages.
+See [STATION_HANDOVER_TESTING.md](STATION_HANDOVER_TESTING.md) for migration preparation and the Swagger test matrix.
+
+
+### AI dispatch after station handover (2026-11-20)
+
+After a committed automatic or manual station transfer, the background worker rechecks AI eligibility
+for the current receiving station and assignment version. High measured confidence meeting the configured
+threshold can dispatch available crews/vehicles of that station directly, including an unverified Escalated incident.
+Low confidence, failed/estimated AI, suspected duplicates, out-of-area incidents, human acknowledgement/verification,
+inactive target stations, existing missions or a lack of suitable target-station crews leave the incident for its Operator.
+The worker does not broadcast a mission to all staff and does not use another station's vehicles for this retry.
+
+`autoDispatchEnabled` in dispatch settings remains the master switch. The existing initial AI dispatch flow keeps
+its existing cross-station search; only the handover retry restricts selection to the receiving station.
+Station filtering happens before radius expansion; vehicle reservation atomically verifies station and availability.
+All existing crew mission notifications and assignment status APIs are reused.
+
+Each transfer has a durable `AutoDispatchAttemptedAt` processing marker (internal; no new client field is required).
+The 30-second worker attempts pending current-version handovers once, with restart recovery and existing area-lock/xmin
+protections. Completed or superseded handovers do not create extra missions. Migration `AddStationTransferDispatchRetry`
+adds this marker and marks older transfer records processed so enabling the feature does not replay them.
+No new public API is required. See [STATION_HANDOVER_TESTING.md](STATION_HANDOVER_TESTING.md) for the added Swagger scenarios.

@@ -88,6 +88,16 @@ public class RescueUnitRepository : GenericRepository<RescueUnit>, IRescueUnitRe
         return affected == 1;
     }
 
+    public async Task<bool> TryReserveForStationDispatchAsync(Guid unitId, Guid stationId, CancellationToken cancellationToken = default)
+    {
+        var affected = await _dbSet
+            .Where(r => r.Id == unitId && r.StationId == stationId && r.Status == RescueUnitStatus.Available
+                && r.Station != null && r.Station.IsActive && !r.Station.IsDeleted)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, RescueUnitStatus.Dispatched)
+                .SetProperty(r => r.UpdatedAt, DateTime.UtcNow), cancellationToken);
+        return affected == 1;
+    }
+
     public async Task SaveLocationAsync(Guid unitId, double latitude, double longitude, DateTime atUtc, CancellationToken cancellationToken = default)
     {
         await _dbSet

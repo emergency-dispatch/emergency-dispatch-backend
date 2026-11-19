@@ -192,5 +192,8 @@ public enum AuditAction
     SupplementAdded = 29,          // Người báo bổ sung ghi chú / ảnh
     LinkedReportsRestored = 30,    // Sự cố gốc bị hủy → các báo cáo đã gom quay lại hàng đợi
     AutoDispatched = 31,           // AI đủ tin cậy → hệ thống tự xác minh và điều xe
-    AutoDispatchSkipped = 32       // AI đủ tin cậy nhưng không tự điều (nghi trùng, hết xe...) → Operator
+    AutoDispatchSkipped = 32,      // AI đủ tin cậy nhưng không tự điều → Operator
+    StationAcknowledged = 33,      // Trạm xác nhận tiếp nhận / Station ownership acknowledged
+    AutoTransferredStation = 34,
+    StationTransferBlocked = 35
 }

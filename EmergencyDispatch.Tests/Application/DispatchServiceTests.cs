@@ -1579,4 +1579,62 @@ public class DispatchServiceTests
         Assert.True((await _svc.GetCompletionReportByIdAsync(mine.Id, staff.Id)).Success);
         Assert.Equal(ApiErrorCodes.Forbidden, (await _svc.GetCompletionReportByIdAsync(other.Id, staff.Id)).ErrorCode);
     }
+
+    [Fact]
+    public async Task StationRecommendations_FilterBeforeRadiusExpansion()
+    {
+        var incident = Incident();
+        Unit(RescueUnitType.FireTruck, 1, station: _stationA);
+        var receiving = Unit(RescueUnitType.FireTruck, 12, station: _stationB);
+        var result = await _svc.GetStationRecommendationsAsync(incident.Id, _stationB, null);
+        Assert.True(result.Success);
+        Assert.Equal(receiving.Id, Assert.Single(result.Data!).RescueUnitId);
+        Assert.All(result.Data!, r => Assert.Equal(_stationB, r.StationId));
+    }
+
+    [Fact]
+    public async Task AssignmentRejectsStaleHandoverBeforeReservingVehicle()
+    {
+        var incident = Incident(tweak: i => i.StationAssignmentVersion = 3);
+        var unit = Unit(RescueUnitType.FireTruck, 1);
+        var result = await _svc.AutoAssignAsync(new AssignDispatchDto { IncidentId = incident.Id, RescueUnitIds = new() { unit.Id },
+            RequiredStationId = _stationA, ExpectedStationAssignmentVersion = 2 });
+        Assert.Equal(ApiErrorCodes.Conflict, result.ErrorCode);
+        _units.Verify(r => r.TryReserveForDispatchAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AssignmentRejectsVehicleMovedAwayFromReceivingStation()
+    {
+        var incident = Incident(tweak: i => i.StationAssignmentVersion = 2);
+        var unit = Unit(RescueUnitType.FireTruck, 1, station: _stationB);
+        var result = await _svc.AutoAssignAsync(new AssignDispatchDto { IncidentId = incident.Id, RescueUnitIds = new() { unit.Id },
+            RequiredStationId = _stationA, ExpectedStationAssignmentVersion = 2 });
+        Assert.Equal(ApiErrorCodes.Conflict, result.ErrorCode);
+        _units.Verify(r => r.TryReserveForDispatchAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HandoverAutoAssignmentUsesAtomicStationReservation(bool stillInStation)
+    {
+        var incident = Incident(tweak: i => i.StationAssignmentVersion = 2);
+        var unit = Unit(RescueUnitType.FireTruck, 1);
+        _units.Setup(r => r.TryReserveForStationDispatchAsync(unit.Id, _stationA, It.IsAny<CancellationToken>())).ReturnsAsync(stillInStation);
+        var result = await _svc.AutoAssignAsync(new AssignDispatchDto { IncidentId = incident.Id, RescueUnitIds = new() { unit.Id },
+            RequiredStationId = _stationA, ExpectedStationAssignmentVersion = 2 });
+        Assert.Equal(stillInStation, result.Success);
+        if (!stillInStation) Assert.Equal(ApiErrorCodes.Conflict, result.ErrorCode);
+        _units.Verify(r => r.TryReserveForDispatchAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _units.Verify(r => r.TryReserveForStationDispatchAsync(unit.Id, _stationA, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void ApiCannotInjectInternalStationDispatchGuards()
+    {
+        var body = "{\"requiredStationId\":\"" + _stationB + "\",\"expectedStationAssignmentVersion\":99}";
+        var dto = System.Text.Json.JsonSerializer.Deserialize<AssignDispatchDto>(body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+        Assert.Null(dto.RequiredStationId); Assert.Null(dto.ExpectedStationAssignmentVersion);
+    }
 }
