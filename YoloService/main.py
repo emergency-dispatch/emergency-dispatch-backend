@@ -6,8 +6,11 @@ Serves two YOLO models simultaneously:
   - Model 2 (traffic-jam):   CLASSIFICATION (jam/normal)
                               HOẶC DETECTION (COCO) → bằng chứng không gian từ khung xe
 
+Ngoài ra (chế độ "3 AI bỏ phiếu" của AI tự điều phối): ResNet-50 và YOLO11n-cls phân 7 mức (xem triage_models.py).
+
 Endpoints:
   POST /api/yolo/classify   - Classify image (URL or base64)
+  POST /api/yolo/triage7    - 7-level votes from ResNet-50 + YOLO11n-cls (softmax confidence)
   GET  /api/yolo/health     - Health check & status
 """
 
@@ -28,8 +31,10 @@ from pydantic import BaseModel, Field, field_validator
 
 if __package__:
     from .jam_geometry import GeometryThresholds, assess_geometry, validate_roi
+    from . import triage_models
 else:
     from jam_geometry import GeometryThresholds, assess_geometry, validate_roi
+    import triage_models
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -288,6 +293,9 @@ def load_models():
 
     except Exception as e:
         logger.error(f"❌ Failed to load models: {e}")
+
+    # ─── 3. Hai model 7 mức cho chế độ "3 AI bỏ phiếu" (lỗi không ảnh hưởng 2 model trên) ───
+    triage_models.load_triage_models(device_info)
 
 
 # ---------------------------------------------------------------------------
@@ -773,6 +781,34 @@ async def classify_image(request: ClassifyRequest, accept_language: str = Header
     return with_localized_text(merge_results(af_result, jam_result), language)
 
 
+class Triage7Request(BaseModel):
+    """Request body for /api/yolo/triage7"""
+    image_url: Optional[str] = Field(None, description="Public URL of the image")
+    image_base64: Optional[str] = Field(None, description="Base64-encoded image data")
+
+
+@app.post("/api/yolo/triage7")
+async def triage7(request: Triage7Request):
+    """Phiếu 7 mức của ResNet-50 và YOLO11n-cls (độ tin cậy = xác suất softmax của lớp dự đoán).
+    Model nào chưa nạp / lỗi trả is_available=false; backend coi như không có phiếu."""
+    if not request.image_url and not request.image_base64:
+        return JSONResponse(status_code=400, content={"detail": "Either image_url or image_base64 is required."})
+    try:
+        if request.image_url:
+            image_bytes = await download_image(request.image_url)
+        else:
+            image_bytes = decode_base64_image(request.image_base64)  # type: ignore
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"detail": f"Failed to load image: {e}"})
+
+    loop = asyncio.get_event_loop()
+    resnet_vote, yolo_vote = await asyncio.gather(
+        loop.run_in_executor(None, triage_models.run_resnet, image_bytes),
+        loop.run_in_executor(None, triage_models.run_yolo7, image_bytes),
+    )
+    return {"models": [resnet_vote, yolo_vote]}
+
+
 @app.get("/api/yolo/health", response_model=HealthResponse)
 async def health_check():
     """
@@ -801,6 +837,7 @@ async def health_check():
         models_loaded={
             "accident_fire": af_ready,
             "traffic_jam": jam_ready,
+            **triage_models.models_status(),
         },
         models_info={
             "accident_fire": af_info,

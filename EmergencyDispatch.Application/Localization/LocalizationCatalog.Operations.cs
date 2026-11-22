@@ -151,6 +151,11 @@ public static partial class LocalizationCatalog
         { "AI không tự điều phối: độ tin cậy chỉ là ước lượng, không đo từ mô hình.", "AI did not auto-dispatch: the confidence is only an estimate, not measured from the model." },
         { "AI không tự điều phối: loại sự cố AI nhận diện khác loại của sự cố.", "AI did not auto-dispatch: the type identified by the AI differs from the incident type." },
         { "AI không tự điều phối: độ tin cậy thấp hơn ngưỡng cấu hình.", "AI did not auto-dispatch: the confidence is below the configured threshold." },
+        // ===== AI tự điều phối: chế độ 3 AI bỏ phiếu =====
+        { "AI không tự điều phối: không gọi được ResNet-50 / YOLO11n-cls để bỏ phiếu (chế độ 3 AI).", "AI did not auto-dispatch: ResNet-50 / YOLO11n-cls could not be reached for the vote (3-AI mode)." },
+        { "AI không tự điều phối: không model CNN nào cùng loại sự cố với TriageVL ở độ tin cậy đạt ngưỡng (chế độ 3 AI).", "AI did not auto-dispatch: no CNN model agreed with TriageVL on the incident type at the required confidence (3-AI mode)." },
+        { "AI không tự điều phối: sự cố không có ảnh để các model CNN bỏ phiếu (chế độ 3 AI).", "AI did not auto-dispatch: the incident has no photo for the CNN models to vote on (3-AI mode)." },
+        { "Chế độ AI tự điều phối phải là Single (một model) hoặc Ensemble (3 AI bỏ phiếu).", "The AI auto-dispatch mode must be Single (one model) or Ensemble (3-AI vote)." },
         // ===== Giao sự cố theo tổ =====
         { "Cần chọn ít nhất một tổ cứu hộ.", "Select at least one rescue team." },
         { "Sự cố {0} chỉ được giao tối đa {1} tổ (đang có {2} tổ).", "A {0} incident can be assigned to at most {1} teams ({2} currently assigned)." },

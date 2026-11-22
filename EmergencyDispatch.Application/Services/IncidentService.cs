@@ -1876,6 +1876,7 @@ public class IncidentService : IIncidentService
                 Summary = incident.AiClassification.Summary,
                 ConfidenceScore = incident.AiClassification.ConfidenceScore,
                 ConfidenceSource = incident.AiClassification.ConfidenceSource,
+                EnsembleVotes = AutoDispatchService.ParseVotes(incident.AiClassification.EnsembleVotesJson),
                 ModelName = incident.AiClassification.ModelName,
                 RawResponse = incident.AiClassification.RawResponse,
                 IsSuccess = incident.AiClassification.IsSuccess,

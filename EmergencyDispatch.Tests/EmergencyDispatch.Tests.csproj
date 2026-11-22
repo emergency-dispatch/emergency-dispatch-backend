@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="TestData\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\EmergencyDispatch.Application\EmergencyDispatch.Application.csproj" />
     <ProjectReference Include="..\EmergencyDispatch.Domain\EmergencyDispatch.Domain.csproj" />
     <ProjectReference Include="..\EmergencyDispatch.Infrastructure\EmergencyDispatch.Infrastructure.csproj" />

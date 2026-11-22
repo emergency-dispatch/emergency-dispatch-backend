@@ -68,6 +68,14 @@ appsettings.Local.json
 *.onnx
 *.pb
 Models/*.onnx
+# Ngoại lệ: 2 CNN của "3 AI bỏ phiếu" chạy trong backend, Render build từ git nên phải commit
+# (tạo lại bằng YoloService/export_triage_onnx.py)
+!EmergencyDispatch.API/AiModels/
+!EmergencyDispatch.API/AiModels/triage_resnet50.onnx
+!EmergencyDispatch.API/AiModels/triage_yolo11n_cls7.onnx
+# Bản .pt gốc của 2 CNN trên (90 MB + 3 MB) chỉ dùng để xuất ONNX / chạy YoloService local, không cần commit
+# (bản gốc ở TrainAI/resnet50_results, TrainAI/yolo11_cls_results)
+YoloService/models/triage_*.pt
 
 ## OS files
 Thumbs.db

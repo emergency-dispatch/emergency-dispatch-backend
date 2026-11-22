@@ -21,6 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 2 CNN 7 mức cho "3 AI bỏ phiếu" (ONNX Runtime trong backend), tạo bằng YoloService/export_triage_onnx.py -->
+    <None Include="AiModels\*.onnx" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\EmergencyDispatch.Application\EmergencyDispatch.Application.csproj" />
     <ProjectReference Include="..\EmergencyDispatch.Infrastructure\EmergencyDispatch.Infrastructure.csproj" />
   </ItemGroup>

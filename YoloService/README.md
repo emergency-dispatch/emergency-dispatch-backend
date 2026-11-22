@@ -108,6 +108,32 @@ khác nhau vẫn có thể gây sai. Một ảnh không đủ xác nhận xe đ�
 được hiệu chuẩn. Điểm quy tắc nằm tại `jam_geometry.heuristic_score` với
 `score_is_probability=false`; điểm 1 không mang nghĩa chắc chắn ùn tắc.
 
+## Phiếu 7 mức cho AI tự điều phối (3 AI bỏ phiếu)
+
+`POST /api/yolo/triage7` (body `{"image_url": "..."}` hoặc `{"image_base64": "..."}`) trả
+`{"models": [ResNet-50, YOLO11n-cls]}`; mỗi phần tử có `predicted_class` (một trong `fire_L1..L3`, `accident_L1..L3`,
+`none`), `confidence` (xác suất softmax của lớp dự đoán), `all_probabilities`, `is_available`, `error`.
+**Mặc định backend không gọi endpoint này.** Backend tự chạy 2 model bằng ONNX Runtime (`CnnTriage:Engine = Onnx`, file
+`EmergencyDispatch.API/AiModels/*.onnx`), nên chạy được trên Render free mà không cần dịch vụ Python. Endpoint chỉ dùng
+khi đặt `CnnTriage:Engine = Http` (`CnnTriageService`). Khi đó địa chỉ lấy từ `CnnTriage:BaseUrl`, mặc định trùng
+`YoloService:BaseUrl`.
+
+Sau khi train lại hoặc thay file `.pt`, chạy `python export_triage_onnx.py` để xuất lại 2 file `.onnx` vào
+`EmergencyDispatch.API/AiModels/`. Tiền xử lý bên C# chép đúng Pillow / torchvision (`PillowResampler`,
+`CnnImagePreprocessor`). Test `OnnxCnnTriageTests` so kết quả với pipeline PyTorch của file này. Kiểm tra trên 161 ảnh:
+nhãn trùng 161/161 và cùng phía ngưỡng 0,90 với 161/161 ảnh, xác suất lệch tối đa 0,015.
+
+Hai file trọng số (code ở `triage_models.py`, đổi đường dẫn bằng biến môi trường `TRIAGE_RESNET_MODEL` / `TRIAGE_YOLO_MODEL`):
+
+| File | Nguồn | Ghi chú |
+|---|---|---|
+| `models/triage_resnet50.pt` (90 MB) | `TrainAI/resnet50_results/resnet50_output/best_model.pt`, train 01/11/2026 | ResNet-50 + đầu 7 lớp + đầu kẹt xe, ảnh 512×512, chuẩn hóa ImageNet |
+| `models/triage_yolo11n_cls7.pt` (3 MB) | `TrainAI/yolo11_cls_results/yolo11_cls_results/best_yolo11_cls.pt`, train 31/10/2026 | YOLO11n-cls 7 lớp, imgsz 224 |
+
+Hai model này train trên tập chia cũ, không phải bản trong paper. Thiếu file hoặc nạp lỗi thì model đó trả
+`is_available=false`; hai model cũ (`/api/yolo/classify`) không bị ảnh hưởng. Trạng thái nạp xem ở `GET /api/yolo/health`
+(`models_loaded.triage_resnet50`, `models_loaded.triage_yolo11n_cls7`).
+
 ## API phân loại / Classification
 
 `POST /api/yolo/classify` nhận URL trực tiếp hoặc base64 ảnh:

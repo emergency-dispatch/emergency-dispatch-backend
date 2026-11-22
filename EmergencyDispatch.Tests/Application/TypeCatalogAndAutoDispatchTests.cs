@@ -226,8 +226,10 @@ public class AutoDispatchServiceTests
     private readonly Mock<INotificationService> _notify = new();
     private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<IRealtimeNotifier> _rt = new();
-    private readonly DispatchSettingsDto _dispatchSettings = new() { AutoDispatchEnabled = true, AutoDispatchMinConfidence = 0.9 };
+    // Các test cũ kiểm tra chế độ một model; chế độ 3 AI bỏ phiếu ở EnsembleAutoDispatchTests
+    private readonly DispatchSettingsDto _dispatchSettings = new() { AutoDispatchEnabled = true, AutoDispatchMinConfidence = 0.9, AutoDispatchMode = AutoDispatchModes.Single };
     private readonly List<Incident> _neighbours = new();
+    private readonly Mock<ICnnTriageService> _cnn = new();
     private readonly AutoDispatchService _svc;
 
     public AutoDispatchServiceTests()
@@ -240,7 +242,7 @@ public class AutoDispatchServiceTests
         _dispatch.Setup(d => d.AutoAssignAsync(It.IsAny<AssignDispatchDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(ApiResponseDto<List<DispatchAssignmentResponseDto>>.SuccessResult(new List<DispatchAssignmentResponseDto>()));
         _svc = new AutoDispatchService(_incidents.Object, _dispatch.Object, _settings.Object, _notify.Object, _users.Object, _rt.Object,
-            NullLogger<AutoDispatchService>.Instance);
+            _cnn.Object, NullLogger<AutoDispatchService>.Instance);
     }
 
     private Incident Fire(double confidence = 0.95, string source = "logprob", SeverityLevel severity = SeverityLevel.Level2, Action<Incident>? tweak = null)
@@ -291,6 +293,17 @@ public class AutoDispatchServiceTests
         Assert.Equal("out-of-service-area", AutoDispatchService.IneligibleReason(Fire(tweak: i => i.IsOutOfServiceArea = true), _dispatchSettings, now));
         Assert.Equal("operator-handling", AutoDispatchService.IneligibleReason(Fire(tweak: i => { i.LockedByOperatorId = Guid.NewGuid(); i.LockExpiresAt = now.AddMinutes(1); }), _dispatchSettings, now));
         Assert.Equal("not-awaiting-verification", AutoDispatchService.IneligibleReason(Fire(tweak: i => i.Status = IncidentStatus.Verified), _dispatchSettings, now));
+    }
+
+    [Fact]
+    public async Task SingleMode_NeverCallsCnnModels()
+    {
+        var inc = Fire();
+        Recommend(null, Guid.NewGuid());
+
+        Assert.Equal(AutoDispatchOutcome.Dispatched, await _svc.TryAutoDispatchAsync(inc.Id));
+        _cnn.Verify(c => c.ClassifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Null(inc.AiClassification!.EnsembleVotesJson);
     }
 
     [Fact]

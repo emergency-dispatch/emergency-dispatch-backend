@@ -1611,3 +1611,15 @@ Backend vẫn dùng Guid làm khóa trong mọi API. Các mã dưới đây **ch
 - **FE / mobile cần làm:** gửi `Accept-Language` đúng ngôn ngữ đang chọn ở mọi request (nhất là đăng nhập, đăng ký FCM token); khi người dùng đổi ngôn ngữ trong app thì gọi `PUT /api/users/ui-language`; khi đổi ngôn ngữ, tải lại danh sách thông báo.
 
 **7. Push FCM.** Backend tự xóa FCM token khi Firebase báo token đã chết (gỡ app, khác project). **Mobile cần làm** (chưa có): lấy *FCM device token* (không phải Expo push token, cần development build), gọi `PUT /api/users/fcm-token` sau khi đăng nhập và mỗi khi token đổi (`onTokenRefresh`); tạo kênh Android `EMERGENCY_DISPATCH` với âm `emergency_alarm`. Mỗi tài khoản giữ một token (thiết bị đăng ký sau cùng nhận push).
+
+## 42. Cập nhật 22/11/2026: AI tự điều phối bằng "3 AI bỏ phiếu"
+
+Backend thêm chế độ mới cho AI tự điều phối: **TriageVL-3B + ResNet-50 + YOLO11n-cls** cùng nhận diện. Hệ thống chỉ tự điều xe khi **TriageVL đạt ngưỡng** và **ít nhất một trong hai model CNN cùng loại sự cố, cũng đạt ngưỡng**. Mức điều phối lấy **mức cao nhất** trong nhóm đa số; nếu cao hơn mức của TriageVL thì sự cố được nâng mức trước khi chọn tổ. Bỏ qua (nghi trùng / hết xe) thì giữ nguyên mức cũ.
+
+**1. Cài đặt điều phối (Admin): `GET/PUT /api/settings/dispatch` có thêm `autoDispatchMode`** = `"Ensemble"` (mặc định, 3 AI bỏ phiếu) hoặc `"Single"` (cách cũ: chỉ TriageVL). Giá trị khác → 400. **FE cần làm:** thêm lựa chọn "Cách AI quyết định: 3 AI bỏ phiếu / Chỉ TriageVL" cạnh ô ngưỡng độ tin cậy; (cập nhật tối 22/11: 2 model CNN chạy ngay trong backend, không cần YoloService, nên không cần gợi ý gì thêm.)
+
+**2. Phiếu của từng model.** `aiClassification.ensembleVotes` trong sự cố (null khi chưa bỏ phiếu) và `votes` trong sự kiện realtime `ReceiveAutoDispatched`: mảng 3 phần tử `{ model, incidentType ("fire" | "accident" | "none"), severity (0–3), confidence, confidenceSource ("logprob" | "softmax"), isAvailable, inMajority, error }`. Phần tử đầu luôn là TriageVL-3B. **FE cần làm:** trong khung AI của chi tiết sự cố (web Operator / Admin), hiện bảng nhỏ 3 dòng: model, kết quả (VD "Cháy · L3"), độ tin cậy %, dấu ✓ khi `inMajority`, "không khả dụng" khi `isAvailable = false`. Toast "AI đã tự điều phối" có thể hiện tóm tắt "3/3 đồng ý" hoặc "2/3 đồng ý".
+
+**3. Mã lý do mới trong `autoDispatchReasonCode`** (đã có ghi chú song ngữ trong `autoDispatchNote`): `ensemble-no-majority` (không CNN nào đồng ý với TriageVL ở ngưỡng), `ensemble-unavailable` (2 model CNN không chạy được, ví dụ không tải hoặc không đọc được ảnh), `ensemble-no-photo` (sự cố không có ảnh). **FE cần làm:** nếu FE đang dịch theo mã thì thêm 3 mã này; nếu hiển thị `autoDispatchNote` thì không cần đổi.
+
+Mobile không cần làm gì (chỉ web Operator / Admin dùng phần này).

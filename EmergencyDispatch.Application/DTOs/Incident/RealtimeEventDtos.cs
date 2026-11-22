@@ -164,5 +164,8 @@ public class AutoDispatchEventDto
     /// <summary>Biển số các xe đã điều (khi Dispatched)</summary>
     public string? Plates { get; set; }
     public Guid? SuspectedDuplicateOfIncidentId { get; set; }
+
+    /// <summary>Phiếu của 3 model (chỉ có ở chế độ "3 AI bỏ phiếu")</summary>
+    public List<EmergencyDispatch.Application.DTOs.Ai.AiModelVoteDto>? Votes { get; set; }
     public DateTime At { get; set; }
 }

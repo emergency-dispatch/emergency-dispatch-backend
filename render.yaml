@@ -93,6 +93,13 @@ services:
       - key: YoloService__AutoStart
         value: "false"
 
+      # ----- "3 AI bỏ phiếu": ResNet-50 + YOLO11n-cls chạy ngay trong backend (ONNX Runtime, AiModels/*.onnx) -----
+      # Hết RAM thì đặt KeepModelsLoaded = "false" (nạp lại model mỗi lần, chậm hơn vài giây)
+      - key: CnnTriage__Engine
+        value: Onnx
+      - key: CnnTriage__KeepModelsLoaded
+        value: "true"
+
       # ----- Chỉ đường -----
       - key: Routing__OsrmBaseUrl
         value: https://router.project-osrm.org

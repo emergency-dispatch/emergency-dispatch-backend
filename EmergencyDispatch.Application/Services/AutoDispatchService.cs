@@ -1,5 +1,6 @@
 using EmergencyDispatch.Application.Localization;
 using System.Text.Json;
+using EmergencyDispatch.Application.DTOs.Ai;
 using EmergencyDispatch.Application.DTOs.Dispatch;
 using EmergencyDispatch.Application.DTOs.Incident;
 using EmergencyDispatch.Application.DTOs.Notification;
@@ -57,8 +58,13 @@ public class AutoDispatchService : IAutoDispatchService
         ["ai-failed"] = "AI không tự điều phối: phân tích AI thất bại.",
         ["confidence-not-measured"] = "AI không tự điều phối: độ tin cậy chỉ là ước lượng, không đo từ mô hình.",
         ["ai-type-mismatch"] = "AI không tự điều phối: loại sự cố AI nhận diện khác loại của sự cố.",
-        ["below-threshold"] = "AI không tự điều phối: độ tin cậy thấp hơn ngưỡng cấu hình."
+        ["below-threshold"] = "AI không tự điều phối: độ tin cậy thấp hơn ngưỡng cấu hình.",
+        ["ensemble-no-photo"] = "AI không tự điều phối: sự cố không có ảnh để các model CNN bỏ phiếu (chế độ 3 AI).",
+        ["ensemble-unavailable"] = "AI không tự điều phối: không gọi được ResNet-50 / YOLO11n-cls để bỏ phiếu (chế độ 3 AI).",
+        ["ensemble-no-majority"] = "AI không tự điều phối: không model CNN nào cùng loại sự cố với TriageVL ở độ tin cậy đạt ngưỡng (chế độ 3 AI)."
     };
+
+    private static readonly JsonSerializerOptions VoteJsonOptions = new(JsonSerializerDefaults.Web);
 
     public const string PartialNote = "AI tự điều phối một phần: chưa đủ số xe theo cấu hình của mức độ. Điều phối viên cần bổ sung xe.";
 
@@ -68,6 +74,7 @@ public class AutoDispatchService : IAutoDispatchService
     private readonly INotificationService _notificationService;
     private readonly IUserRepository _userRepository;
     private readonly IRealtimeNotifier _realtimeNotifier;
+    private readonly ICnnTriageService _cnnTriage;
     private readonly ILogger<AutoDispatchService> _logger;
 
     public AutoDispatchService(
@@ -77,6 +84,7 @@ public class AutoDispatchService : IAutoDispatchService
         INotificationService notificationService,
         IUserRepository userRepository,
         IRealtimeNotifier realtimeNotifier,
+        ICnnTriageService cnnTriage,
         ILogger<AutoDispatchService> logger)
     {
         _incidentRepository = incidentRepository;
@@ -85,7 +93,83 @@ public class AutoDispatchService : IAutoDispatchService
         _notificationService = notificationService;
         _userRepository = userRepository;
         _realtimeNotifier = realtimeNotifier;
+        _cnnTriage = cnnTriage;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Luật "3 AI bỏ phiếu" (hàm thuần). Gọi sau khi TriageVL đã đạt điều kiện của IneligibleReason (đo bằng xác suất token,
+    /// ≥ ngưỡng, cháy nổ / tai nạn Level 1–3). Đủ điều kiện khi ít nhất một trong ResNet-50 / YOLO11n-cls cùng loại sự cố
+    /// với TriageVL và có độ tin cậy ≥ ngưỡng (TriageVL bắt buộc nằm trong nhóm đa số). Mức điều phối = mức cao nhất
+    /// trong nhóm đa số (tránh hạ mức). Reason null = đủ điều kiện
+    /// </summary>
+    public static (string? Reason, SeverityLevel Severity, List<AiModelVoteDto> Votes) EnsembleVerdict(
+        Incident incident, IReadOnlyList<AiModelVoteDto> cnnVotes, double threshold)
+    {
+        var ai = incident.AiClassification!;
+        var type = AiClassificationResultDto.ToIncidentTypeLabel(ai.EventType);
+        var votes = new List<AiModelVoteDto>
+        {
+            new()
+            {
+                Model = "TriageVL-3B",
+                IncidentType = type,
+                Severity = (int)incident.Severity,
+                Confidence = ai.ConfidenceScore,
+                ConfidenceSource = ai.ConfidenceSource,
+                IsAvailable = true,
+                InMajority = true
+            }
+        };
+        foreach (var v in cnnVotes)
+        {
+            v.InMajority = v.IsAvailable && v.IncidentType == type && v.Confidence >= threshold;
+            votes.Add(v);
+        }
+
+        if (!cnnVotes.Any(v => v.IsAvailable)) return ("ensemble-unavailable", incident.Severity, votes);
+        if (!cnnVotes.Any(v => v.InMajority)) return ("ensemble-no-majority", incident.Severity, votes);
+        var level = Math.Clamp(votes.Where(v => v.InMajority).Max(v => v.Severity), 1, 3);
+        return (null, (SeverityLevel)level, votes);
+    }
+
+    public static List<AiModelVoteDto>? ParseVotes(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<List<AiModelVoteDto>>(json, VoteJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gọi 2 model CNN (YoloService) cho ảnh của sự cố rồi áp luật bỏ phiếu. Lỗi gọi service → coi như không có phiếu CNN
+    /// </summary>
+    private async Task<(string? Reason, SeverityLevel Severity, List<AiModelVoteDto> Votes)> RunEnsembleAsync(
+        Incident incident, DispatchSettingsDto settings, CancellationToken cancellationToken)
+    {
+        var photo = incident.MediaItems.FirstOrDefault(m => m.MediaType == MediaType.Photo)?.MediaUrl;
+        if (string.IsNullOrWhiteSpace(photo))
+        {
+            var (_, sev, onlyTriage) = EnsembleVerdict(incident, Array.Empty<AiModelVoteDto>(), settings.AutoDispatchMinConfidence);
+            return ("ensemble-no-photo", sev, onlyTriage);
+        }
+
+        IReadOnlyList<AiModelVoteDto> cnnVotes;
+        try
+        {
+            cnnVotes = await _cnnTriage.ClassifyAsync(photo, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Không gọi được 2 model CNN cho sự cố {IncidentId}", incident.Id);
+            cnnVotes = Array.Empty<AiModelVoteDto>();
+        }
+        return EnsembleVerdict(incident, cnnVotes, settings.AutoDispatchMinConfidence);
     }
 
     /// <summary>
@@ -129,6 +213,26 @@ public class AutoDispatchService : IAutoDispatchService
             return AutoDispatchOutcome.NotEligible;
         }
 
+        // Chế độ 3 AI bỏ phiếu: gọi 2 model CNN trước khi khóa khu vực (gọi mạng không giữ khóa)
+        string? votesJson = null;
+        SeverityLevel? ensembleSeverity = null;
+        if (settings.AutoDispatchMode == AutoDispatchModes.Ensemble)
+        {
+            var (reason, severity, votes) = await RunEnsembleAsync(incident, settings, cancellationToken);
+            votesJson = JsonSerializer.Serialize(votes, VoteJsonOptions);
+            incident.AiClassification!.EnsembleVotesJson = votesJson;
+            if (reason != null)
+            {
+                _logger.LogDebug("Auto-dispatch bỏ qua sự cố {IncidentId}: {Reason}", incidentId, reason);
+                if (!await RecordNotEligibleAsync(incident, reason, cancellationToken))
+                {
+                    await _incidentRepository.SaveChangesAsync(cancellationToken);
+                }
+                return AutoDispatchOutcome.NotEligible;
+            }
+            ensembleSeverity = severity;
+        }
+
         // Khóa khu vực: hai sự cố gần nhau không được tự điều phối song song (bước chống trùng phải thấy nhau)
         var areaLock = await _incidentRepository.BeginAreaLockAsync(incident.Latitude, incident.Longitude,
             settings.AutoDispatchDuplicateRadiusMeters, cancellationToken);
@@ -136,6 +240,7 @@ public class AutoDispatchService : IAutoDispatchService
         try
         {
             await _incidentRepository.ReloadAsync(incident, cancellationToken);
+            if (votesJson != null) incident.AiClassification!.EnsembleVotesJson = votesJson;
             var now = DateTime.UtcNow;
             if (IneligibleReason(incident, settings, now) is { } late)
             {
@@ -147,9 +252,17 @@ public class AutoDispatchService : IAutoDispatchService
                 return AutoDispatchOutcome.NotEligible;
             }
 
+            // Mức cao nhất trong nhóm đa số cao hơn mức của TriageVL → nâng mức sự cố trước khi chọn xe theo kế hoạch
+            var aiSeverity = incident.Severity;
+            if (ensembleSeverity is { } upgraded && upgraded > incident.Severity)
+            {
+                incident.Severity = upgraded;
+            }
+
             var duplicate = await FindDispatchedNeighbourAsync(incident, settings, now, cancellationToken);
             if (duplicate is { } dup)
             {
+                incident.Severity = aiSeverity; // không điều xe → giữ mức TriageVL cho Operator xét
                 await MarkSkippedAsync(incident, SuspectedDuplicateNote, "suspected-duplicate", dup.Incident.Id,
                     new { reason = "SuspectedDuplicate", duplicateOf = dup.Incident.Id, distanceMeters = Math.Round(dup.DistanceMeters, 1) }, cancellationToken);
                 if (areaLock != null) await areaLock.CommitAsync(cancellationToken);
@@ -161,6 +274,7 @@ public class AutoDispatchService : IAutoDispatchService
             var (unitIds, plannedUnits) = await PickUnitsAsync(incident, cancellationToken);
             if (unitIds.Count == 0)
             {
+                incident.Severity = aiSeverity;
                 await MarkSkippedAsync(incident, NoUnitsNote, "no-teams", null, new { reason = "NoUnits" }, cancellationToken);
                 if (areaLock != null) await areaLock.CommitAsync(cancellationToken);
                 committed = true;
@@ -188,7 +302,11 @@ public class AutoDispatchService : IAutoDispatchService
                 OldStatus = oldStatus,
                 NewStatus = IncidentStatus.Verified,
                 ChangedByRole = DispatchService.AutoDispatchActorRole,
-                Notes = $"AI tự xác minh: {incident.EventType} {incident.Severity}, độ tin cậy {ai.ConfidenceScore:P1} (ngưỡng {settings.AutoDispatchMinConfidence:P0}).",
+                Notes = votesJson == null
+                    ? $"AI tự xác minh: {incident.EventType} {incident.Severity}, độ tin cậy {ai.ConfidenceScore:P1} (ngưỡng {settings.AutoDispatchMinConfidence:P0})."
+                    : $"AI tự xác minh (3 AI bỏ phiếu): {incident.EventType} {incident.Severity}"
+                      + (incident.Severity != aiSeverity ? $" (nâng từ {aiSeverity} theo mức cao nhất trong nhóm đa số)" : "")
+                      + $", TriageVL {ai.ConfidenceScore:P1}, ngưỡng {settings.AutoDispatchMinConfidence:P0}.",
                 ChangedAt = now
             }, cancellationToken);
             await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
@@ -202,6 +320,9 @@ public class AutoDispatchService : IAutoDispatchService
                     confidence = ai.ConfidenceScore,
                     confidenceSource = ai.ConfidenceSource,
                     threshold = settings.AutoDispatchMinConfidence,
+                    mode = settings.AutoDispatchMode,
+                    votes = ParseVotes(votesJson),
+                    aiSeverity = aiSeverity.ToString(),
                     eventType = incident.EventType.ToString(),
                     incidentTypeCode = incident.IncidentTypeCode,
                     severity = incident.Severity.ToString(),
@@ -336,6 +457,7 @@ public class AutoDispatchService : IAutoDispatchService
             Note = LocalizationHelper.Localize(note),
             ReasonCode = reason,
             Confidence = incident.AiClassification?.ConfidenceScore,
+            Votes = ParseVotes(incident.AiClassification?.EnsembleVotesJson),
             At = DateTime.UtcNow
         }, cancellationToken);
         await _realtimeNotifier.IncidentUpdatedAsync(IncidentService.MapToResponseDto(incident), cancellationToken);
@@ -383,6 +505,7 @@ public class AutoDispatchService : IAutoDispatchService
             Confidence = incident.AiClassification?.ConfidenceScore,
             Plates = plates,
             SuspectedDuplicateOfIncidentId = incident.SuspectedDuplicateOfIncidentId,
+            Votes = ParseVotes(incident.AiClassification?.EnsembleVotesJson),
             At = DateTime.UtcNow
         }, cancellationToken);
         await _realtimeNotifier.IncidentUpdatedAsync(IncidentService.MapToResponseDto(incident), cancellationToken);

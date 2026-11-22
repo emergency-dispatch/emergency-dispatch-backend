@@ -37,6 +37,14 @@ public class DispatchSettingsDto
     public double AutoDispatchMinConfidence { get; set; } = 0.90;
 
     /// <summary>
+    /// Cách AI quyết định tự điều phối (Admin chọn):
+    /// "Ensemble" (mặc định) = 3 AI bỏ phiếu: TriageVL-3B đạt ngưỡng VÀ ít nhất một trong ResNet-50 / YOLO11n-cls cùng loại
+    /// sự cố, đạt ngưỡng; mức độ lấy cao nhất trong nhóm đa số. "Single" = chỉ TriageVL-3B đạt ngưỡng (cách cũ, dùng khi
+    /// YoloService không chạy được hai model CNN)
+    /// </summary>
+    public string AutoDispatchMode { get; set; } = AutoDispatchModes.Ensemble;
+
+    /// <summary>
     /// Trước khi tự điều xe: có sự cố khác đã được điều xe trong bán kính này (mét, không xét loại) → nghi trùng, chuyển Operator
     /// </summary>
     public double AutoDispatchDuplicateRadiusMeters { get; set; } = 500;
@@ -45,6 +53,12 @@ public class DispatchSettingsDto
     /// Khung thời gian (phút) xét nghi trùng trước khi tự điều xe
     /// </summary>
     public double AutoDispatchDuplicateWindowMinutes { get; set; } = 30;
+}
+
+public static class AutoDispatchModes
+{
+    public const string Single = "Single";
+    public const string Ensemble = "Ensemble";
 }
 
 public class LoadAwareWeightsDto

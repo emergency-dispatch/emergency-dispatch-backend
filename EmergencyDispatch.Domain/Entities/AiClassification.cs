@@ -26,6 +26,12 @@ public class AiClassification : BaseEntity
     public string? ConfidenceSource { get; set; }
 
     /// <summary>
+    /// Phiếu của 3 model (TriageVL-3B, ResNet-50, YOLO11n-cls) khi AI tự điều phối chạy ở chế độ "3 AI bỏ phiếu"
+    /// (JSON danh sách AiModelVoteDto); null khi chưa bỏ phiếu
+    /// </summary>
+    public string? EnsembleVotesJson { get; set; }
+
+    /// <summary>
     /// Cờ xác nhận ùn tắc giao thông chính thức.
     /// QUY ƯỚC QUAN TRỌNG: Chỉ mang giá trị true khi TrafficJamStatus == Confirmed (đã được Điều phối viên xác nhận).
     /// </summary>

@@ -137,6 +137,11 @@ public class AiClassificationResultDto
     public bool HasMeasuredConfidence => ConfidenceSource?.StartsWith("logprob", StringComparison.Ordinal) == true;
 
     /// <summary>
+    /// Phiếu của 3 model khi AI tự điều phối chạy ở chế độ "3 AI bỏ phiếu" (null khi chưa bỏ phiếu)
+    /// </summary>
+    public List<AiModelVoteDto>? EnsembleVotes { get; set; }
+
+    /// <summary>
     /// Cờ đánh dấu phân loại thành công hay kích hoạt cơ chế Fallback
     /// </summary>
     public bool IsSuccess { get; set; } = true;

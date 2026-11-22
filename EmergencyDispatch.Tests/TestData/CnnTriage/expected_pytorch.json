@@ -1,0 +1,62 @@
+{
+ "accident_L1_disagree.jpg": {
+  "resnet": [
+   "none",
+   0.91892
+  ],
+  "yolo": [
+   "accident_L1",
+   0.5856
+  ]
+ },
+ "accident_L2.jpg": {
+  "resnet": [
+   "accident_L2",
+   0.999999
+  ],
+  "yolo": [
+   "accident_L2",
+   0.999999
+  ]
+ },
+ "fire_L3.jpg": {
+  "resnet": [
+   "fire_L3",
+   0.999957
+  ],
+  "yolo": [
+   "fire_L3",
+   0.959629
+  ]
+ },
+ "fire_L3_rgba_360x270.png": {
+  "resnet": [
+   "fire_L3",
+   0.999166
+  ],
+  "yolo": [
+   "fire_L3",
+   0.925383
+  ]
+ },
+ "none.jpg": {
+  "resnet": [
+   "none",
+   0.99999
+  ],
+  "yolo": [
+   "none",
+   0.990828
+  ]
+ },
+ "none_1500x1000.webp": {
+  "resnet": [
+   "none",
+   0.999997
+  ],
+  "yolo": [
+   "none",
+   0.999614
+  ]
+ }
+}

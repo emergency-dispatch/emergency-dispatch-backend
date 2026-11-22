@@ -4,18 +4,19 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Restore trước để tận dụng cache layer khi chỉ đổi code
+# Restore trước để tận dụng cache layer khi chỉ đổi code. Chỉ linux-x64: bỏ thư viện native của nền tảng khác
+# (ONNX Runtime, SkiaSharp, QuestPDF) → image nhỏ hơn ~800 MB
 COPY EmergencyDispatch.Domain/EmergencyDispatch.Domain.csproj EmergencyDispatch.Domain/
 COPY EmergencyDispatch.Application/EmergencyDispatch.Application.csproj EmergencyDispatch.Application/
 COPY EmergencyDispatch.Infrastructure/EmergencyDispatch.Infrastructure.csproj EmergencyDispatch.Infrastructure/
 COPY EmergencyDispatch.API/EmergencyDispatch.API.csproj EmergencyDispatch.API/
-RUN dotnet restore EmergencyDispatch.API/EmergencyDispatch.API.csproj
+RUN dotnet restore EmergencyDispatch.API/EmergencyDispatch.API.csproj -r linux-x64
 
 COPY EmergencyDispatch.Domain/ EmergencyDispatch.Domain/
 COPY EmergencyDispatch.Application/ EmergencyDispatch.Application/
 COPY EmergencyDispatch.Infrastructure/ EmergencyDispatch.Infrastructure/
 COPY EmergencyDispatch.API/ EmergencyDispatch.API/
-RUN dotnet publish EmergencyDispatch.API/EmergencyDispatch.API.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
+RUN dotnet publish EmergencyDispatch.API/EmergencyDispatch.API.csproj -c Release -o /app/publish --no-restore -r linux-x64 --self-contained false /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app

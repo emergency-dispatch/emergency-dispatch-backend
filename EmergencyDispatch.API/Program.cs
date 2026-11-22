@@ -218,6 +218,21 @@ builder.Services.AddScoped<IEquipmentService, EquipmentService>();
 builder.Services.AddScoped<ITypeCatalogService, TypeCatalogService>();
 builder.Services.AddScoped<ISpatialQueryService, EmergencyDispatch.Infrastructure.Services.PostGisSpatialQueryService>();
 builder.Services.AddScoped<IAutoDispatchService, AutoDispatchService>();
+// Chế độ "3 AI bỏ phiếu" của AI tự điều phối: ResNet-50 + YOLO11n-cls 7 mức trong YoloService (/api/yolo/triage7)
+// 2 model CNN cho "3 AI bỏ phiếu": Onnx (mặc định) = backend tự chạy bằng ONNX Runtime (AiModels/*.onnx);
+// Http = gọi YoloService /api/yolo/triage7
+if (string.Equals(builder.Configuration["CnnTriage:Engine"], "Http", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddHttpClient(EmergencyDispatch.Infrastructure.Services.CnnTriageService.HttpClientName);
+    builder.Services.AddScoped<ICnnTriageService, EmergencyDispatch.Infrastructure.Services.CnnTriageService>();
+}
+else
+{
+    builder.Services.AddHttpClient(EmergencyDispatch.Infrastructure.Services.CnnTriage.OnnxCnnTriageService.DownloadClientName)
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+    builder.Services.AddSingleton<EmergencyDispatch.Infrastructure.Services.CnnTriage.OnnxTriageModels>();
+    builder.Services.AddScoped<ICnnTriageService, EmergencyDispatch.Infrastructure.Services.CnnTriage.OnnxCnnTriageService>();
+}
 builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 builder.Services.AddScoped<IDispatchService, DispatchService>();
 builder.Services.AddScoped<ITrafficService, TrafficService>();

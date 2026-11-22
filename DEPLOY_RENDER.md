@@ -60,10 +60,14 @@ Lưu ý khi API ngủ: worker leo thang, hàng đợi AI và SignalR dừng. S�
 1. Upload `ai-service/ai_service.py` bản mới (trả `confidence_source = "logprob"`) vào dataset Kaggle `triagevl-service`, qua **New version**. Mỗi người chạy notebook chọn version mới trong panel Input, rồi Stop Session và Run All.
 2. Admin bật trong `PUT /api/settings/dispatch`: `autoDispatchEnabled = true`, ngưỡng `autoDispatchMinConfidence` (mặc định 0.90).
 3. Chỉ kết quả TriageVL có độ tin cậy đo thật mới được tự điều phối. Khi Kaggle tắt và AI chạy bằng OpenRouter, sự cố vẫn vào hàng chờ Operator.
+4. Chế độ `autoDispatchMode` mặc định là `Ensemble` ("3 AI bỏ phiếu"): sau TriageVL, backend tự chạy thêm ResNet-50 và YOLO11n-cls (file `EmergencyDispatch.API/AiModels/*.onnx`, nằm sẵn trong image) bằng ONNX Runtime, không cần YoloService. Đo trên Linux, giới hạn như gói free (0,1 CPU): mỗi ảnh mất khoảng 7 s (lần đầu khoảng 12 s vì phải nạp model). Phần CNN thêm khoảng 140 MB RAM thường trực, đỉnh khoảng 235 MB. Backend khoảng 160 MB, tổng vẫn dưới 512 MB.
+   - Nếu Render báo hết RAM: đặt `CnnTriage__KeepModelsLoaded=false`. Model được nạp lại mỗi lần, chậm hơn vài giây, nhưng thường trực chỉ khoảng 50 MB.
+   - Hoặc Admin chuyển `autoDispatchMode = Single` (chỉ TriageVL).
+   - Train lại CNN: chạy `python YoloService/export_triage_onnx.py` để xuất lại 2 file `.onnx`, rồi commit và deploy.
 
 ## 6. Giới hạn của cách deploy này
 
 - Chỉ chạy **1 instance** (hàng đợi AI trong RAM, SignalR chưa có Redis backplane).
-- Không có YOLO → không có kiểm tra nhanh ảnh của báo cáo gom và không có đối chiếu YOLO–Qwen về ùn tắc.
+- Không có YoloService (Python) → không có kiểm tra nhanh ảnh của báo cáo gom và không có đối chiếu YOLO–Qwen về ùn tắc. Hai CNN của "3 AI bỏ phiếu" thì vẫn chạy, vì chúng chạy trong backend (ONNX).
 - Khóa ký mã hủy SOS của khách lưu trong bảng `DataProtectionKeys` của Neon, nên khởi động lại vẫn dùng được mã cũ.
 - Thử Docker local: `docker build -t ed-api .` rồi chạy với các biến môi trường như trên, port 8080.
