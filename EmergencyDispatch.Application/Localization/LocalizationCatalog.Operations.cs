@@ -529,6 +529,12 @@ public static partial class LocalizationCatalog
         { "Xe {0} được điều tới sự cố {1} ({2} phụ trách) — {3}.", "Vehicle {0} was dispatched to incident {1} (handled by {2}) — {3}." },
         { "trạm khác", "another station" },
         { "[{0}] Trung tâm đã điều {1} xe ({2}) tới vị trí của bạn.", "[{0}] The command center has dispatched {1} vehicle(s) ({2}) to your location." },
+        // Người dân chỉ biết biển số khi tổ nhận lệnh (23/11/2026)
+        { "Đã giao sự cố cho đội cứu hộ", "Incident assigned to a rescue team" },
+        { "[{0}] Trung tâm đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "[{0}] The command center has assigned your incident to a rescue team and is waiting for the team to accept." },
+        { "Đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "The incident has been assigned to a rescue team, waiting for the team to accept." },
+        { "Đội cứu hộ đã nhận lệnh", "Rescue team accepted" },
+        { "[{0}] Xe {1} đã nhận lệnh và đang chuẩn bị xuất phát tới vị trí của bạn.", "[{0}] Vehicle {1} has accepted and is preparing to head to your location." },
         { "[{0}] Xe {1} từ chối sự cố \"{2}\" ({3}). {4}", "[{0}] Vehicle {1} rejected incident \"{2}\" ({3}). {4}" },
         { "Sự cố đã tự đóng vì tổ khác đã nghiệm thu.", "The incident was closed automatically because another team has completed it." },
         { "Còn {0} xe đang xử lý.", "{0} vehicle(s) still on the incident." },

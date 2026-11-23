@@ -155,8 +155,17 @@ public class DispatchController : ControllerBase
         }
 
         var result = await _dispatchService.GetAssignmentsByIncidentIdAsync(incidentId, cancellationToken);
+        // Người dân không thấy xe tổ chưa nhận lệnh / đã từ chối / bị hủy (chỉ xe thật sự tới)
+        if (User.IsInRole(nameof(UserRole.Citizen)) && result.Data != null)
+        {
+            result.Data = result.Data.Where(a => IsVisibleToCitizen(a.Status)).ToList();
+        }
         return Ok(result);
     }
+
+    private static bool IsVisibleToCitizen(DispatchAssignmentStatus status)
+        => status is DispatchAssignmentStatus.Accepted or DispatchAssignmentStatus.EnRoute
+            or DispatchAssignmentStatus.OnScene or DispatchAssignmentStatus.Completed;
 
     /// <summary>
     /// Lấy thông tin đường di chuyển cứu hộ, tọa độ xe thời gian thực và thời gian dự kiến (ETA) cho Người dân
@@ -174,7 +183,8 @@ public class DispatchController : ControllerBase
                 ApiResponseDto<CitizenTrackingResponseDto>.FailureResult("Bạn không có quyền theo dõi sự cố này."));
         }
 
-        var result = await _dispatchService.GetCitizenTrackingAsync(incidentId, cancellationToken);
+        var result = await _dispatchService.GetCitizenTrackingAsync(incidentId,
+            onlyAcceptedUnits: User.IsInRole(nameof(UserRole.Citizen)), cancellationToken);
         if (!result.Success)
         {
             return NotFound(result);

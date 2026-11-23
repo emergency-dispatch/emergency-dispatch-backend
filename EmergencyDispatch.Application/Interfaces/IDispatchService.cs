@@ -144,4 +144,12 @@ public interface IDispatchService
     Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
         Guid incidentId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// onlyAcceptedUnits = true (người dân): bỏ các xe tổ chưa nhận lệnh (Dispatched) vì tổ có thể từ chối
+    /// </summary>
+    Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
+        Guid incidentId,
+        bool onlyAcceptedUnits,
+        CancellationToken cancellationToken = default);
 }

@@ -1579,4 +1579,52 @@ public class DispatchServiceTests
         Assert.True((await _svc.GetCompletionReportByIdAsync(mine.Id, staff.Id)).Success);
         Assert.Equal(ApiErrorCodes.Forbidden, (await _svc.GetCompletionReportByIdAsync(other.Id, staff.Id)).ErrorCode);
     }
+
+    // ===================== Người dân chỉ thấy xe khi tổ đã nhận lệnh (23/11/2026) =====================
+    [Fact]
+    public async Task CitizenTracking_HidesUnitUntilCrewAccepts_OperatorStillSeesIt()
+    {
+        var (a, inc, u, staff) = Mission(DispatchAssignmentStatus.Dispatched);
+
+        var citizen = await _svc.GetCitizenTrackingAsync(inc.Id, onlyAcceptedUnits: true);
+        Assert.Empty(citizen.Data!.Units);
+        Assert.Null(citizen.Data.PlateNumber);
+        Assert.Equal("PendingDispatch", citizen.Data.DispatchStatus);
+
+        var op = await _svc.GetCitizenTrackingAsync(inc.Id);
+        Assert.Equal(u.PlateNumber, Assert.Single(op.Data!.Units).PlateNumber);
+
+        await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Accepted }, staff.Id);
+        var accepted = await _svc.GetCitizenTrackingAsync(inc.Id, onlyAcceptedUnits: true);
+        Assert.Equal(u.PlateNumber, accepted.Data!.PlateNumber);
+        Assert.Equal("Accepted", accepted.Data.DispatchStatus);
+    }
+
+    [Fact]
+    public async Task CitizenNotification_NoPlateOnDispatch_PlateSentOnAccept()
+    {
+        var reporter = Guid.NewGuid();
+        var inc = Incident(tweak: i => i.ReportedByUserId = reporter);
+        var u = Unit(RescueUnitType.FireTruck, 2);
+        var sent = new List<NotificationRequest>();
+        _notify.Setup(n => n.NotifyUsersAsync(It.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(reporter)), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyCollection<Guid> _, NotificationRequest req, CancellationToken _) => sent.Add(req))
+            .Returns(Task.CompletedTask);
+
+        Assert.True((await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = u.Id }, _operatorId)).Success);
+        var dispatched = Assert.Single(sent);
+        Assert.DoesNotContain(u.PlateNumber, dispatched.Message.Vi);
+
+        var a = inc.DispatchAssignments.Single();
+        a.RescueUnit ??= u;
+        _assign.Setup(x => x.GetByIdWithDetailsAsync(a.Id)).ReturnsAsync(a);
+        _assign.Setup(x => x.GetByIncidentIdAsync(inc.Id)).ReturnsAsync(() => inc.DispatchAssignments.ToList());
+        var staff = _crews.Single(c => c.Id == u.StationTeamId).Members.Single().Staff!;
+        _users.Setup(x => x.GetByIdAsync(staff.Id)).ReturnsAsync(staff);
+
+        var accept = await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Accepted }, staff.Id);
+        Assert.True(accept.Success, accept.Message);
+        Assert.Equal(2, sent.Count);
+        Assert.Contains(u.PlateNumber, sent[1].Message.Vi);
+    }
 }

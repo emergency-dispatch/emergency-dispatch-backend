@@ -630,13 +630,14 @@ public class DispatchService : IDispatchService
             await _fieldRequestService.MarkFulfilledByDispatchAsync(fulfilledRequestId, units.Select(u => u.PlateNumber).ToList(), operatorId ?? Guid.Empty, cancellationToken);
         }
 
+        // Chưa báo biển số cho người dân: tổ có thể từ chối → chỉ báo đã giao, biển số gửi khi tổ nhận lệnh (Accepted)
         if (incident.ReportedByUserId.HasValue)
         {
             await _notificationService.NotifyUsersAsync(new[] { incident.ReportedByUserId.Value }, new NotificationRequest
             {
                 Type = NotificationType.StatusUpdate,
-                Title = "Đã điều động đội cứu hộ",
-                Message = new LocalizedText("[{0}] Trung tâm đã điều {1} xe ({2}) tới vị trí của bạn.", incident.Code, units.Count, plates),
+                Title = "Đã giao sự cố cho đội cứu hộ",
+                Message = new LocalizedText("[{0}] Trung tâm đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", incident.Code),
                 IncidentId = incident.Id
             }, cancellationToken);
         }
@@ -1289,16 +1290,25 @@ public class DispatchService : IDispatchService
             await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
         }
 
-        // FR-CIT-04 (MSG37, MSG40): báo người dân khi xe xuất phát và khi tới hiện trường
-        if (incident?.ReportedByUserId != null && dto.Status is DispatchAssignmentStatus.EnRoute or DispatchAssignmentStatus.OnScene)
+        // FR-CIT-04 (MSG37, MSG40): báo người dân khi tổ nhận lệnh (lần đầu biết biển số), khi xe xuất phát và khi tới hiện trường
+        if (incident?.ReportedByUserId != null && dto.Status is DispatchAssignmentStatus.Accepted or DispatchAssignmentStatus.EnRoute or DispatchAssignmentStatus.OnScene)
         {
+            var crewPlates = string.Join(", ", crewItems.Select(c => c.Unit?.PlateNumber).Where(p => !string.IsNullOrWhiteSpace(p)));
             await _notificationService.NotifyUsersAsync(new[] { incident.ReportedByUserId.Value }, new NotificationRequest
             {
                 Type = NotificationType.StatusUpdate,
-                Title = dto.Status == DispatchAssignmentStatus.EnRoute ? "Xe cứu hộ đang trên đường" : "Đội cứu hộ đã tới hiện trường",
-                Message = dto.Status == DispatchAssignmentStatus.EnRoute
-                    ? new LocalizedText("[{0}] Xe {1} đang di chuyển tới vị trí của bạn (dự kiến ~{2:F0} phút).", incident.Code, unit?.PlateNumber, assignment.EstimatedArrivalMinutes ?? 0)
-                    : new LocalizedText("[{0}] Xe {1} đã có mặt tại hiện trường. Đội cứu hộ đang triển khai.", incident.Code, unit?.PlateNumber),
+                Title = dto.Status switch
+                {
+                    DispatchAssignmentStatus.Accepted => "Đội cứu hộ đã nhận lệnh",
+                    DispatchAssignmentStatus.EnRoute => "Xe cứu hộ đang trên đường",
+                    _ => "Đội cứu hộ đã tới hiện trường"
+                },
+                Message = dto.Status switch
+                {
+                    DispatchAssignmentStatus.Accepted => new LocalizedText("[{0}] Xe {1} đã nhận lệnh và đang chuẩn bị xuất phát tới vị trí của bạn.", incident.Code, crewPlates),
+                    DispatchAssignmentStatus.EnRoute => new LocalizedText("[{0}] Xe {1} đang di chuyển tới vị trí của bạn (dự kiến ~{2:F0} phút).", incident.Code, unit?.PlateNumber, assignment.EstimatedArrivalMinutes ?? 0),
+                    _ => new LocalizedText("[{0}] Xe {1} đã có mặt tại hiện trường. Đội cứu hộ đang triển khai.", incident.Code, unit?.PlateNumber)
+                },
                 IncidentId = incident.Id,
                 Data = new { assignmentId = assignment.Id, status = dto.Status.ToString() }
             }, cancellationToken);
@@ -1756,6 +1766,12 @@ public class DispatchService : IDispatchService
     public async Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
         Guid incidentId,
         CancellationToken cancellationToken = default)
+        => await GetCitizenTrackingAsync(incidentId, false, cancellationToken);
+
+    public async Task<ApiResponseDto<CitizenTrackingResponseDto>> GetCitizenTrackingAsync(
+        Guid incidentId,
+        bool onlyAcceptedUnits,
+        CancellationToken cancellationToken = default)
     {
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
         if (incident == null)
@@ -1778,10 +1794,20 @@ public class DispatchService : IDispatchService
 
         // FR-CIT-03: hiển thị mọi xe đang xử lý; nếu đã xong hết thì hiển thị các xe đã hoàn thành
         var assignments = await _assignmentRepository.GetByIncidentIdAsync(incidentId);
-        var shown = assignments.Where(a => a.IsActive).ToList();
-        if (shown.Count == 0)
+        var active = assignments.Where(a => a.IsActive).ToList();
+        // Người dân chỉ thấy xe khi tổ đã nhận lệnh: lượt còn Dispatched có thể bị tổ từ chối và đổi xe khác
+        var shown = onlyAcceptedUnits
+            ? active.Where(a => a.Status != DispatchAssignmentStatus.Dispatched).ToList()
+            : active;
+        if (active.Count == 0)
         {
             shown = assignments.Where(a => a.Status == DispatchAssignmentStatus.Completed).ToList();
+        }
+
+        if (shown.Count == 0 && active.Count > 0)
+        {
+            return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result,
+                "Đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.");
         }
 
         if (shown.Count == 0)

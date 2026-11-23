@@ -1673,3 +1673,21 @@ Backend **không thay đổi gì**. Gợi ý địa chỉ do FE / mobile gọi t
 **FE cần làm (tùy chọn):** khi `aiClassification.confidenceSource = "unparseable"`, hiện "—" thay cho phần trăm độ tin cậy. Ngoài ra không cần đổi gì: tóm tắt AI giờ là câu mô tả, không còn đoạn JSON thô.
 
 Ca SC-261123-0390 đã lưu trong DB không tự sửa lại; Operator chốt tay như bình thường.
+
+## 45. Cập nhật 23/11/2026: người dân chỉ thấy xe khi tổ đã nhận lệnh
+
+**Lỗi:** staff chưa bấm nhận lệnh mà màn hình người dân đã hiện biển số, vị trí, lộ trình và ETA của xe. Lúc đó tổ vẫn có thể từ chối và trung tâm đổi xe khác, nên người dân thấy sai xe.
+
+**Backend đã sửa** (chỉ áp dụng khi người gọi là Citizen; Operator, Admin và staff vẫn thấy như cũ):
+- `GET /api/dispatch/tracking/incident/{id}`: bỏ các lượt còn `Dispatched`. Khi mọi xe đều chưa được nhận lệnh, API trả `units = []`, `dispatchStatus = "PendingDispatch"`, `plateNumber = null`, message "Đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh." Xe hiện ra từ `Accepted` trở đi.
+- `GET /api/dispatch/assignments/incident/{id}`: với Citizen chỉ trả lượt `Accepted`, `EnRoute`, `OnScene` hoặc `Completed`.
+- `GET /api/incidents/my-reports`: `dispatchedUnits` cũng chỉ còn 4 trạng thái trên (bỏ xe chờ nhận lệnh, đã từ chối và bị hủy).
+- SOS được gộp vào sự cố đang xử lý: `linkedTo.assignedUnitPlates` bỏ xe chờ nhận lệnh, nên FE sẽ hiện "Đang điều phối xe".
+- Thông báo cho người dân:
+  - Lúc điều xe: "Đã giao sự cố cho đội cứu hộ", không còn biển số.
+  - Lúc tổ nhận lệnh: thông báo mới "Đội cứu hộ đã nhận lệnh — Xe {biển số} đã nhận lệnh và đang chuẩn bị xuất phát…".
+  - Lúc xe xuất phát và tới nơi: như cũ.
+
+**FE/mobile:** không bắt buộc đổi gì, vì `PendingDispatch` và `units` rỗng đã được xử lý sẵn.
+- Nên đổi câu "Chưa có thông tin xe cứu hộ đang di chuyển." ở web (`CitizenLiveTrackingMapModal.tsx`) và mobile (`CitizenTrackingModal`) thành message API trả về, hoặc thành "Đang chờ đội cứu hộ nhận lệnh". Khi đó người dân biết sự cố đã được giao.
+- Màn hình theo dõi nên tải lại tracking khi nhận thông báo "Đội cứu hộ đã nhận lệnh", vì đó là lúc xe bắt đầu hiện.

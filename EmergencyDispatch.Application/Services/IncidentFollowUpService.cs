@@ -227,7 +227,8 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             EventType = refreshed.EventType,
             Status = refreshed.Status,
             DistanceMeters = Math.Round(distanceMeters),
-            AssignedUnitPlates = refreshed.DispatchAssignments.Where(a => a.IsActive)
+            // Người dân chỉ thấy xe tổ đã nhận lệnh (lượt Dispatched có thể bị từ chối)
+            AssignedUnitPlates = refreshed.DispatchAssignments.Where(a => a.IsActive && a.Status != DispatchAssignmentStatus.Dispatched)
                 .Select(a => a.RescueUnit?.PlateNumber).Where(p => p != null).Select(p => p!).Distinct().ToList()
         };
     }

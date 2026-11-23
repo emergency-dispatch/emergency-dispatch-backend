@@ -1767,7 +1767,10 @@ public class IncidentService : IIncidentService
                 DispatchedAt = assignments.Select(a => (DateTime?)a.DispatchedAt).Min(),
                 OnSceneAt = assignments.Select(a => a.ArrivedAt).Where(t => t.HasValue).Min(),
                 CompletedAt = i.ClosedAt,
-                DispatchedUnits = assignments.Select(a => new MyReportUnitDto
+                // Chỉ xe tổ đã nhận lệnh (lượt chờ nhận / từ chối / bị hủy không phải xe tới chỗ người dân)
+                DispatchedUnits = assignments.Where(a => a.Status is DispatchAssignmentStatus.Accepted or DispatchAssignmentStatus.EnRoute
+                        or DispatchAssignmentStatus.OnScene or DispatchAssignmentStatus.Completed)
+                    .Select(a => new MyReportUnitDto
                 {
                     PlateNumber = a.RescueUnit?.PlateNumber ?? string.Empty,
                     UnitType = a.RescueUnit?.UnitType ?? RescueUnitType.Ambulance,
