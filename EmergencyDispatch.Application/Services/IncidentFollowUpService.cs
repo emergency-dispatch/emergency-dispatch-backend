@@ -342,10 +342,25 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         }
 
         var parentId = report.DuplicateOfIncidentId.Value;
-        var text = string.IsNullOrWhiteSpace(note) ? $"Trùng với sự cố {await CodeOfAsync(parentId, cancellationToken)}" : note.Trim();
+        var parentCode = await CodeOfAsync(parentId, cancellationToken);
+        var text = string.IsNullOrWhiteSpace(note) ? $"Trùng với sự cố {parentCode}" : note.Trim();
         await CloseAsDuplicateAsync(report, actorUserId, _currentUser.Role?.ToString() ?? nameof(UserRole.Operator), text, AuditAction.DuplicateConfirmed, cancellationToken);
         await _incidentRepository.AdjustLinkedReportCountAsync(parentId, -1, null, cancellationToken);
         await PublishParentAsync(parentId, cancellationToken);
+
+        // Người báo trùng được theo dõi sự cố gốc như người báo gốc (xem chi tiết, xe cứu hộ, thông báo tiến độ)
+        if (report.ReportedByUserId is Guid reporterId)
+        {
+            await _notificationService.NotifyUsersAsync(new[] { reporterId }, new NotificationRequest
+            {
+                Type = NotificationType.StatusUpdate,
+                Title = "Báo cáo của bạn trùng với sự cố đang xử lý",
+                Message = new LocalizedText("[{0}] Báo cáo của bạn trùng với sự cố {1} đang được xử lý. Bạn có thể theo dõi tiến độ và xe cứu hộ của sự cố {1}.",
+                    report.Code, parentCode),
+                IncidentId = parentId,
+                Data = new { reportId = report.Id, parentIncidentId = parentId }
+            }, cancellationToken);
+        }
 
         return ApiResponseDto<IncidentResponseDto>.SuccessResult(IncidentService.MapToResponseDto(report), "Đã xác nhận báo cáo trùng.");
     }

@@ -172,8 +172,9 @@ public class IncidentsController : ControllerBase
             return this.ToHttpResult(response);
         }
 
-        // Người dân chỉ được xem sự cố do chính mình báo cáo
-        if (User.IsInRole(nameof(UserRole.Citizen)) && response.Data?.ReportedByUserId != GetCurrentUserId())
+        // Người dân chỉ được xem sự cố do chính mình báo cáo, hoặc sự cố gốc mà báo cáo của mình đã được xác nhận trùng vào
+        if (User.IsInRole(nameof(UserRole.Citizen)) && response.Data?.ReportedByUserId != GetCurrentUserId()
+            && response.Data?.ViewedAsDuplicateReporter != true)
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseDto<IncidentResponseDto>.FailureResult("Bạn chỉ được xem sự cố do chính mình báo cáo."));

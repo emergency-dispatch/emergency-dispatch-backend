@@ -757,18 +757,58 @@ public class IncidentService : IIncidentService
             return ApiResponseDto<IncidentResponseDto>.NotFoundResult("Không tìm thấy sự cố với mã yêu cầu.");
         }
 
+        var viewedAsDuplicateReporter = false;
         if (viewerUserId.HasValue)
         {
             var viewer = await _userRepository.GetByIdAsync(viewerUserId.Value);
-            if (viewer == null || !await CanAccessAsync(incident, viewer, _userRepository, cancellationToken))
+            if (viewer == null)
             {
                 return ApiResponseDto<IncidentResponseDto>.ForbiddenResult("Bạn không có quyền xem sự cố này.");
+            }
+            if (!await CanAccessAsync(incident, viewer, _userRepository, cancellationToken))
+            {
+                viewedAsDuplicateReporter = await IsConfirmedDuplicateReporterAsync(incident, viewer, _incidentRepository, cancellationToken);
+                if (!viewedAsDuplicateReporter)
+                {
+                    return ApiResponseDto<IncidentResponseDto>.ForbiddenResult("Bạn không có quyền xem sự cố này.");
+                }
             }
         }
 
         // Người báo luôn thấy số của chính mình; người khác thấy số đã che (BR-32)
         var isReporter = viewerUserId.HasValue && incident.ReportedByUserId == viewerUserId;
-        return ApiResponseDto<IncidentResponseDto>.SuccessResult(MapToResponseDto(incident, revealPhone: isReporter));
+        var dto = MapToResponseDto(incident, revealPhone: isReporter);
+        return ApiResponseDto<IncidentResponseDto>.SuccessResult(viewedAsDuplicateReporter ? RedactForDuplicateReporter(dto) : dto);
+    }
+
+    /// <summary>
+    /// Bản xem sự cố gốc cho người có báo cáo đã xác nhận trùng: giữ tiến độ xử lý (trạng thái, mức độ, vị trí, tóm tắt AI),
+    /// bỏ thông tin cá nhân của người báo gốc (tên, số điện thoại, hồ sơ y tế / người thân, ảnh / video họ gửi)
+    /// và ghi chú nội bộ của trung tâm
+    /// </summary>
+    internal static IncidentResponseDto RedactForDuplicateReporter(IncidentResponseDto dto)
+    {
+        dto.ViewedAsDuplicateReporter = true;
+        dto.ReportedByUserId = null;
+        dto.ReporterName = null;
+        dto.ReporterPhone = null;
+        dto.ReporterMedicalProfile = null;
+        dto.GuestCancellationToken = null;
+        dto.MediaItems = new List<IncidentMediaDto>();
+        dto.OperatorNotes = null;
+        dto.LockedByOperatorId = null;
+        dto.LockedByOperatorName = null;
+        dto.LockExpiresAt = null;
+        dto.CancelledByUserId = null;
+        dto.CancelledByName = null;
+        dto.VerifiedByUserId = null;
+        dto.SuspectedDuplicateOfIncidentId = null;
+        if (dto.AiClassification != null)
+        {
+            dto.AiClassification.RawResponse = null;
+            dto.AiClassification.TrafficJamVerifiedByUserId = null;
+        }
+        return dto;
     }
 
     public async Task<ApiResponseDto<PaginatedResultDto<IncidentResponseDto>>> GetIncidentsAsync(
@@ -1562,8 +1602,16 @@ public class IncidentService : IIncidentService
         if (user.Role == UserRole.Admin) return true;
 
         var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
-        return incident != null && await CanAccessAsync(incident, user, _userRepository, cancellationToken);
+        return incident != null && await CanAccessAsync(incident, user, _userRepository, cancellationToken, _incidentRepository);
     }
+
+    /// <summary>
+    /// Người dân có báo cáo đã được Operator xác nhận trùng vào sự cố này (không phải người báo gốc)
+    /// </summary>
+    internal static async Task<bool> IsConfirmedDuplicateReporterAsync(Incident incident, User user, IIncidentRepository incidentRepository, CancellationToken cancellationToken)
+        => user.Role == UserRole.Citizen
+           && incident.ReportedByUserId != user.Id
+           && (await incidentRepository.GetConfirmedDuplicateReporterIdsAsync(incident.Id, cancellationToken) ?? Array.Empty<Guid>()).Contains(user.Id);
 
     /// <summary>
     /// Admin: mọi sự cố. Operator: sự cố trạm mình phụ trách (hoặc chưa xác định trạm), hoặc có xe trạm mình đang hỗ trợ.
@@ -1588,12 +1636,15 @@ public class IncidentService : IIncidentService
     }
 
     /// <summary>
-    /// CanAccess kèm tra tổ làm việc của nhân viên cứu hộ
+    /// CanAccess kèm tra tổ làm việc của nhân viên cứu hộ.
+    /// Truyền incidentRepository → người dân có báo cáo đã xác nhận trùng vào sự cố này cũng được xem (bản ẩn thông tin người báo gốc)
     /// </summary>
-    internal static async Task<bool> CanAccessAsync(Incident incident, User user, IUserRepository userRepository, CancellationToken cancellationToken = default)
+    internal static async Task<bool> CanAccessAsync(Incident incident, User user, IUserRepository userRepository, CancellationToken cancellationToken = default,
+        IIncidentRepository? incidentRepository = null)
     {
         var teamId = user.Role == UserRole.RescueStaff ? await userRepository.GetTeamIdAsync(user.Id, cancellationToken) : null;
-        return CanAccess(incident, user, teamId);
+        return CanAccess(incident, user, teamId)
+               || (incidentRepository != null && await IsConfirmedDuplicateReporterAsync(incident, user, incidentRepository, cancellationToken));
     }
 
     /// <summary>

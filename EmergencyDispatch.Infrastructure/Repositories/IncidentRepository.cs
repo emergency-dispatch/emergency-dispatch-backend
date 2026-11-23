@@ -320,6 +320,17 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
             .OrderBy(i => i.CreatedAt)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Guid>> GetConfirmedDuplicateReporterIdsAsync(Guid parentIncidentId, CancellationToken cancellationToken = default)
+        => await _dbSet
+            .AsNoTracking()
+            .Where(i => i.DuplicateOfIncidentId == parentIncidentId
+                        && i.Status == IncidentStatus.Cancelled
+                        && i.CancellationReason == CancellationReason.Duplicate
+                        && i.ReportedByUserId != null)
+            .Select(i => i.ReportedByUserId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
     public async Task<bool> HasRecentActiveIncidentAsync(Guid? userId, string? normalizedPhone, DateTime sinceUtc, CancellationToken cancellationToken = default)
     {
         if (!userId.HasValue && string.IsNullOrWhiteSpace(normalizedPhone))

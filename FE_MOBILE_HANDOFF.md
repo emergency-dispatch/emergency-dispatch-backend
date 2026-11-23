@@ -1704,3 +1704,59 @@ Ca SC-261123-0390 đã lưu trong DB không tự sửa lại; Operator chốt ta
 **FE cần làm (nên làm):** khi `confidenceSource` khác `"logprob"`, không hiện số phần trăm như một xác suất thật.
 - `"heuristic"`: hiện "Ước lượng", hoặc "—" kèm tooltip "AI service bản cũ, chưa có độ tin cậy thật".
 - `"unparseable"`: hiện "—" (như mục 44).
+
+## 47. Cập nhật 23/11/2026: staff tổ khác thấy popup nhận lệnh của tổ được giao (lỗi web FE)
+
+**Hiện tượng:** giao sự cố cho tổ 1 (staff1, staff2), nhưng màn hình của staff tổ 2 lại bật popup "LỆNH ĐIỀU ĐỘNG" kèm nút xác nhận.
+
+**Backend đã đúng, đã kiểm tra trên DB thật ngày 23/11:**
+- Push "LỆNH ĐIỀU PHỐI" của các ca giao cho tổ 1 (0391, 0397, 0400, 0403, 0404, 0411, 0412) chỉ gửi cho staff1 và staff2. Ca của tổ 2 chỉ gửi cho staff3 và staff4.
+- `GET /dispatch/my-assignments` lọc theo tổ.
+- SignalR `ReceiveJobAssigned` chỉ gửi tới `Clients.Users(id thành viên tổ)`.
+- API nhận lệnh, cập nhật và nghiệm thu đều trả 403 nếu không cùng tổ. Lịch sử trạng thái chưa có lần nào bị tổ khác thao tác.
+
+**Nguyên nhân: kết nối SignalR của web không đổi theo tài khoản.**
+- `AuthContext.logout()` chỉ `navigate` rồi xóa token. Nó không gọi `incidentHubService.stop()` và không tải lại trang.
+- `useStaffMission` gọi `incidentHubService.start()` nhưng hàm dọn dẹp của effect không `stop()`.
+- `incidentHubService.start()` thấy kết nối chưa `Disconnected` thì dùng lại kết nối cũ.
+- SignalR gắn danh tính người dùng **lúc kết nối**. Đăng xuất staff1 rồi đăng nhập staff3 trên cùng tab thì kết nối vẫn mang danh tính staff1. Vì vậy staff3 nhận `ReceiveJobAssigned` của tổ 1 và popup bật lên.
+- Bấm "Nhận lệnh" lúc đó thì backend trả 403, web hiện "LỖI PHÂN QUYỀN TỔ". Nhưng popup và còi hú đã xuất hiện sai người.
+- Mở nhiều tab cùng trình duyệt với các tài khoản khác nhau cũng gây lỗi tương tự, vì `localStorage` dùng chung: tab cũ gọi REST bằng token mới nhưng hub vẫn là tài khoản cũ.
+
+**Web FE cần sửa:**
+1. `incidentHubService`: thêm hàm ngắt ngay, không trễ. Ví dụ `reset()` gọi `connection.stop()` ngay, đặt `connection = null`, `startPromise = null`, `registeredEvents.clear()` và giữ nguyên danh sách listener.
+2. `AuthContext.logout()` và `login()` (trước khi lưu token mới): `await incidentHubService.reset()`.
+3. `incidentHubService.start()`: lưu `sub` hoặc `userId` của token đã dùng để kết nối. Nếu token hiện tại thuộc người khác thì `reset()` rồi kết nối lại.
+4. Phòng thủ trong `useStaffMission.onJobAssigned` và `onAssignmentStatus`: bỏ qua sự kiện có `assignmentDto.stationTeamId` khác tổ của mình (lấy từ `/users/me/team` hoặc store), trừ khi `stationTeamId` là null (xe chưa gán tổ).
+5. Nhiều tab: lắng nghe sự kiện `window` `storage`. Khi `API_CONFIG.TOKEN_KEY` đổi sang người khác thì `reset()` hub và tải lại dữ liệu, hoặc `location.reload()`.
+
+**Mobile (lỗi nhỏ, cùng nhóm):** `StaffDashboardScreen.handleAcceptEmergency` gặp lỗi khi `updateStatus(..., 'Accepted')` (VD 403 tổ khác) thì chỉ `console.warn` mà vẫn `navigate('IncidentOverview')`, trông như nhận lệnh thành công. Cần hiện `Alert` với message của backend, không chuyển màn hình, rồi gọi `getMyAssignments(true)`.
+
+**Cách test:**
+- Đăng nhập staff1, đăng xuất, rồi đăng nhập staff3 trên **cùng tab**. Giao sự cố cho tổ 1: màn hình staff3 không được bật popup.
+- Lặp lại với 2 tab cùng trình duyệt.
+- Muốn test 2 tài khoản song song khi chưa sửa thì dùng 2 trình duyệt, hoặc 1 cửa sổ thường và 1 cửa sổ ẩn danh.
+
+## 48. Cập nhật 23/11/2026: người báo trùng được theo dõi sự cố gốc
+
+**Quy tắc mới (backend):** khi Operator **xác nhận trùng** một báo cáo (`PUT /api/incidents/{id}/confirm-duplicate`, báo cáo chuyển sang `Cancelled` + `cancellationReason = Duplicate`), người dân có tài khoản đã gửi báo cáo đó được xem và theo dõi **sự cố gốc** như người báo gốc. Báo cáo còn ở trạng thái `Linked` (chưa xác nhận) thì chưa được.
+
+**Những gì người báo trùng dùng được với id sự cố gốc (`linkedToIncidentId`):**
+- `GET /api/incidents/{parentId}`: trả `viewedAsDuplicateReporter = true` và đã ẩn các trường `reportedByUserId`, `reporterName`, `reporterPhone`, `reporterMedicalProfile`, `mediaItems` (ảnh/video của người báo gốc), `operatorNotes`, thông tin khóa/người hủy và `aiClassification.rawResponse`. Vẫn có mã, tiêu đề, mô tả, địa chỉ, tọa độ, trạng thái, mức độ và tóm tắt AI.
+- `GET /api/dispatch/tracking/incident/{parentId}`: theo dõi xe, lộ trình và ETA. Vẫn chỉ hiện xe tổ đã nhận lệnh (mục 45).
+- `GET /api/dispatch/assignments/incident/{parentId}`.
+- SignalR `SubscribeIncident(parentId)`: nhận `ReceiveIncidentStatus` và `ReceiveAssignmentStatus` như người báo gốc.
+- **Không** dùng được: hủy sự cố, gửi bổ sung, xem danh sách bổ sung (`GET .../supplements` có tên những người báo khác).
+
+**Thông báo:**
+- Lúc Operator xác nhận trùng, người báo nhận: "Báo cáo của bạn trùng với sự cố đang xử lý". Thông báo có `incidentId = parentId`, `data = { reportId, parentIncidentId }`.
+- Sau đó họ nhận cùng các thông báo tiến độ với người báo gốc: đã giao đội, tổ nhận lệnh, xe đang đến, xe tới nơi, hoàn tất.
+
+**FE/mobile cần làm:**
+1. **"Báo cáo của tôi"** (`GET /incidents/my-reports`): với báo cáo `status = Cancelled` và `cancellationReason = Duplicate` có `linkedToIncidentId`, hiện nhãn "Trùng với sự cố đang xử lý" kèm nút **"Theo dõi sự cố gốc"**. Nút mở màn chi tiết hoặc màn theo dõi xe với `linkedToIncidentId`.
+2. **Bấm thông báo** có `data.parentIncidentId` (hoặc `incidentId` là sự cố gốc) → mở màn theo dõi sự cố gốc.
+3. **Màn chi tiết** khi `viewedAsDuplicateReporter = true`:
+   - Ẩn các nút hủy sự cố và bổ sung thông tin.
+   - Không gọi API danh sách bổ sung.
+   - Không hiện khối người báo và hồ sơ y tế.
+   - Thêm dòng "Bạn đang theo dõi sự cố này vì báo cáo của bạn đã được xác nhận trùng".

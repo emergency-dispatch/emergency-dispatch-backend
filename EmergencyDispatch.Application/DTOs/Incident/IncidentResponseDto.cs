@@ -127,4 +127,9 @@ public class IncidentResponseDto
     /// </summary>
     public IncidentReporterMedicalDto? ReporterMedicalProfile { get; set; }
 
+    /// <summary>
+    /// true = người xem là người dân có báo cáo đã được xác nhận trùng vào sự cố này (không phải người báo gốc):
+    /// chỉ xem / theo dõi, không có thông tin cá nhân + ảnh của người báo gốc, không hủy / bổ sung được
+    /// </summary>
+    public bool ViewedAsDuplicateReporter { get; set; }
 }

@@ -534,6 +534,9 @@ public static partial class LocalizationCatalog
         { "[{0}] Trung tâm đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "[{0}] The command center has assigned your incident to a rescue team and is waiting for the team to accept." },
         { "Đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "The incident has been assigned to a rescue team, waiting for the team to accept." },
         { "Đội cứu hộ đã nhận lệnh", "Rescue team accepted" },
+        // Người báo trùng theo dõi sự cố gốc (23/11/2026)
+        { "Báo cáo của bạn trùng với sự cố đang xử lý", "Your report duplicates an incident already being handled" },
+        { "[{0}] Báo cáo của bạn trùng với sự cố {1} đang được xử lý. Bạn có thể theo dõi tiến độ và xe cứu hộ của sự cố {1}.", "[{0}] Your report duplicates incident {1}, which is already being handled. You can follow the progress and rescue vehicles of incident {1}." },
         { "[{0}] Xe {1} đã nhận lệnh và đang chuẩn bị xuất phát tới vị trí của bạn.", "[{0}] Vehicle {1} has accepted and is preparing to head to your location." },
         { "[{0}] Xe {1} từ chối sự cố \"{2}\" ({3}). {4}", "[{0}] Vehicle {1} rejected incident \"{2}\" ({3}). {4}" },
         { "Sự cố đã tự đóng vì tổ khác đã nghiệm thu.", "The incident was closed automatically because another team has completed it." },

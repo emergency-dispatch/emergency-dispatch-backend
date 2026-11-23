@@ -1580,6 +1580,26 @@ public class DispatchServiceTests
         Assert.Equal(ApiErrorCodes.Forbidden, (await _svc.GetCompletionReportByIdAsync(other.Id, staff.Id)).ErrorCode);
     }
 
+    // ===================== Người báo trùng nhận thông báo tiến độ của sự cố gốc (23/11/2026) =====================
+    [Fact]
+    public async Task ConfirmedDuplicateReporters_GetProgressNotifications()
+    {
+        var reporter = Guid.NewGuid();
+        var duplicateReporter = Guid.NewGuid();
+        var inc = Incident(tweak: i => i.ReportedByUserId = reporter);
+        _incidents.Setup(r => r.GetConfirmedDuplicateReporterIdsAsync(inc.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { duplicateReporter });
+        var u = Unit(RescueUnitType.FireTruck, 2);
+        var recipients = new List<Guid>();
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.Is<NotificationRequest>(r => r.Type == NotificationType.StatusUpdate), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyCollection<Guid> ids, NotificationRequest _, CancellationToken _) => recipients.AddRange(ids))
+            .Returns(Task.CompletedTask);
+
+        Assert.True((await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = u.Id }, _operatorId)).Success);
+
+        Assert.Equal(new[] { reporter, duplicateReporter }.OrderBy(x => x), recipients.OrderBy(x => x));
+    }
+
     // ===================== Người dân chỉ thấy xe khi tổ đã nhận lệnh (23/11/2026) =====================
     [Fact]
     public async Task CitizenTracking_HidesUnitUntilCrewAccepts_OperatorStillSeesIt()

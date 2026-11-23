@@ -784,6 +784,49 @@ public class IncidentServiceTests
         Assert.False(await _svc.CanAccessIncidentAsync(inc.Id, Guid.NewGuid()));
     }
 
+    // Người có báo cáo đã được Operator xác nhận trùng xem được sự cố gốc, nhưng không thấy thông tin cá nhân người báo gốc
+    [Fact]
+    public async Task ConfirmedDuplicateReporter_CanViewParent_WithoutOriginalReporterData()
+    {
+        var owner = UserWith(UserRole.Citizen);
+        owner.FullName = "Người báo gốc";
+        var duplicateReporter = UserWith(UserRole.Citizen);
+        var stranger = UserWith(UserRole.Citizen);
+        var parent = Existing(IncidentStatus.Dispatched, i =>
+        {
+            i.ReportedByUserId = owner.Id;
+            i.ReportedByUser = owner;
+            i.ReporterName = "Người báo gốc";
+            i.ReporterPhone = "0901234567";
+            i.OperatorNotes = "ghi chú nội bộ";
+            i.MediaItems.Add(new IncidentMedia { MediaUrl = "https://res.cloudinary.com/demo/image/upload/owner.jpg" });
+        });
+        _incidents.Setup(r => r.GetConfirmedDuplicateReporterIdsAsync(parent.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { duplicateReporter.Id });
+
+        Assert.True(await _svc.CanAccessIncidentAsync(parent.Id, duplicateReporter.Id));
+        Assert.False(await _svc.CanAccessIncidentAsync(parent.Id, stranger.Id));
+
+        var view = await _svc.GetIncidentByIdAsync(parent.Id, duplicateReporter.Id);
+        Assert.True(view.Success);
+        var dto = view.Data!;
+        Assert.True(dto.ViewedAsDuplicateReporter);
+        Assert.Equal(parent.Code, dto.Code);
+        Assert.Equal(IncidentStatus.Dispatched, dto.Status);
+        Assert.Null(dto.ReportedByUserId);
+        Assert.Null(dto.ReporterName);
+        Assert.Null(dto.ReporterPhone);
+        Assert.Null(dto.ReporterMedicalProfile);
+        Assert.Null(dto.OperatorNotes);
+        Assert.Empty(dto.MediaItems);
+
+        var own = await _svc.GetIncidentByIdAsync(parent.Id, owner.Id);
+        Assert.False(own.Data!.ViewedAsDuplicateReporter);
+        Assert.Equal("0901234567", own.Data.ReporterPhone);
+
+        Assert.False((await _svc.GetIncidentByIdAsync(parent.Id, stranger.Id)).Success);
+    }
+
     // =============== BR-07 hooks: linking on SOS, quick check, parent cancel ===============
     private Incident LinkParent(double distance = 40)
     {

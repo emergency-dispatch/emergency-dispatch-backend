@@ -106,6 +106,12 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     Task<IReadOnlyList<Incident>> GetLinkedReportsAsync(Guid parentIncidentId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Tài khoản người dân có báo cáo đã được xác nhận trùng (Cancelled + Duplicate) vào sự cố gốc này:
+    /// được xem / theo dõi sự cố gốc như người báo gốc
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetConfirmedDuplicateReporterIdsAsync(Guid parentIncidentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Tăng / giảm số báo cáo gom vào sự cố gốc (atomic, không qua xmin để SOS mới không bị lỗi xung đột);
     /// latestReportAt khác null → cập nhật mốc báo cáo gần nhất
     /// </summary>
