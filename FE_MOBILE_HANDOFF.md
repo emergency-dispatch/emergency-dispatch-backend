@@ -1623,3 +1623,41 @@ Backend thêm chế độ mới cho AI tự điều phối: **TriageVL-3B + ResN
 **3. Mã lý do mới trong `autoDispatchReasonCode`** (đã có ghi chú song ngữ trong `autoDispatchNote`): `ensemble-no-majority` (không CNN nào đồng ý với TriageVL ở ngưỡng), `ensemble-unavailable` (2 model CNN không chạy được, ví dụ không tải hoặc không đọc được ảnh), `ensemble-no-photo` (sự cố không có ảnh). **FE cần làm:** nếu FE đang dịch theo mã thì thêm 3 mã này; nếu hiển thị `autoDispatchNote` thì không cần đổi.
 
 Mobile không cần làm gì (chỉ web Operator / Admin dùng phần này).
+
+## 43. Cập nhật 23/11/2026: gợi ý địa chỉ khi người dân nhập địa chỉ chưa cụ thể
+
+Backend **không thay đổi gì**. Gợi ý địa chỉ do FE / mobile gọi thẳng Mapbox như hiện nay. Backend chỉ nhận `latitude`, `longitude`, `locationAddress` khi tạo sự cố; việc điều xe dựa vào toạ độ, chuỗi địa chỉ chỉ để hiển thị.
+
+**Hiện trạng:**
+- Web, form SOS (`components/citizen/SosModal.tsx`): đã có gợi ý khi gõ, không cần làm thêm, trừ lỗi ở mục 2.
+- Mobile, form SOS (`SosConfirmModal`, `MediaReportModal`): chỉ hiện địa chỉ GPS, chưa cho nhập nên chưa có gợi ý.
+- Mobile, `SafetyMapScreen`: có ô tìm kiếm kèm gợi ý, nhưng chỉ để xem bản đồ.
+
+**1. Mobile: thêm ô nhập địa chỉ có gợi ý vào form SOS.** Dùng khi GPS không lấy được, GPS sai, hoặc người dân báo sự cố ở chỗ khác chỗ mình đang đứng.
+
+**FE cần làm:**
+- **Ô nhập địa chỉ.** Trong `components/citizen/SosConfirmModal.tsx`, cạnh "Address Pill", thêm nút "Sửa vị trí" để mở ô nhập. Làm tương tự cho `MediaReportModal.tsx`. Giá trị ban đầu của ô là địa chỉ GPS hiện tại.
+- **Danh sách gợi ý.**
+  - Gõ từ 3 ký tự trở lên, chờ khoảng 400 ms rồi gọi `mapboxService.searchLocation`. Chép cách chờ này từ `SafetyMapScreen.handleSearchChange`.
+  - Hiện tối đa 5 gợi ý ngay dưới ô. Đang tìm thì hiện vòng xoay; không có kết quả thì hiện "Không tìm thấy, hãy thử ghi rõ hơn (số nhà, tên đường, phường)".
+  - Huỷ lần tìm cũ khi người dân gõ tiếp, để gợi ý cũ không đè lên gợi ý mới.
+- **Ưu tiên kết quả gần.** Thêm tham số tuỳ chọn `proximity` cho `searchLocation` (truyền toạ độ GPS hiện tại, nếu có) và nối vào URL Mapbox `&proximity=<lng>,<lat>`. Không có tham số này, gõ "Lê Văn Việt" có thể ra kết quả ở tỉnh khác.
+- **Khi chọn gợi ý.** Giữ toạ độ đã chọn: `{ latitude, longitude, address: item.name, source: 'manual' }`. Đổi `onConfirm` để truyền cả vị trí này về `HomeScreen`.
+- **Khi gửi SOS.** Trong `HomeScreen.handleConfirmSosDispatch` và luồng gửi kèm ảnh tương ứng, hiện cả hai đều gọi lại `refreshLocation` rồi lấy toạ độ GPS. Nếu có vị trí `manual` thì phải dùng vị trí này cho `checkOutsideServiceArea` và `createIncident` (`latitude`, `longitude`, `locationAddress`), không lấy GPS đè lên. Đây cũng là lỗi đã gặp ở web, xem mục 34: SosModal ghi đè toạ độ ghim.
+- **Nếu người dân gõ mà không chọn gợi ý:** không gửi luôn. Hiện "Chọn một địa chỉ trong danh sách" hoặc tự lấy gợi ý đầu tiên, nhưng phải cho người dân xem lại trước khi gửi. Một chuỗi địa chỉ không có toạ độ thì không điều xe được.
+- **Khi GPS lỗi.** Hiện `HomeScreen` vẫn mở modal xác nhận, nhưng lúc gửi lại gọi GPS nên lỗi. Hãy mở sẵn ô nhập địa chỉ và ghi "Không lấy được vị trí, hãy nhập địa chỉ".
+
+**2. Web + mobile: không dùng Nominatim cho gợi ý khi đang gõ.** Quy định sử dụng của Nominatim (OpenStreetMap) cấm làm gợi ý-khi-gõ phía client; dùng nhiều sẽ bị chặn IP. Hiện các hàm sau tự chuyển sang Nominatim cho từng lần gõ khi Mapbox lỗi hoặc không có kết quả:
+- Web: `searchAddress` và `searchAddressInArea` trong `services/admin/geocodeService.ts`. Các hàm này đang được dùng ở `SosModal.tsx`, `AddressSearchField.tsx` (trạm, tài khoản, nhân viên) và `operator/livemap/CreateIncidentPanel.tsx`.
+- Mobile: `mapboxService.searchLocation` trong `services/mapbox.service.ts`, đang được `SafetyMapScreen` gọi mỗi lần gõ.
+
+**FE cần làm:**
+- Thêm tuỳ chọn `{ fallbackToNominatim?: boolean }`, mặc định `false`, cho các hàm trên. Khi đang gõ thì chỉ dùng Mapbox.
+- Chỉ bật Nominatim khi người dân **chủ động bấm** nút tìm hoặc lúc gửi. Mỗi lần bấm gọi Nominatim đúng một lần. `forwardGeocode` và `reverseGeocode` trong `services/mapboxService.ts` của web đang làm đúng kiểu này.
+- Mobile: Nominatim yêu cầu `User-Agent` nhận diện được ứng dụng, giữ header hiện tại.
+
+**Kiểm tra:**
+- Mobile: tắt GPS → mở SOS → nhập "Lê Văn Việt Thủ Đức" → hiện gợi ý ở TP.HCM → chọn → gửi. Sự cố trên web Operator ở đúng toạ độ đã chọn, không phải vị trí GPS.
+- Chọn một địa chỉ ngoài vùng phục vụ → hiện `OutOfServiceAreaModal`.
+- Mạng chậm, gõ nhanh: gợi ý không nhảy lung tung.
+- Web và mobile: chặn Mapbox (sai token) → gõ địa chỉ → không có request nào tới `nominatim.openstreetmap.org` cho tới khi bấm nút tìm.
