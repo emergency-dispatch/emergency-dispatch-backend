@@ -19,6 +19,7 @@
 import glob
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -77,9 +78,25 @@ adapter_cfgs = glob.glob("/kaggle/input/**/adapter_config.json", recursive=True)
 if not service_files or not adapter_cfgs:
     raise SystemExit("❌ Không thấy ai_service.py hoặc lora_adapter/adapter_config.json. Kiểm tra dataset đã Add Input chưa.")
 adapter_dir = os.path.dirname(adapter_cfgs[0])
+
+
+def service_version(path):
+    # Bản mới có SERVICE_VERSION + confidence_source (độ tin cậy logprob); bản cũ luôn trả 0.95 / 0.85
+    text = open(path, encoding="utf-8").read()
+    match = re.search(r'^SERVICE_VERSION\s*=\s*"([^"]+)"', text, re.M)
+    return match.group(1) if match and "confidence_source" in text else None
+
+
+for f in service_files:
+    print(f"   tìm thấy: {f} (phiên bản {service_version(f) or 'CŨ'})")
+current = sorted((f for f in service_files if service_version(f)), key=service_version, reverse=True)
+if not current:
+    raise SystemExit("❌ ai_service.py trong dataset là bản CŨ (độ tin cậy luôn 95%). Upload bản mới "
+                     "(emergency-dispatch-backend/ai-service/ai_service.py) lên dataset → New Version, "
+                     "rồi trong notebook bấm ⋮ cạnh dataset → Check for updates.")
 os.makedirs(WORK_DIR, exist_ok=True)
-shutil.copy(service_files[0], os.path.join(WORK_DIR, "ai_service.py"))
-print(f"   service : {service_files[0]}\n   adapter : {adapter_dir}")
+shutil.copy(current[0], os.path.join(WORK_DIR, "ai_service.py"))
+print(f"   service : {current[0]} (phiên bản {service_version(current[0])})\n   adapter : {adapter_dir}")
 
 print("🚀 [4/6] Khởi động AI service (nạp model, lần đầu mất vài phút)...")
 env = dict(os.environ,
@@ -109,7 +126,7 @@ while True:
     try:
         h = health()
         if h.get("model_ready"):
-            print(f"   ✅ Model sẵn sàng trên {h.get('gpu_name')}")
+            print(f"   ✅ Model sẵn sàng trên {h.get('gpu_name')} — service {h.get('service_version', 'CŨ')}")
             break
     except (urllib.error.URLError, ConnectionError, OSError):
         pass

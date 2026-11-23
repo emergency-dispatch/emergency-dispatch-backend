@@ -1691,3 +1691,16 @@ Ca SC-261123-0390 đã lưu trong DB không tự sửa lại; Operator chốt ta
 **FE/mobile:** không bắt buộc đổi gì, vì `PendingDispatch` và `units` rỗng đã được xử lý sẵn.
 - Nên đổi câu "Chưa có thông tin xe cứu hộ đang di chuyển." ở web (`CitizenLiveTrackingMapModal.tsx`) và mobile (`CitizenTrackingModal`) thành message API trả về, hoặc thành "Đang chờ đội cứu hộ nhận lệnh". Khi đó người dân biết sự cố đã được giao.
 - Màn hình theo dõi nên tải lại tracking khi nhận thông báo "Đội cứu hộ đã nhận lệnh", vì đó là lúc xe bắt đầu hiện.
+
+## 46. Cập nhật 23/11/2026: độ tin cậy AI lúc nào cũng 95%
+
+**Nguyên nhân:** từ 13:31 ngày 23/11, notebook Kaggle chạy `ai_service.py` bản rất cũ. Bản này không tính xác suất token, chỉ trả cố định 0.95 khi là sự cố và 0.85 khi không phải. Backend lưu kèm `aiClassification.confidenceSource = "heuristic"`. Đây không phải lỗi FE.
+
+**Đã sửa:**
+- `ai_service.py` có `SERVICE_VERSION`, và `/health` trả về `service_version`.
+- Notebook Kaggle tự dừng nếu dataset chỉ có bản cũ.
+- Backend ghi cảnh báo vào log khi gặp bản cũ.
+
+**FE cần làm (nên làm):** khi `confidenceSource` khác `"logprob"`, không hiện số phần trăm như một xác suất thật.
+- `"heuristic"`: hiện "Ước lượng", hoặc "—" kèm tooltip "AI service bản cũ, chưa có độ tin cậy thật".
+- `"unparseable"`: hiện "—" (như mục 44).

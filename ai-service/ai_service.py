@@ -41,6 +41,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Phiên bản service: notebook Kaggle và /health in ra để biết đang chạy bản nào.
+# Bản cũ không có trường này (cũng không có confidence_source) → độ tin cậy luôn 0.95 / 0.85
+SERVICE_VERSION = "2026-11-23"
+
 # Cấu hình đường dẫn model
 BASE_MODEL_ID = "unsloth/Qwen2.5-VL-3B-Instruct-unsloth-bnb-4bit"
 LORA_ADAPTER_DIR = os.path.abspath(os.environ.get(
@@ -179,7 +183,9 @@ def health_check():
         "cuda_available": torch.cuda.is_available(),
         "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "lora_adapter": LORA_ADAPTER_DIR,
-        "model_ready": is_model_ready
+        "model_ready": is_model_ready,
+        "service_version": SERVICE_VERSION,
+        "confidence_mode": "logprob",
     }
 
 def value_token_probability(output_text: str, token_ids, step_probs, pattern: str) -> Optional[float]:

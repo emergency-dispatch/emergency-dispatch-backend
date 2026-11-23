@@ -349,6 +349,11 @@ public class AiClassificationService : IAiClassificationService
             var confidenceSource = root.TryGetProperty("confidence_source", out var srcProp) && srcProp.ValueKind == JsonValueKind.String
                 ? srcProp.GetString()
                 : "heuristic"; // bản ai_service.py cũ không gửi trường này
+            if (srcProp.ValueKind != JsonValueKind.String)
+            {
+                _logger.LogWarning("AI service đang chạy ai_service.py bản cũ (không có confidence_source): độ tin cậy {Confidence} là giá trị cố định, "
+                                   + "không tự điều phối được. Upload bản mới lên dataset Kaggle.", confidence);
+            }
 
             var tags = new List<string>();
             if (root.TryGetProperty("tags", out var tagsProp) && tagsProp.ValueKind == JsonValueKind.Array)
