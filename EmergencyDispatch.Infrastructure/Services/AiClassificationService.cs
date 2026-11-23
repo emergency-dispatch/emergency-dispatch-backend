@@ -346,22 +346,9 @@ public class AiClassificationService : IAiClassificationService
             var description = hasDescription ? descProp.GetString() : string.Empty;
             // Không tự ý điền 0.95 khi thiếu trường confidence
             var confidence = hasConfidence && confProp.TryGetDouble(out var cVal) ? cVal : 0.0;
-
-            TrafficJamStatus trafficJamStatus;
-            string trafficJamEvidence;
-            if (hasTrafficJam && (tjProp.ValueKind == JsonValueKind.True || tjProp.ValueKind == JsonValueKind.False))
-            {
-                var trafficJam = tjProp.GetBoolean();
-                trafficJamStatus = trafficJam ? TrafficJamStatus.Suspected : TrafficJamStatus.NoEvidence;
-                trafficJamEvidence = trafficJam
-                    ? "Qwen-VL Local nhận định có dấu hiệu cản trở hoặc ùn tắc giao thông."
-                    : "Qwen-VL Local không phát hiện dấu hiệu ùn tắc trên ảnh.";
-            }
-            else
-            {
-                trafficJamStatus = TrafficJamStatus.Unverified;
-                trafficJamEvidence = "Qwen-VL Local không trả về trường đánh giá ùn tắc (thiếu dữ liệu).";
-            }
+            var confidenceSource = root.TryGetProperty("confidence_source", out var srcProp) && srcProp.ValueKind == JsonValueKind.String
+                ? srcProp.GetString()
+                : "heuristic"; // bản ai_service.py cũ không gửi trường này
 
             var tags = new List<string>();
             if (root.TryGetProperty("tags", out var tagsProp) && tagsProp.ValueKind == JsonValueKind.Array)
@@ -376,6 +363,52 @@ public class AiClassificationService : IAiClassificationService
                 }
             }
 
+            // ai_service.py bản cũ không đọc được câu trả lời gồm nhiều object JSON / bị cắt → trả none/0 + "unparseable"
+            // dù model đã nhận diện đúng (SC-261123-0390). Đọc lại raw_response; không được thì bỏ độ tin cậy token
+            var summaryVi = ReadText(root, "description_vi", "summary_vi") ?? description;
+            var summaryEn = ReadText(root, "description_en", "summary_en", "summaryEn");
+            var summaryEnIsFallback = root.TryGetProperty("description_en_is_fallback", out var enFallback) && enFallback.ValueKind == JsonValueKind.True;
+            bool? recoveredJam = null;
+            if (tags.Contains("unparseable", StringComparer.OrdinalIgnoreCase))
+            {
+                var recovered = LocalAiOutputParser.TryParse(ReadText(root, "raw_response"));
+                if (recovered != null)
+                {
+                    _logger.LogWarning("AI service trả 'unparseable' nhưng đọc lại được raw_response ({Status}): Type={Type}, Level={Level}",
+                        recovered.ParseStatus, recovered.IncidentType, recovered.SeverityLevel);
+                    incidentType = recovered.IncidentType;
+                    severityLevel = recovered.SeverityLevel;
+                    recoveredJam = recovered.TrafficJam;
+                    tags = recovered.Tags ?? new List<string>();
+                    description = recovered.Description ?? string.Empty;
+                    summaryVi = recovered.Description ?? string.Empty;
+                    summaryEn = recovered.DescriptionEn;
+                    summaryEnIsFallback = false;
+                }
+                else
+                {
+                    _logger.LogWarning("AI service trả JSON không đọc được, bỏ độ tin cậy {Confidence} ({Source})", confidence, confidenceSource);
+                    confidence = 0.0;
+                    confidenceSource = "unparseable";
+                }
+            }
+
+            TrafficJamStatus trafficJamStatus;
+            string trafficJamEvidence;
+            if (recoveredJam.HasValue || (hasTrafficJam && (tjProp.ValueKind == JsonValueKind.True || tjProp.ValueKind == JsonValueKind.False)))
+            {
+                var trafficJam = recoveredJam ?? tjProp.GetBoolean();
+                trafficJamStatus = trafficJam ? TrafficJamStatus.Suspected : TrafficJamStatus.NoEvidence;
+                trafficJamEvidence = trafficJam
+                    ? "Qwen-VL Local nhận định có dấu hiệu cản trở hoặc ùn tắc giao thông."
+                    : "Qwen-VL Local không phát hiện dấu hiệu ùn tắc trên ảnh.";
+            }
+            else
+            {
+                trafficJamStatus = TrafficJamStatus.Unverified;
+                trafficJamEvidence = "Qwen-VL Local không trả về trường đánh giá ùn tắc (thiếu dữ liệu).";
+            }
+
             stopwatch.Stop();
             _logger.LogInformation("Phân loại AI thành công bằng Local Qwen2.5-VL LoRA: Type={Type}, Level={Level}, Jam={Jam} ({Ms}ms)",
                 incidentType, severityLevel, trafficJamStatus, stopwatch.ElapsedMilliseconds);
@@ -388,14 +421,12 @@ public class AiClassificationService : IAiClassificationService
                 TrafficJamStatus = trafficJamStatus,
                 TrafficJamEvidence = trafficJamEvidence,
                 HazardTags = tags,
-                Summary = ReadText(root, "description_vi", "summary_vi") ?? description,
-                SummaryEn = ReadText(root, "description_en", "summary_en", "summaryEn"),
-                SummaryEnIsFallback = root.TryGetProperty("description_en_is_fallback", out var enFallback) && enFallback.ValueKind == JsonValueKind.True,
+                Summary = summaryVi,
+                SummaryEn = summaryEn,
+                SummaryEnIsFallback = summaryEnIsFallback,
                 ConfidenceScore = confidence,
-                // Bản ai_service.py mới gửi confidence_source = "logprob" (xác suất token); bản cũ không gửi → heuristic
-                ConfidenceSource = root.TryGetProperty("confidence_source", out var srcProp) && srcProp.ValueKind == JsonValueKind.String
-                    ? srcProp.GetString()
-                    : "heuristic",
+                // "logprob" = xác suất token (được xét tự điều phối); "heuristic" / "unparseable" thì không
+                ConfidenceSource = confidenceSource,
                 IsSuccess = true,
                 ModelName = "Qwen2.5-VL-3B-LoRA (Local GPU)",
                 RawResponse = content,

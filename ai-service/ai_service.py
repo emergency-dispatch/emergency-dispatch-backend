@@ -200,35 +200,82 @@ def value_token_probability(output_text: str, token_ids, step_probs, pattern: st
     return None
 
 
-def extract_json(text: str) -> dict:
-    """Trích xuất và parse JSON an toàn từ kết quả sinh của mô hình"""
-    clean_text = text.strip()
-    if "```json" in clean_text:
-        match = re.search(r"```json\s*(\{.*?\})\s*```", clean_text, re.DOTALL)
-        if match:
-            clean_text = match.group(1)
-    elif "```" in clean_text:
-        match = re.search(r"```\s*(\{.*?\})\s*```", clean_text, re.DOTALL)
-        if match:
-            clean_text = match.group(1)
+_RESULT_KEYS = ("incident_type", "severity_level", "traffic_jam", "tags", "description", "description_en")
 
-    try:
-        return json.loads(clean_text)
-    except Exception:
-        start_idx = clean_text.find("{")
-        end_idx = clean_text.rfind("}")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+
+def _decode_json_objects(text: str) -> list:
+    """Mọi object JSON nằm liền nhau trong text (bỏ qua ```json, xuống dòng, chữ thừa giữa các object)"""
+    decoder = json.JSONDecoder()
+    objects = []
+    i = text.find("{")
+    while i != -1:
+        try:
+            obj, end = decoder.raw_decode(text, i)
+        except ValueError:
+            i = text.find("{", i + 1)
+            continue
+        if isinstance(obj, dict) and any(k in obj for k in _RESULT_KEYS):
+            objects.append(obj)
+        i = text.find("{", end)
+    return objects
+
+
+def _salvage_fields(text: str) -> Optional[dict]:
+    """JSON bị cắt giữa chừng (hết token): vẫn lấy được loại + mức độ nếu 2 trường này đã sinh xong"""
+    type_match = re.search(r'"incident_type"\s*:\s*"(fire|accident|none)"', text)
+    severity_match = re.search(r'"severity_level"\s*:\s*"?([0-3])\b', text)
+    if not type_match or not severity_match:
+        return None
+    result = {"incident_type": type_match.group(1), "severity_level": int(severity_match.group(1))}
+    jam_match = re.search(r'"traffic_jam"\s*:\s*(true|false)', text)
+    if jam_match:
+        result["traffic_jam"] = jam_match.group(1) == "true"
+    tags_match = re.search(r'"tags"\s*:\s*\[([^\]]*)\]', text)
+    if tags_match:
+        result["tags"] = re.findall(r'"([^"]+)"', tags_match.group(1))
+    for key in ("description", "description_en"):
+        desc_match = re.search(r'"' + key + r'"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if desc_match:
             try:
-                return json.loads(clean_text[start_idx:end_idx+1])
-            except Exception:
-                pass
-    
+                result[key] = json.loads('"' + desc_match.group(1) + '"')
+            except ValueError:
+                result[key] = desc_match.group(1)
+    return result
+
+
+def extract_json(text: str) -> dict:
+    """
+    Parse kết quả sinh của mô hình. Khoá "_parse" cho biết cách đọc được:
+      ok       — đúng 1 object JSON
+      merged   — nhiều object liền nhau (VD model viết JSON thứ 2 chỉ chứa description_en vì adapter chưa học
+                 trường này): object đầu quyết định loại / mức độ (cũng là chỗ tính xác suất token), object sau
+                 chỉ bổ sung trường còn thiếu
+      salvaged — JSON bị cắt (hết token) nhưng đã có incident_type + severity_level
+      failed   — không đọc được gì
+    """
+    clean_text = text.strip()
+    objects = _decode_json_objects(clean_text)
+    if objects:
+        result = dict(objects[0])
+        for extra in objects[1:]:
+            for key, value in extra.items():
+                if key not in result or result[key] in (None, "", []):
+                    result[key] = value
+        result["_parse"] = "ok" if len(objects) == 1 else "merged"
+        return result
+
+    salvaged = _salvage_fields(clean_text)
+    if salvaged is not None:
+        salvaged["_parse"] = "salvaged"
+        return salvaged
+
     return {
         "incident_type": "none",
         "severity_level": 0,
         "traffic_jam": False,
         "tags": ["unparseable"],
-        "description": clean_text[:200]
+        "description": clean_text[:200],
+        "_parse": "failed"
     }
 
 @app.post("/api/analyze-incident", response_model=AnalyzeResponse, dependencies=[Depends(require_api_key)])
@@ -308,7 +355,8 @@ async def analyze_incident(
         with torch.no_grad():
             generation = model.generate(
                 **inputs,
-                max_new_tokens=max(64, min(1024, int(os.getenv("AI_MAX_NEW_TOKENS", "320")))),
+                # 512: câu trả lời có cả description tiếng Việt và description_en (đôi khi trong 2 object JSON)
+                max_new_tokens=max(64, min(1024, int(os.getenv("AI_MAX_NEW_TOKENS", "512")))),
                 do_sample=False,
                 output_scores=True,
                 return_dict_in_generate=True
@@ -333,10 +381,19 @@ async def analyze_incident(
 
         inference_time_ms = int((time.time() - start_time) * 1000)
         parsed = extract_json(output_text)
+        parse_status = parsed.pop("_parse", "ok")
+        if parse_status != "ok":
+            print(f"[AI Service] JSON {parse_status}: {output_text[:300]!r}")
 
         incident_type = str(parsed.get("incident_type", "none")).lower()
-        severity_level = int(parsed.get("severity_level", 0))
-        traffic_jam = bool(parsed.get("traffic_jam", False))
+        if incident_type not in ("fire", "accident", "none"):
+            incident_type = "none"
+        try:
+            severity_level = min(3, max(0, int(parsed.get("severity_level", 0))))
+        except (TypeError, ValueError):
+            severity_level = 0
+        raw_jam = parsed.get("traffic_jam", False)
+        traffic_jam = raw_jam.strip().lower() == "true" if isinstance(raw_jam, str) else bool(raw_jam)
         tags = parsed.get("tags", [])
         if not isinstance(tags, list):
             tags = [str(tags)]
@@ -352,7 +409,12 @@ async def analyze_incident(
         # Độ tin cậy thật: p(token loại sự cố) × p(token mức độ). Không tìm được vị trí → heuristic cũ, backend không tự điều phối
         type_probability = value_token_probability(output_text, new_token_ids, step_probs, r'"incident_type"\s*:\s*"([^"]+)"')
         severity_probability = value_token_probability(output_text, new_token_ids, step_probs, r'"severity_level"\s*:\s*"?(\d)')
-        if type_probability is not None and severity_probability is not None:
+        if parse_status == "failed":
+            # Không đọc được kết quả → không báo độ tin cậy (trước đây vẫn gửi 0.99 của token gốc, Operator thấy "AI 99%"
+            # cạnh "Chưa phân loại")
+            confidence = 0.0
+            confidence_source = "unparseable"
+        elif type_probability is not None and severity_probability is not None:
             confidence = round(type_probability * severity_probability, 4)
             confidence_source = "logprob"
         else:

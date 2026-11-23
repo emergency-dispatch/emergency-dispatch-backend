@@ -86,6 +86,7 @@ env = dict(os.environ,
            AI_LORA_ADAPTER_DIR=adapter_dir,
            AI_SERVICE_API_KEY=API_KEY,
            AI_MAX_IMAGE_SIDE=MAX_IMAGE_SIDE,
+           AI_MAX_NEW_TOKENS="512",        # đủ cho description + description_en (tránh JSON bị cắt)
            AI_ALLOW_LOCAL_PATHS="0",       # public: không cho đọc file trên máy Kaggle
            PYTHONUNBUFFERED="1")
 log_file = open(LOG_PATH, "w")

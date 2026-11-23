@@ -1661,3 +1661,15 @@ Backend **không thay đổi gì**. Gợi ý địa chỉ do FE / mobile gọi t
 - Chọn một địa chỉ ngoài vùng phục vụ → hiện `OutOfServiceAreaModal`.
 - Mạng chậm, gõ nhanh: gợi ý không nhảy lung tung.
 - Web và mobile: chặn Mapbox (sai token) → gõ địa chỉ → không có request nào tới `nominatim.openstreetmap.org` cho tới khi bấm nút tìm.
+
+## 44. Cập nhật 23/11/2026: sửa lỗi "unparseable" (ca SC-261123-0390)
+
+**Nguyên nhân** (đã xem `rawResponse` trong DB; không phải do hết token): TriageVL trả **2 object JSON liền nhau**. Object thứ nhất có loại, mức độ và `description`; object thứ hai chỉ để chứa `description_en`, vì adapter chưa được dạy trả trường này. `extract_json` bản cũ không đọc được kiểu này nên đổi kết quả thành none/0 kèm `#unparseable`, trong khi vẫn gửi độ tin cậy 0,99.
+
+**Đã sửa:**
+- **Backend:** khi AI service trả `unparseable`, backend tự đọc lại `raw_response`. Object đầu quyết định loại và mức độ, object sau chỉ bổ sung trường còn thiếu. Nếu JSON bị cắt giữa chừng, backend vẫn lấy được loại và mức độ khi 2 trường này đã có. Nếu không đọc được gì thì `confidenceScore = 0` và `confidenceSource = "unparseable"`, không còn "AI 99%".
+- **`ai_service.py`:** sửa cùng cách ngay tại nguồn, và tăng `AI_MAX_NEW_TOKENS` mặc định từ 320 lên 512. Cần upload bản mới lên dataset Kaggle.
+
+**FE cần làm (tùy chọn):** khi `aiClassification.confidenceSource = "unparseable"`, hiện "—" thay cho phần trăm độ tin cậy. Ngoài ra không cần đổi gì: tóm tắt AI giờ là câu mô tả, không còn đoạn JSON thô.
+
+Ca SC-261123-0390 đã lưu trong DB không tự sửa lại; Operator chốt tay như bình thường.
