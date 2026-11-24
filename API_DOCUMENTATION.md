@@ -1727,3 +1727,31 @@ Seed hệ thống:
 - **Thông báo song ngữ**: `Notifications.TitleEn`, `MessageEn`; `Users.UiLanguage` (migration `20261118050714_Bilingual_Notifications`). `GET /api/notifications` trả theo ngôn ngữ request; realtime / push theo `UiLanguage` của người nhận (ghi khi đăng nhập, khi `PUT /api/users/fcm-token`). **Mới `PUT /api/users/ui-language`** `{ "language": "vi" | "en" }`.
 - **Push FCM**: token bị Firebase báo `Unregistered` / `SenderIdMismatch` được tự xóa khỏi tài khoản.
 - **Chỉ đường**: khuyên tự host OSRM (README mục "Chỉ đường đường bộ"); `Routing:OsrmBaseUrl`.
+
+## Thông báo khu vực có sự cố cho Citizen — 23/11/2026
+
+**Người nhận:** mọi tài khoản `Role = Citizen`, `Status = Active`, chưa xóa. Đây là trạng thái tài khoản, không phải trạng thái online; không lọc theo GPS của người nhận.
+
+**Điều kiện phát:** một trong hai bằng chứng đã được lưu thành công:
+
+1. Operator/Admin xác minh có sự cố (`VerifiedByUserId`, `VerifiedAt`).
+2. AI đã tự điều phối thành công (`AutoDispatchState = Dispatched`, lượt phân công không có `AssignedByUserId`) **và RescueStaff thực sự nhận nhiệm vụ** (`AcceptedAt` cùng lịch sử chuyển sang `Accepted` do RescueStaff thực hiện).
+
+AI chỉ có độ tin cậy cao hoặc mới giao nhưng chưa được nhận chưa đủ điều kiện. Sự cố phải còn hiệu lực, mức 1–3, loại khác `None`, chưa xóa và không phải bản tin trùng được liên kết vào sự cố khác. Mỗi sự cố gốc chỉ tạo một thông báo; xác minh sau khi staff đã nhận không tạo thêm thông báo.
+
+| API | Quyền | Mục đích |
+| --- | --- | --- |
+| `GET /api/settings/citizen-incident-alerts` | Admin, Operator | Đọc cấu hình theo `SettingsRecordDto` (`values`, metadata) |
+| `PUT /api/settings/citizen-incident-alerts` | Admin | Gửi `{ "enabled": true }` hoặc `false` |
+| `GET /api/citizen-incident-alerts?pageIndex=1&pageSize=20` | Citizen | Danh sách thông báo đã gửi vào hộp thư của chính người gọi, trong `ApiResponseDto.data` dạng phân trang |
+| `GET /api/citizen-incident-alerts/{id}` | Citizen | Chi tiết thông báo an toàn; 404 nếu không thuộc người gọi |
+
+Mặc định `enabled = false`. Server tự đặt `enabledFromUtc` khi bật, không nhận thời gian do client tự đặt. Chỉ các lần xác nhận/tiếp nhận từ mốc này mới được phát; tắt rồi bật lại tạo mốc mới. Các thông báo đã xếp hàng vẫn được giữ và có thể tiếp tục gửi sau khi bật lại nếu sự cố/người nhận còn hợp lệ.
+
+DTO chi tiết chỉ có `id`, `area`, `message`, `createdAt`. Nội dung Việt: **“Có sự cố tại {khu vực báo cáo}.”**; Anh: **“An incident has been reported at {reported area}.”** Khu vực lấy từ `LocationAddress`, loại bỏ HTML, URL, email và chuỗi giống số điện thoại; thiếu địa chỉ thì dùng tọa độ làm tròn ba chữ số thập phân. Không lấy tiêu đề, mô tả, ảnh, danh tính hoặc hồ sơ y tế người báo.
+
+Thông báo hộp thư dùng `NotificationType.CitizenIncidentAlert = 6`, `incidentId = null`, `dataJson = {"type":"citizen_incident_alert","publicAlertId":"<guid>"}`. SignalR dùng sự kiện có sẵn `ReceiveNotification`. FCM data gồm `type = "CitizenIncidentAlert"`, `notificationId`, `publicAlertId`. Client mở API thông báo trên, không mở chi tiết sự cố riêng của người khác. Header `Accept-Language` chọn ngôn ngữ API; push/realtime theo `UiLanguage` của người nhận.
+
+Worker kiểm tra khoảng 10 giây/lần, lưu hộp thư và hàng đợi cùng giao dịch trước khi gửi. Gửi FCM mức ưu tiên thường; không phát chuông khẩn cấp của đội cứu hộ. Gửi lỗi được thử lại tối đa 5 lượt với thời gian chờ tăng dần; không nhân bản bản ghi hộp thư. Không có FCM token vẫn đọc được hộp thư. Sau sự cố tiến trình, push có thể được nhà cung cấp nhận lặp lại; client nên khử trùng theo `notificationId`. Tắt cấu hình dừng việc tạo/gửi mới, không xóa thông báo đã có.
+
+Migration: `20261123145602_AddCitizenIncidentAlerts`. Hướng dẫn kiểm tra: [CITIZEN_INCIDENT_ALERTS_TESTING.md](CITIZEN_INCIDENT_ALERTS_TESTING.md).

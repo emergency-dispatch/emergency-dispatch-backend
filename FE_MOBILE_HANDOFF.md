@@ -1760,3 +1760,25 @@ Ca SC-261123-0390 đã lưu trong DB không tự sửa lại; Operator chốt ta
    - Không gọi API danh sách bổ sung.
    - Không hiện khối người báo và hồ sơ y tế.
    - Thêm dòng "Bạn đang theo dõi sự cố này vì báo cáo của bạn đã được xác nhận trùng".
+
+## 49. Thông báo khu vực có sự cố cho Citizen — 23/11/2026
+
+Backend bổ sung thông báo cho **tất cả tài khoản Citizen Active chưa xóa**, kể cả offline. Không cần GPS người nhận. Điều kiện duy nhất theo hai nhánh: **Operator/Admin xác minh có sự cố**, hoặc **AI giao nhiệm vụ thành công và RescueStaff nhận nhiệm vụ**. AI tự tin cao nhưng chưa giao/nhận chưa phát. Mỗi sự cố gốc thông báo một lần.
+
+Nội dung chỉ có “Có sự cố tại [khu vực báo cáo]” / “An incident has been reported at [reported area]”. Không hiển thị người báo, ảnh hay hồ sơ y tế. Không bổ sung thông báo đóng/hủy cho toàn bộ Citizen trong chức năng này.
+
+**Client cần tích hợp (backend không sửa FE/mobile):**
+
+- Thêm enum `NotificationType.CitizenIncidentAlert = 6` (giữ nguyên các giá trị cũ).
+- Tiếp tục nhận `ReceiveNotification` của SignalR và FCM. Hộp thư vẫn qua `GET /api/notifications`.
+- Hộp thư/realtime: đọc `dataJson.type = "citizen_incident_alert"`, `publicAlertId`. Push FCM: `data.type = "CitizenIncidentAlert"`, `notificationId`, `publicAlertId`. Hai lớp payload theo quy ước sẵn có, không coi là JSON cùng kiểu.
+- Khi mở thông báo, gọi `GET /api/citizen-incident-alerts/{publicAlertId}` bằng Citizen JWT. DTO gồm đúng `id`, `area`, `message`, `createdAt`. Không điều hướng tới `/api/incidents/{id}`: `incidentId` trong notification mới luôn `null`.
+- Nếu cần danh sách riêng: `GET /api/citizen-incident-alerts?pageIndex=1&pageSize=20`. Chỉ đọc được thông báo của người gọi, ID người khác trả 404.
+- Khử trùng popup theo `notificationId` khi FCM và SignalR cùng đến hoặc nhà cung cấp gửi lại. Hiển thị mức thông tin thường, không dùng chuông/DND bypass của RescueStaff.
+- Dùng `Accept-Language: vi/en` khi đọc API; cập nhật `UiLanguage` và FCM token bằng API có sẵn để push đúng ngôn ngữ.
+
+Backend mặc định tắt. Sau khi áp dụng migration `20261123145602_AddCitizenIncidentAlerts`, Admin bật `PUT /api/settings/citizen-incident-alerts` với `{ "enabled": true }`; mốc kích hoạt do server đặt. Chỉ bật trên môi trường thử với tài khoản/thiết bị thử trước khi vận hành. Tắt dừng tạo/gửi mới; thông báo đã lưu không bị xóa.
+
+Backend xử lý lưu bền, chống tạo hai lần, retry FCM và kiểm tra người nhận còn Active trước khi gửi. Hiển thị push trên thiết bị vẫn cần token, quyền thông báo và cấu hình Firebase hợp lệ; chưa thể coi kiểm thử unit/PostgreSQL là kiểm thử hiển thị trên điện thoại.
+
+Chi tiết API: [API_DOCUMENTATION.md](API_DOCUMENTATION.md); kịch bản: [CITIZEN_INCIDENT_ALERTS_TESTING.md](CITIZEN_INCIDENT_ALERTS_TESTING.md).

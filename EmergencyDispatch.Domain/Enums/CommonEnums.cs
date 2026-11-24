@@ -20,5 +20,7 @@ public enum NotificationType
     Escalation = 3,
     System = 4,
     /// <summary>Được giao / rút khỏi nhiệm vụ phân luồng, giải tỏa điểm nghẽn giao thông</summary>
-    TrafficTask = 5
+    TrafficTask = 5,
+    /// <summary>Area-only announcement after human verification or staff acceptance of an AI dispatch.</summary>
+    CitizenIncidentAlert = 6
 }
