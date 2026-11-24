@@ -1755,3 +1755,49 @@ Thông báo hộp thư dùng `NotificationType.CitizenIncidentAlert = 6`, `incid
 Worker kiểm tra khoảng 10 giây/lần, lưu hộp thư và hàng đợi cùng giao dịch trước khi gửi. Gửi FCM mức ưu tiên thường; không phát chuông khẩn cấp của đội cứu hộ. Gửi lỗi được thử lại tối đa 5 lượt với thời gian chờ tăng dần; không nhân bản bản ghi hộp thư. Không có FCM token vẫn đọc được hộp thư. Sau sự cố tiến trình, push có thể được nhà cung cấp nhận lặp lại; client nên khử trùng theo `notificationId`. Tắt cấu hình dừng việc tạo/gửi mới, không xóa thông báo đã có.
 
 Migration: `20261123145602_AddCitizenIncidentAlerts`. Hướng dẫn kiểm tra: [CITIZEN_INCIDENT_ALERTS_TESTING.md](CITIZEN_INCIDENT_ALERTS_TESTING.md).
+
+## Bản đồ sự cố cho Citizen — 24/11/2026
+
+API riêng, yêu cầu JWT `Citizen` và kiểm tra tài khoản hiện tại còn `Active`, chưa xóa. Không yêu cầu Citizen online trước đó, thuộc nhóm nhận thông báo cũ hoặc ở gần sự cố. Bản đồ dùng cùng điều kiện xác nhận với thông báo: Operator/Admin đã xác minh, hoặc AI đã điều phối và có lịch sử RescueStaff nhận nhiệm vụ. Không công khai chỉ dựa vào confidence AI hay trạng thái đã giao nhưng chưa nhận.
+
+Chỉ hiện sự cố gốc còn `Verified`, `Dispatched`, `InProgress`, `Escalated`, mức 1–3, loại khác `None`, tọa độ hợp lệ. Bản tin trùng, chưa xác nhận, đã hoàn tất/hủy/xóa không hiện. Quy tắc được đánh giá lại mỗi lần đọc; nếu không còn bằng chứng tiếp nhận hợp lệ thì marker cũng bị loại. **Bản đồ độc lập công tắc phát thông báo Citizen**: vẫn đọc được sự cố đang hoạt động khi `citizen-incident-alerts.enabled = false`, không phát thêm notification hoặc FCM.
+
+| API | Kết quả |
+| --- | --- |
+| `GET /api/citizen-map/incidents?pageIndex=1&pageSize=100` | `ApiResponseDto<PaginatedResultDto<CitizenMapIncidentDto>>` |
+| `GET /api/citizen-map/incidents?south=10.8&west=106.7&north=10.9&east=106.9` | Chỉ marker nằm trong vùng xem; vẫn có phân trang |
+| `GET /api/citizen-map/incidents/{id}` | Một marker còn đủ điều kiện; không có/không công khai/đã kết thúc trả 404 |
+| `GET /api/citizen-map/incidents/by-alert/{publicAlertId}` | Mở marker từ `publicAlertId` trong thông báo Citizen; 404 nếu không còn hiện trên bản đồ |
+
+Mặc định `pageIndex=1`, `pageSize=100`; giới hạn 1–500. Trang/kích thước không hợp lệ trả 400. Có bộ lọc vùng thì phải gửi đủ bốn số hữu hạn: vĩ độ [-90,90], kinh độ [-180,180], `south <= north`; sai trả 400. `west > east` biểu thị vùng qua kinh tuyến 180°. Không đăng nhập trả 401; sai vai trò hoặc tài khoản không còn Active trả 403. Response không được cache dùng chung.
+
+Marker chỉ có các trường sau; chuỗi và message theo `Accept-Language: vi/en`, các mã enum không dịch:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "latitude": 10.84,
+  "longitude": 106.8,
+  "area": "Đường D1, Khu Công nghệ cao",
+  "message": "Có sự cố tại Đường D1, Khu Công nghệ cao.",
+  "eventType": "TrafficAccident",
+  "severity": "Level2",
+  "status": "InProgress",
+  "reportedAt": "2026-11-24T00:00:00Z",
+  "updatedAt": null
+}
+```
+
+`id` dùng định danh marker, **không cấp quyền mở API chi tiết sự cố riêng tư**. DTO không chứa tên/điện thoại người báo, ảnh, mô tả tự do, hồ sơ y tế, danh sách nhân sự hoặc xe. Khu vực được làm sạch như thông báo Citizen; không có địa chỉ thì dùng tọa độ làm tròn trong nhãn khu vực. Tọa độ marker vẫn là vị trí báo cáo.
+
+**SignalR:** kết nối `/hubs/incidents` bằng Citizen JWT; gọi `SubscribeCitizenMap()` khi mở bản đồ, `UnsubscribeCitizenMap()` khi đóng. Subscribe kiểm tra Active ở DB và chỉ vào nhóm `citizen-map`, không vào các nhóm sự cố riêng tư.
+
+Server phát `ReceiveCitizenMapChanged` khi tập marker hoặc dữ liệu marker thay đổi:
+
+```json
+{ "revision": "<sha256>", "changedAt": "2026-11-24T00:00:00Z" }
+```
+
+Đây là **tín hiệu tải lại**, không phải payload thêm/sửa marker. Worker quét khoảng 10 giây/lượt, không có cam kết độ trễ chính xác. Khi nhận sự kiện, client đọc lại API cho vùng đang xem và thay thế snapshot marker, gồm gỡ marker đã đóng/hủy. Phải đọc lại cả sau kết nối/subscribe/reconnect, không chờ sự kiện đầu tiên; có thể dùng polling dự phòng. `revision` chỉ so sánh bằng/khác, không phải số thứ tự thời gian. Nếu có nhiều trang, cần tải đủ trang cần hiển thị, không coi trang đầu là toàn bộ dữ liệu.
+
+Không thêm migration cho bản đồ. Lookup `by-alert` sử dụng bảng thông báo từ migration Citizen trước đó; chức năng thông báo và quy tắc truy cập sự cố riêng tư giữ nguyên.

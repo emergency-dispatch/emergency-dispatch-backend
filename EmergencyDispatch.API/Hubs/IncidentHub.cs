@@ -1,4 +1,5 @@
 using EmergencyDispatch.Application.Localization;
+using EmergencyDispatch.Application.Services;
 using System.Security.Claims;
 using EmergencyDispatch.API.Realtime;
 using EmergencyDispatch.Application.Interfaces;
@@ -17,11 +18,13 @@ public class IncidentHub : Hub
 {
     private readonly IIncidentService _incidentService;
     private readonly ILogger<IncidentHub> _logger;
+    private readonly ICitizenMapService _citizenMap;
 
-    public IncidentHub(IIncidentService incidentService, ILogger<IncidentHub> logger)
+    public IncidentHub(IIncidentService incidentService, ILogger<IncidentHub> logger, ICitizenMapService citizenMap)
     {
         _incidentService = incidentService;
         _logger = logger;
+        _citizenMap = citizenMap;
     }
 
     public override async Task OnConnectedAsync()
@@ -51,6 +54,20 @@ public class IncidentHub : Hub
     /// </summary>
     public Task UnsubscribeIncident(Guid incidentId)
         => Groups.RemoveFromGroupAsync(Context.ConnectionId, RealtimeContract.IncidentGroup(incidentId));
+
+    /// <summary>Subscribe to map invalidations; does not grant access to private incident groups.</summary>
+    [Authorize(Roles = "Citizen")]
+    public async Task SubscribeCitizenMap()
+    {
+        var userId = Guid.TryParse(Context.User?.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
+        if (!await _citizenMap.CanAccessAsync(userId, Context.ConnectionAborted))
+            throw new HubException(LocalizationHelper.Localize(CitizenMapMessages.Forbidden));
+        await Groups.AddToGroupAsync(Context.ConnectionId, RealtimeContract.CitizenMapGroup, Context.ConnectionAborted);
+    }
+
+    [Authorize(Roles = "Citizen")]
+    public Task UnsubscribeCitizenMap()
+        => Groups.RemoveFromGroupAsync(Context.ConnectionId, RealtimeContract.CitizenMapGroup, Context.ConnectionAborted);
 }
 
 /// <summary>

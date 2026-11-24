@@ -9,6 +9,7 @@ public static class RealtimeContract
     public const string OperatorsGroup = "operators";
     public const string RescuersGroup = "rescuers";
     public const string AdminsGroup = "admins";
+    public const string CitizenMapGroup = "citizen-map";
 
     public static string IncidentGroup(Guid incidentId) => $"incident:{incidentId}";
     public static string StationGroup(string stationId) => $"station:{stationId}";
@@ -55,6 +56,9 @@ public static class RealtimeContract
 
     /// <summary>Thông báo cá nhân mới (gửi riêng tới từng người dùng theo userId)</summary>
     public const string ReceiveNotification = "ReceiveNotification";
+
+    /// <summary>Public map changed. Refetch the citizen map API; contains no private incident data.</summary>
+    public const string ReceiveCitizenMapChanged = "ReceiveCitizenMapChanged";
 
     /// <summary>Tài khoản bị khóa / xóa / đổi quyền / đổi trạm: client phải đăng xuất ngay. Payload: { reason }</summary>
     public const string ForceLogout = "ForceLogout";

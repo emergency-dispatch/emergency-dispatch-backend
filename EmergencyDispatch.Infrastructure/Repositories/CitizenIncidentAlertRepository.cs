@@ -1,6 +1,7 @@
 using EmergencyDispatch.Domain.Entities;
 using EmergencyDispatch.Domain.Enums;
 using EmergencyDispatch.Domain.Interfaces;
+using EmergencyDispatch.Domain.Policies;
 using EmergencyDispatch.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,17 +10,8 @@ namespace EmergencyDispatch.Infrastructure.Repositories;
 public sealed class CitizenIncidentAlertRepository(ApplicationDbContext db) : ICitizenIncidentAlertRepository
 {
     public async Task<IReadOnlyList<Guid>> GetCandidateIdsAsync(DateTime since, int batchSize, CancellationToken ct = default)
-        => await db.Incidents.AsNoTracking().Where(i => i.DuplicateOfIncidentId == null
-            && (i.Status == IncidentStatus.Verified || i.Status == IncidentStatus.Dispatched
-                || i.Status == IncidentStatus.InProgress || i.Status == IncidentStatus.Escalated)
-            && i.Severity >= SeverityLevel.Level1 && i.Severity <= SeverityLevel.Level3 && i.EventType != IncidentEventType.None
-            && !db.CitizenIncidentAlerts.Any(a => a.IncidentId == i.Id)
-            && (i.VerifiedByUserId != null && i.VerifiedAt >= since
-                || i.AutoDispatchState == AutoDispatchState.Dispatched && i.DispatchAssignments.Any(a => !a.IsDeleted
-                    && a.AssignedByUserId == null && a.AcceptedAt >= since
-                    && (a.Status == DispatchAssignmentStatus.Accepted || a.Status == DispatchAssignmentStatus.EnRoute || a.Status == DispatchAssignmentStatus.OnScene)
-                    && a.StatusHistories.Any(h => !h.IsDeleted && h.NewStatus == DispatchAssignmentStatus.Accepted
-                        && h.ChangedByUserId != null && h.ChangedByUser != null && h.ChangedByUser.Role == UserRole.RescueStaff))))
+        => await db.Incidents.AsNoTracking().Where(CitizenIncidentVisibility.ConfirmedActiveSince(since))
+            .Where(i => !db.CitizenIncidentAlerts.Any(a => a.IncidentId == i.Id))
             .OrderBy(i => i.CreatedAt).ThenBy(i => i.Id).Take(batchSize).Select(i => i.Id).ToListAsync(ct);
 
     public Task<Incident?> GetIncidentSnapshotAsync(Guid incidentId, CancellationToken ct = default)

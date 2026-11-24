@@ -62,3 +62,26 @@ dotnet test EmergencyDispatch.Tests/EmergencyDispatch.Tests.csproj
 ```
 
 Unit tests dùng sender/realtime giả lập để kiểm tra logic, không gửi thông báo tới tài khoản thật. Kết quả PostgreSQL riêng xác nhận migration, truy vấn và lease; kiểm thử hiển thị FCM trên điện thoại phải được thực hiện riêng và lưu bằng chứng thiết bị.
+
+## Bổ sung bản đồ Citizen — 24/11/2026
+
+Phần bản đồ không cần bật công tắc phát thông báo và không gửi FCM. Không thêm migration. Dùng DB thử riêng, JWT Admin/Operator/RescueStaff/Citizen như trên. Chỉ các bản ghi sự cố còn hoạt động và có bằng chứng xác nhận mới xuất hiện.
+
+1. Đăng nhập Citizen Active; `GET /api/citizen-map/incidents?pageIndex=1&pageSize=100`. Kết quả có phân trang, marker có tọa độ, khu vực, message song ngữ, loại/mức độ/trạng thái; không có dữ liệu cá nhân/ảnh/y tế.
+2. Tạo sự cố chưa xác minh: không hiện. AI tự tin cao hoặc đã giao nhưng staff chưa nhận: không hiện. Operator xác minh hoặc staff thực sự nhận lượt AI giao: hiện. Kiểm tra cả `GET /api/citizen-map/incidents/{id}`.
+3. Truyền `south=10.8&west=106.7&north=10.9&east=106.9`; chỉ sự cố trong vùng được trả về. Gửi thiếu một mốc, vĩ độ 91, trang 0 hoặc pageSize 501: 400. Giữ fixture trong vùng phục vụ nếu tạo bằng Citizen SOS.
+4. Không JWT: 401. RescueStaff/Operator/Admin: 403 với endpoint Citizen. Citizen bị Suspended/Inactive/xóa: 403 dù token cũ còn tồn tại.
+5. Kết nối SignalR `/hubs/incidents`, đăng ký `ReceiveCitizenMapChanged`, gọi `SubscribeCitizenMap()` bằng Citizen JWT. Citizen không Active không subscribe được. Không gọi `SubscribeIncident` của người báo khác.
+6. Lấy snapshot ngay sau subscribe. Xác minh sự cố mới, đổi vị trí/trạng thái của sự cố thử: sau worker cycle có sự kiện `{ revision, changedAt }`. Đọc lại API, kiểm tra marker mới/cập nhật.
+7. Hoàn tất, hủy hoặc liên kết trùng sự cố thử: API loại marker đó, chi tiết trả 404; sau lượt quét có revision mới. Client phải tải lại và gỡ marker, không chỉ append.
+8. Ngắt rồi kết nối lại: subscribe và đọc snapshot mới ngay, kể cả khi không nhận sự kiện trong lúc offline. Không khẳng định SignalR lưu/phát bù mọi sự kiện.
+9. Nếu đã có thông báo Citizen cho sự cố thử, lấy `publicAlertId`; `GET /api/citizen-map/incidents/by-alert/{publicAlertId}` trả marker khi còn đủ điều kiện, 404 sau đóng/hủy. Không dùng ID thông báo làm ID sự cố.
+10. Đặt `citizen-incident-alerts.enabled = false`: API bản đồ và SignalR bản đồ vẫn hoạt động; không tạo thông báo Citizen mới vì thao tác xem bản đồ.
+
+Kiểm thử tự động riêng:
+
+```powershell
+dotnet test EmergencyDispatch.Tests/EmergencyDispatch.Tests.csproj --filter "FullyQualifiedName~CitizenMap|FullyQualifiedName~CitizenIncidentAlert"
+```
+
+Unit tests kiểm tra điều kiện công khai, payload tối thiểu/song ngữ, phân quyền API/hub, phân trang/vùng xem và worker gửi lại khi SignalR lỗi. Kiểm thử PostgreSQL riêng kiểm tra bản dịch SQL, lọc/phân trang, revision và gỡ marker; cần kiểm tra hiển thị bản đồ trên client sau khi FE/Mobile tích hợp.

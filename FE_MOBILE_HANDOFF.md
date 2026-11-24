@@ -1782,3 +1782,21 @@ Backend mặc định tắt. Sau khi áp dụng migration `20261123145602_AddCit
 Backend xử lý lưu bền, chống tạo hai lần, retry FCM và kiểm tra người nhận còn Active trước khi gửi. Hiển thị push trên thiết bị vẫn cần token, quyền thông báo và cấu hình Firebase hợp lệ; chưa thể coi kiểm thử unit/PostgreSQL là kiểm thử hiển thị trên điện thoại.
 
 Chi tiết API: [API_DOCUMENTATION.md](API_DOCUMENTATION.md); kịch bản: [CITIZEN_INCIDENT_ALERTS_TESTING.md](CITIZEN_INCIDENT_ALERTS_TESTING.md).
+
+## 50. Bản đồ sự cố công khai cho Citizen — 24/11/2026
+
+**BE đã bổ sung API + SignalR; chưa sửa Web/Mobile.** Chỉ hiện sự cố đang hoạt động đã được Operator/Admin xác minh, hoặc AI đã giao và RescueStaff đã nhận. Không hiện chỉ vì AI tự tin cao. Mọi Citizen Active có thể xem, độc lập công tắc gửi thông báo và danh sách người nhận thông báo trước đó.
+
+**Client tích hợp:**
+
+1. Dùng Citizen JWT gọi `GET /api/citizen-map/incidents`. Có thể truyền đủ `south,west,north,east` theo vùng bản đồ và `pageIndex,pageSize` (mặc định 100, tối đa 500). Đọc đủ phân trang nếu muốn hiện toàn bộ kết quả; DTO nằm trong `response.data.items`.
+2. Vẽ marker từ `latitude`, `longitude`; dùng `id` làm khóa. Popup chỉ dùng `area`, `message`, `eventType`, `severity`, `status`, thời gian nếu cần. Không gọi `/api/incidents/{id}` để lấy thông tin bổ sung của người khác.
+3. Hub `/hubs/incidents`: đăng ký listener `ReceiveCitizenMapChanged`, kết nối, gọi `SubscribeCitizenMap()`, rồi tải snapshot hiện tại. Sau reconnect phải subscribe và tải lại. Khi thoát bản đồ gọi `UnsubscribeCitizenMap()` và dọn listener.
+4. Sự kiện chỉ có `{ revision, changedAt }`. Nhận sự kiện thì gọi lại API theo vùng đang xem, thay thế snapshot hoặc đối chiếu ID để gỡ marker không còn trả về. Không xử lý như `ReceiveIncidentUpdate` của Operator; không append marker mãi mà bỏ qua xóa.
+5. Worker quét khoảng 10 giây; mạng có thể làm mất sự kiện. Luôn tải lại khi mở/reconnect và nên có polling dự phòng. Không dùng `revision` như số tăng dần; chỉ khử trùng bằng so sánh bằng nhau.
+6. Nếu mở bản đồ từ thông báo Citizen, lấy `publicAlertId` rồi gọi `GET /api/citizen-map/incidents/by-alert/{publicAlertId}` để lấy marker và căn giữa. Nếu 404 thì sự cố không còn công khai/đang hoạt động: vẫn có thể xem nội dung thông báo lịch sử bằng API thông báo, nhưng không vẽ marker cũ.
+7. `Accept-Language: vi/en` chọn ngôn ngữ message/nhãn khu vực. Khi đổi ngôn ngữ, tải lại API. Tọa độ không đổi; các mã enum giữ nguyên.
+
+Danh sách/chi tiết đều kiểm tra tài khoản còn Active. Sự cố hoàn tất, hủy, xóa hoặc gộp trùng sẽ biến mất khỏi API; lần quét tiếp theo phát tín hiệu cập nhật. Sự kiện chỉ chứa revision/thời gian, không phát ảnh, thông tin người báo, dữ liệu y tế hay vị trí xe cho toàn bộ người dân.
+
+Phần bản đồ không phát thêm notification, FCM, SMS và không thay công tắc phát thông báo. Không cần migration mới; cấu trúc và dữ liệu DB hiện có được giữ nguyên. Contract đầy đủ trong [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
