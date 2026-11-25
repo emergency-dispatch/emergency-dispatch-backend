@@ -1,12 +1,13 @@
 namespace EmergencyDispatch.Domain.Enums;
 
 /// <summary>
-/// Định dạng phương tiện truyền thông đính kèm (hình ảnh hoặc video)
+/// Định dạng media đính kèm; giữ nguyên Photo=0, Video=1 để tương thích client cũ.
 /// </summary>
 public enum MediaType
 {
     Photo = 0,
-    Video = 1
+    Video = 1,
+    Audio = 2
 }
 
 /// <summary>

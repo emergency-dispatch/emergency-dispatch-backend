@@ -19,4 +19,5 @@ public class IncidentSupplement : BaseEntity
     /// Ảnh / video bổ sung (URL do POST /api/media/upload trả về)
     /// </summary>
     public List<string> MediaUrls { get; set; } = new();
+    public string? AudioAttachmentsJson { get; set; }
 }

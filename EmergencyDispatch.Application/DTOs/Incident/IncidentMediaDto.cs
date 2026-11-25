@@ -9,4 +9,8 @@ public class IncidentMediaDto
     public MediaType MediaType { get; set; }
     public long FileSizeBytes { get; set; }
     public string? MimeType { get; set; }
+    public string? PublicId { get; set; }
+    public double? DurationSeconds { get; set; }
+    public string? Transcript { get; set; }
+    public string? TranscriptionStatus { get; set; }
 }

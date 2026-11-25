@@ -34,6 +34,7 @@ public class IncidentServiceTests
     private readonly Station _q7 = new() { Name = "Q7", Latitude = 10.732842, Longitude = 106.719688, CoverageRadiusKm = 10, IsActive = true };
     private readonly Guid _operatorId = Guid.NewGuid();
     private readonly IncidentService _svc;
+    private readonly IAudioUploadTokenService _audioTokens = new EmergencyDispatch.API.Services.AudioUploadTokenService(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider());
 
     public IncidentServiceTests()
     {
@@ -48,7 +49,48 @@ public class IncidentServiceTests
         _me.SetupGet(m => m.StationId).Returns(_q7.Id);
         _svc = new IncidentService(_incidents.Object, _users.Object, _blocked.Object, _ai.Object, _queue.Object, _rt.Object, _notify.Object,
             new CreateIncidentDtoValidator(cfg), new CreateOperatorIncidentDtoValidator(cfg), NullLogger<IncidentService>.Instance,
-            _guest.Object, _stations.Object, _settings.Object, _me.Object, _followUp.Object, _routing.Object);
+            _guest.Object, _stations.Object, _settings.Object, _me.Object, _followUp.Object, _routing.Object, audioTokens: _audioTokens);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Create_AudioIsStoredWithClientTextAndOnlyPhotoIsQueued(bool withPhoto)
+    {
+        var photo = "https://res.cloudinary.com/demo/image/upload/a.jpg";
+        var dto = withPhoto ? Sos(photo) : Sos();
+        var media = new IncidentMediaDto { MediaUrl = "https://res.cloudinary.com/demo/video/authenticated/v1/emergency_dispatch/audio/a.webm",
+            PublicId = "emergency_dispatch/audio/a", MediaType = MediaType.Audio, DurationSeconds = 10, MimeType = "audio/webm", FileSizeBytes = 1000 };
+        dto.AudioAttachments.Add(new() { UploadToken = _audioTokens.Create(media, null), Transcript = "Có người bị thương" });
+        Incident? saved = null;
+        _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
+        var result = await _svc.CreateIncidentAsync(dto);
+        Assert.True(result.Success);
+        var audio = Assert.Single(saved!.MediaItems, m => m.MediaType == MediaType.Audio);
+        Assert.Equal("Có người bị thương", audio.Transcript);
+        Assert.Contains(result.Data!.MediaItems, m => m.Id == audio.Id && m.DurationSeconds == 10 && m.Transcript == audio.Transcript);
+        if (withPhoto) _queue.Verify(q => q.EnqueueAsync(It.Is<AiAnalysisJob>(j => j.MediaUrl == photo && j.AdditionalContext!.Contains("Có người bị thương")), It.IsAny<CancellationToken>()), Times.Once);
+        else { Assert.Equal(IncidentStatus.Pending, saved.Status); _queue.Verify(q => q.EnqueueAsync(It.IsAny<AiAnalysisJob>(), It.IsAny<CancellationToken>()), Times.Never); }
+    }
+
+    [Fact]
+    public async Task Create_InvalidAudioReceiptDoesNotCreateAnIncident()
+    {
+        var dto = Sos(); dto.AudioAttachments.Add(new() { UploadToken = "invalid" });
+        Assert.False((await _svc.CreateIncidentAsync(dto)).Success);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_IdempotentReplayDoesNotRequireReuploadingAnExpiredAudioReceipt()
+    {
+        var existing = Existing(IncidentStatus.Pending, i => i.ReporterPhone = "0901234567");
+        var dto = Sos(); dto.IdempotencyKey = Guid.NewGuid().ToString();
+        dto.AudioAttachments.Add(new() { UploadToken = "expired-receipt" });
+        _incidents.Setup(i => i.GetIdByIdempotencyKeyAsync(dto.IdempotencyKey, It.IsAny<CancellationToken>())).ReturnsAsync(existing.Id);
+        var result = await _svc.CreateIncidentAsync(dto);
+        Assert.True(result.Success); Assert.True(result.Data!.IdempotentReplay); Assert.Equal(existing.Id, result.Data.Id);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
     }
 
     private static CreateIncidentDto Sos(params string[] media) => new()

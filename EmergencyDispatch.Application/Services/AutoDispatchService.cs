@@ -56,6 +56,7 @@ public class AutoDispatchService : IAutoDispatchService
         ["reporter-chose-other"] = "AI không tự điều phối: người báo chọn loại \"Khác\", cần Điều phối viên thẩm định.",
         ["operator-handling"] = "AI không tự điều phối: Điều phối viên đang giữ ca xử lý sự cố tại thời điểm AI phân tích.",
         ["ai-failed"] = "AI không tự điều phối: phân tích AI thất bại.",
+        ["audio-transcript-unavailable"] = AudioEvidence.MissingTranscriptReview,
         ["confidence-not-measured"] = "AI không tự điều phối: độ tin cậy chỉ là ước lượng, không đo từ mô hình.",
         ["ai-type-mismatch"] = "AI không tự điều phối: loại sự cố AI nhận diện khác loại của sự cố.",
         ["below-threshold"] = "AI không tự điều phối: độ tin cậy thấp hơn ngưỡng cấu hình.",
@@ -178,6 +179,8 @@ public class AutoDispatchService : IAutoDispatchService
     public static string? IneligibleReason(Incident incident, DispatchSettingsDto settings, DateTime utcNow)
     {
         if (incident.Status != IncidentStatus.AiProcessed || incident.VerifiedAt != null) return "not-awaiting-verification";
+        if (incident.MediaItems.Any(m => !m.IsDeleted && m.MediaType == MediaType.Audio && string.IsNullOrWhiteSpace(m.Transcript)))
+            return "audio-transcript-unavailable";
         if (incident.DuplicateOfIncidentId != null) return "linked-report";
         if (incident.IsOutOfServiceArea) return "out-of-service-area";
         if (incident.Severity is not (SeverityLevel.Level1 or SeverityLevel.Level2 or SeverityLevel.Level3)) return "unclassified";

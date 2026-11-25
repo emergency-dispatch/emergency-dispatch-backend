@@ -88,7 +88,7 @@ public class IncidentsController : ControllerBase
     }
 
     /// <summary>
-    /// Gửi báo cáo sự cố khẩn cấp mới (SOS Report) kèm ảnh/video
+    /// Gửi SOS kèm ảnh/video, tùy chọn audio và bản chép lời do client cung cấp
     /// </summary>
     /// <remarks>
     /// Cho phép cả người dân chưa đăng nhập (khách) hoặc đã đăng nhập báo cáo.

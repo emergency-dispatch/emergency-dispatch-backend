@@ -33,6 +33,7 @@ public class IncidentFollowUpServiceTests
     private readonly Guid _opId = Guid.NewGuid();
     private readonly DuplicateDetectionSettingsDto _dup = new();
     private readonly IncidentFollowUpService _svc;
+    private readonly IAudioUploadTokenService _audioTokens = new EmergencyDispatch.API.Services.AudioUploadTokenService(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider());
 
     public IncidentFollowUpServiceTests()
     {
@@ -49,7 +50,23 @@ public class IncidentFollowUpServiceTests
         AsRole(UserRole.Operator, _station);
         _svc = new IncidentFollowUpService(_incidents.Object, _users.Object, _supplements.Object, _rt.Object, _notify.Object, _me.Object,
             _settings.Object, _ai.Object, _queue.Object, _guest.Object, TestHelpers.Config(("Cloudinary:CloudName", "demo")),
-            NullLogger<IncidentFollowUpService>.Instance);
+            NullLogger<IncidentFollowUpService>.Instance, audioTokens: _audioTokens);
+    }
+
+    [Fact]
+    public async Task AddSupplement_AudioAndTranscriptArePersistedAndBroadcastWithoutReDispatching()
+    {
+        var owner = Citizen(); var incident = Incident(IncidentStatus.Pending, i => i.ReportedByUserId = owner.Id);
+        var media = new IncidentMediaDto { MediaUrl = "https://res.cloudinary.com/demo/video/authenticated/v1/emergency_dispatch/audio/a.m4a",
+            PublicId = "emergency_dispatch/audio/a", MediaType = MediaType.Audio, DurationSeconds = 10, MimeType = "audio/mp4" };
+        var input = new AddSupplementDto { AudioAttachments = new() { new() { UploadToken = _audioTokens.Create(media, owner.Id), Transcript = "Có người bị thương" } } };
+        var result = await _svc.AddSupplementAsync(incident.Id, input, owner.Id);
+        Assert.True(result.Success);
+        Assert.Equal("Có người bị thương", Assert.Single(result.Data!.AudioAttachments).Transcript);
+        Assert.Contains("Có người bị thương", System.Text.Json.JsonSerializer.Deserialize<List<IncidentMediaDto>>(_savedSupplements.Single().AudioAttachmentsJson!)!.Single().Transcript);
+        _rt.Verify(x => x.IncidentSupplementAddedAsync(It.Is<IncidentSupplementDto>(s => s.AudioAttachments.Count == 1),
+            incident.ResponsibleStationId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _queue.Verify(q => q.EnqueueAsync(It.IsAny<AiAnalysisJob>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private void AsRole(UserRole? role, Guid? station = null)

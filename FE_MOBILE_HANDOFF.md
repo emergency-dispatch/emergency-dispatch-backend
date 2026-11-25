@@ -1850,3 +1850,17 @@ Backend không có SMS gateway, luồng SOS cũng không đọc `ice.autoSendSms
 
 - Citizen incident alerts default to enabled / Cảnh báo Citizen mặc định bật. Migration `20261125090000_EnableCitizenIncidentAlertsByDefault` bật cấu hình cũ đang tắt một lần và ghi mốc UTC bền vững; giữ mốc của cấu hình đã bật hợp lệ. Không đổi mốc mỗi lần đọc/restart. Admin vẫn có thể tắt sau migration; chỉ các xác nhận/Staff tiếp nhận từ mốc bật mới đủ điều kiện thông báo.
 - `ReceiveSettingsChanged` trên `/hubs/incidents`: `key == "serviceArea"` được gửi một lần tới mọi kết nối, gồm Citizen; các key khác giữ phạm vi Operator/Admin. Citizen nhận sự kiện thì gọi lại API công khai `GET /api/settings/service-area` và vẽ lại vùng trên bản đồ. Tải lại cấu hình khi reconnect để bù sự kiện bị lỡ. BE không tự vẽ giao diện.
+
+
+## 55. Cập nhật 25/11/2026: SOS có ảnh + audio + bản chép lời từ client
+
+**BE ready; Web/Mobile UI chưa sửa.** Client dùng một nguồn micro để ghi file và chuyển giọng nói thành chữ, cho người dùng kiểm tra lại. BE không gọi dịch vụ Speech-to-Text.
+
+1. Upload ảnh như cũ; upload audio qua `POST /api/media/upload` (field `file`, <=5 MiB, >0–30 giây, không có track video). Giữ `uploadToken`; không đưa URL audio vào `mediaUrls` và không tự đổi đuôi WebM thành MP3. Thiếu Cloudinary thật sẽ báo lỗi audio, không trả ảnh giả.
+2. Gửi SOS gồm `mediaUrls` chỉ có ảnh/video và `audioAttachments: [{ uploadToken, transcript }]`. Transcript <=4000 ký tự, description <=200; không tự cắt mất nội dung. Mỗi request chỉ một audio, tối đa năm attachment tổng cộng. Có thể tạo SOS trước rồi gửi cùng cấu trúc qua `POST /api/incidents/{id}/supplements` (kèm guestCancellationToken nếu là Guest).
+3. Nghe trước khi gửi: `POST /api/media/audio/preview-url` với `{ uploadToken }`. Sau khi gắn vào ca: `GET /api/incidents/{id}/audio/{mediaId}/playback-url`; audio bổ sung dùng `/api/incidents/{id}/supplements/{supplementId}/audio/{mediaId}/playback-url`. Dùng `response.data.url` cho player; link có hạn 5 phút, hết hạn gọi BE lấy lại. URL media gốc là authenticated asset, không phát trực tiếp được.
+4. Bản ghi và text trả trong `mediaItems` của chi tiết sự cố; bản ghi bổ sung trong `audioAttachments` của supplement. Operator/Staff mở cùng API chi tiết có phân quyền để nghe/đọc. Người báo trùng không được đọc audio của người báo gốc. Audio không phát lên bản đồ Citizen.
+5. Qwen nhận ảnh + transcript; YOLO chỉ nhận ảnh. Có audio nhưng thiếu transcript thì không tự điều phối, Operator thẩm định. Chỉ audio, không ảnh: giữ Pending cho Operator. Audio bổ sung phát `ReceiveIncidentSupplement`, không tự điều lại xe; nhóm theo dõi sự cố không nhận nội dung audio/transcript qua broadcast, cần tải lại API nếu có quyền.
+6. Đóng modal phải dừng tracks/recorder, thu hồi object URLs và giữ dữ liệu nếu upload lỗi. Micro bị từ chối hoặc STT lỗi phải cho phép gửi bằng ảnh/ghi chú, hoặc audio không transcript để Operator xử lý. BE không thể ghi/chụp thay client.
+
+Contract và Swagger: xem phần **Audio Evidence** trong `API_DOCUMENTATION.md`; kịch bản trong `SOS_AUDIO_EVIDENCE_TESTING.md`. Migration: `20261125141313_AddIncidentAudioEvidence`.

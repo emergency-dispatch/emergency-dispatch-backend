@@ -1154,6 +1154,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<double?>("DurationSeconds")
+                        .HasColumnType("double precision");
+
                     b.Property<long>("FileSizeBytes")
                         .HasColumnType("bigint");
 
@@ -1178,6 +1181,14 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<string>("PublicId")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Transcript")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("TranscriptionStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1243,6 +1254,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AudioAttachmentsJson")
+                        .HasColumnType("jsonb");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
