@@ -6,16 +6,17 @@ using Microsoft.Extensions.Logging;
 namespace EmergencyDispatch.Infrastructure.BackgroundJobs;
 
 /// <summary>
-/// Tự hủy sự cố không được Operator xác minh sau AutoExpireHours (mặc định 24h) — CancellationReason.AutoExpired.
-/// Sự cố đã xác minh / đã điều xe không bao giờ bị tự hủy.
+/// BR-09: sự cố chưa được Operator xác minh sau StaleReviewHours (setting dispatch.autoExpireHours, mặc định 24h)
+/// được đánh dấu "Quá hạn – cần rà soát" và cảnh báo Operator của trạm + Admin.
+/// Không tự hủy: sự cố vẫn ở hàng đợi, chỉ Operator / Admin mới hủy được.
 /// </summary>
-public class IncidentAutoExpireWorker : BackgroundService
+public class IncidentStaleReviewWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<IncidentAutoExpireWorker> _logger;
+    private readonly ILogger<IncidentStaleReviewWorker> _logger;
     private readonly TimeSpan _checkInterval = TimeSpan.FromHours(1);
 
-    public IncidentAutoExpireWorker(IServiceScopeFactory scopeFactory, ILogger<IncidentAutoExpireWorker> logger)
+    public IncidentStaleReviewWorker(IServiceScopeFactory scopeFactory, ILogger<IncidentStaleReviewWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -23,9 +24,9 @@ public class IncidentAutoExpireWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Incident Auto-Expire Worker khởi động (chu kỳ quét: {Interval} phút).", _checkInterval.TotalMinutes);
+        _logger.LogInformation("Incident Stale Review Worker khởi động (chu kỳ quét: {Interval} phút).", _checkInterval.TotalMinutes);
 
-        // Lần quét đầu sau 1 chu kỳ (không hủy dữ liệu ngay khi vừa khởi động lại server)
+        // Lần quét đầu sau 1 chu kỳ (không gửi loạt cảnh báo ngay khi vừa khởi động lại server)
         using var timer = new PeriodicTimer(_checkInterval);
         try
         {
@@ -48,15 +49,15 @@ public class IncidentAutoExpireWorker : BackgroundService
             var settings = await scope.ServiceProvider.GetRequiredService<ISystemSettingsService>().GetDispatchSettingsAsync(cancellationToken);
             var incidents = scope.ServiceProvider.GetRequiredService<IIncidentService>();
 
-            var expired = await incidents.AutoExpireStaleIncidentsAsync(TimeSpan.FromHours(settings.AutoExpireHours), cancellationToken);
-            if (expired > 0)
+            var flagged = await incidents.FlagStaleIncidentsAsync(TimeSpan.FromHours(settings.AutoExpireHours), cancellationToken);
+            if (flagged > 0)
             {
-                _logger.LogInformation("Auto-expire: đã tự hủy {Count} sự cố không được xác minh sau {Hours} giờ.", expired, settings.AutoExpireHours);
+                _logger.LogWarning("Stale review: đã đánh dấu {Count} sự cố chưa được xác minh sau {Hours} giờ (cần Operator rà soát).", flagged, settings.AutoExpireHours);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Lỗi khi quét tự hủy sự cố quá hạn.");
+            _logger.LogError(ex, "Lỗi khi quét sự cố quá hạn chưa xác minh.");
         }
     }
 }

@@ -278,7 +278,7 @@ builder.Services.AddHostedService<CitizenMapWorker>();
 builder.Services.AddHostedService<HotspotCleanupWorker>();
 builder.Services.AddHostedService<EscalationWorker>();
 builder.Services.AddHostedService<VehicleCoolDownWorker>();
-builder.Services.AddHostedService<IncidentAutoExpireWorker>();
+builder.Services.AddHostedService<IncidentStaleReviewWorker>();
 
 // 8.2. Kênh thông báo Realtime (SignalR Notifier)
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();

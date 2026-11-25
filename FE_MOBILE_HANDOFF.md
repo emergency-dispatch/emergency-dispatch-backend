@@ -1845,3 +1845,66 @@ Backend không có SMS gateway, luồng SOS cũng không đọc `ice.autoSendSms
 1. **Mobile `ProfileScreen.tsx`:** bỏ khối "Toggle: Auto Send SMS GPS" và badge `profile.badge_sms_on/off`.
 2. **Mobile `ProfileEditModal.tsx` (tab 3):** bỏ công tắc "Tự động gửi SMS toạ độ khi bấm SOS". Giữ danh sách liên hệ ICE.
 3. Trường `autoSendSmsOnSos` / `smsTemplate` trong `types/profile.ts`, `types/user.ts`, `useProfileStore.ts` có thể để nguyên (không gây lỗi) hoặc xóa cùng lúc.
+
+## 51. Cập nhật 25/11/2026: độ chính xác GPS trên mobile (theo nhận xét tài liệu)
+
+Tài liệu chốt mục tiêu **≤ 20 m ngoài trời**. Mobile hiện chưa đạt được:
+
+1. **`location.service.ts`: dùng độ chính xác cao khi báo SOS.**
+   - Đổi `Location.Accuracy.Balanced` sang `Location.Accuracy.High` (hoặc `BestForNavigation`) khi lấy vị trí để gửi SOS.
+   - Không dùng `getLastKnownPositionAsync()` làm vị trí cuối nếu nó cũ hơn ~30 s.
+2. **Không âm thầm dùng tọa độ mặc định FPT Station** khi không có quyền hoặc lấy vị trí lỗi.
+   - Hiện tại SOS có thể gửi đi với tọa độ giả mà người báo không biết.
+   - Cần báo "Không lấy được vị trí" và cho người báo chọn trên bản đồ hoặc nhập địa chỉ, giống web `SosModal`.
+   - Giữ fallback ngoài Việt Nam chỉ cho emulator / dev.
+3. **Hiện độ chính xác cho người báo:** nếu `coords.accuracy > 20` m thì hiện "Vị trí chưa chính xác (±X m)" và cho chỉnh trên bản đồ.
+4. **(Tùy chọn) gửi `accuracy` (mét) lên backend.** Cần thêm trường ở DTO tạo sự cố; báo backend nếu làm.
+5. **Bỏ chữ "Độ chính xác GPS cao"** ở `MapboxView.tsx` (popup vị trí người dùng), hoặc thay bằng giá trị ±X m thật.
+
+## 52. Cập nhật 25/11/2026: Guest SOS bắt buộc số điện thoại gọi lại (chỉ kiểm tra ở mobile)
+
+Tài liệu chốt: Guest phải có SĐT gọi lại. **Backend không đổi**: `ReporterPhone` vẫn tùy chọn, nên mobile tự kiểm tra.
+
+1. **`LoginScreen.handleGuestSosBypass`:** trước khi vào `Main`, mở hộp nhập "Số điện thoại gọi lại".
+   - Bắt buộc nhập, kiểm tra bằng `isValidPhoneNumber` (10 số, đầu 03 / 05 / 07 / 08 / 09).
+   - Lưu vào storage, VD key `GUEST_CALLBACK_PHONE`.
+   - Đã có số lưu sẵn thì không hỏi lại, nhưng cho sửa.
+2. **`HomeScreen` (`handleSosSend*`) và `SafetyMapScreen`:** khi không đăng nhập, lấy `reporterPhone` từ `GUEST_CALLBACK_PHONE`.
+   - Nếu vẫn chưa có số (Guest vào app bằng đường khác), mở hộp nhập SĐT trước khi gửi.
+   - Có số rồi thì giữ nguyên thao tác giữ nút 2 giây, không hỏi thêm.
+3. **Người đã đăng nhập mà hồ sơ chưa có SĐT:** hiện gợi ý thêm SĐT (giống web `CitizenPhoneModal`), **không chặn** gửi SOS.
+4. Khi Guest đăng nhập hoặc đăng ký thì có thể xóa `GUEST_CALLBACK_PHONE`, hoặc điền sẵn số này vào form đăng ký.
+
+## 53. Cập nhật 25/11/2026: ưu tiên hotline Trung tâm / trạm Khu CNC trước 114 / 115 (theo nhận xét tài liệu)
+
+Quy định: **trong vùng phục vụ**, nút gọi khẩn luôn đưa hotline của trạm đang xử lý (`Station.PhoneNumber`) hoặc hotline chung của Trung tâm lên trước. 114 / 115 / 113 chỉ là lựa chọn phụ. **Ngoài vùng phục vụ** thì giữ 114 / 115 như hiện tại (`OutOfServiceAreaModal`).
+
+1. **Mobile `CitizenTrackingModal.handleCallHotline`:** dự phòng khi trạm chưa có SĐT nên là hotline Trung tâm, không phải `'114'`.
+2. **Mobile `SosSuccessModal` (nút "GỌI ĐIỀU PHỐI CỨU HỘ"):** gọi hotline trạm hoặc Trung tâm; nếu chưa có trạm thì gọi hotline Trung tâm.
+3. **Mobile, gửi SOS khi mất mạng:** hiện nút gọi hotline Trung tâm trước, 114 / 115 bên dưới.
+4. **Web `sos.ts`:**
+   - `createError`, `cooldownWaitError`: đổi "gọi ngay 114/115" thành "gọi tổng đài Trung tâm điều phối Khu CNC ({{hotline}})", 114 / 115 để phụ.
+   - `outOfAreaMessage`: giữ 114 / 115.
+5. **Web footer trang chủ (`landing.ts` `footerFire114`…):** thêm dòng hotline Trung tâm Khu CNC lên đầu, 113 / 114 / 115 bên dưới.
+6. **Hotline chung của Trung tâm:** hiện chưa có trong cấu hình. Trước mắt có thể đặt hằng số ở FE / mobile, hoặc dùng SĐT trạm chính. Nếu muốn Admin cấu hình được thì báo backend thêm khóa setting (VD `contact.commandCenterHotline`) và trả về qua API cấu hình công khai.
+
+## 54. Cập nhật 25/11/2026: bỏ tự hủy 24h, thay bằng cờ "Quá hạn – cần rà soát" (BR-09)
+
+**Backend đã đổi:**
+- `IncidentStaleReviewWorker` (thay `IncidentAutoExpireWorker`) quét mỗi giờ. Sự cố **chưa xác minh** quá `dispatch.autoExpireHours` giờ (mặc định 24; trạng thái Pending / AiProcessing / AiProcessed / Escalated chưa xác minh) **không bị hủy nữa**. Thay vào đó:
+  - gán `incident.staleFlaggedAt` (một lần);
+  - ghi audit `StaleFlagged` (actor `System`);
+  - gửi thông báo `Escalation`, ưu tiên cao, tới Operator trạm phụ trách + Admin, tiêu đề "SỰ CỐ QUÁ HẠN – CẦN RÀ SOÁT";
+  - phát SignalR `IncidentUpdated`.
+- `IncidentResponseDto` có thêm `staleFlaggedAt` (DateTime?) và `isStale` (bool).
+- Lý do hủy `AutoExpired` chỉ còn trong dữ liệu cũ.
+
+**Web cần làm:**
+1. **Hàng đợi Operator / Incident Detail Drawer:** khi `isStale = true`, hiện nhãn đỏ / cam "Quá hạn – cần rà soát" (EN: "Overdue – review required"), tooltip "Chưa xác minh sau {giờ} giờ, đánh dấu lúc {staleFlaggedAt}".
+2. **Audit timeline:** nhãn cho action `StaleFlagged`: "Hệ thống đánh dấu quá hạn" / "Flagged as overdue by the system".
+3. **Admin → Settings → Dispatch** (`DispatchSettingsSection`, i18n `admin.settings.dispatch.autoExpire*`, `admin/monitoring.ts autoExpireHours`): đổi nhãn. Khóa API giữ nguyên `autoExpireHours`.
+   - VI: "Đánh dấu quá hạn sự cố chưa xác minh"; gợi ý: "Sự cố chưa được Operator duyệt quá thời gian này sẽ được đánh dấu cần rà soát và cảnh báo Operator + Admin; hệ thống không tự hủy ({{min}}–{{max}} giờ)."
+   - EN: "Flag unverified incidents as overdue"; "Incidents not verified within this time are flagged for review and Operators and Administrators are alerted; they are never cancelled automatically ({{min}}–{{max}} hours)."
+4. `data/incidentMock.ts` nhãn `AutoExpired: 'Tự hủy do quá hạn'`: giữ để hiển thị dữ liệu cũ.
+5. **(Tùy chọn)** Bộ lọc "Quá hạn" trên hàng đợi.
+

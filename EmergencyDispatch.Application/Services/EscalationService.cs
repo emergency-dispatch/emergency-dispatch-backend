@@ -350,6 +350,7 @@ public class EscalationService : IEscalationService
                     VerifiedAt = incident.VerifiedAt,
                     ResponsibleStationId = incident.ResponsibleStationId,
                     IsOutOfServiceArea = incident.IsOutOfServiceArea,
+                    StaleFlaggedAt = incident.StaleFlaggedAt,
                     CreatedAt = incident.CreatedAt,
                     UpdatedAt = incident.UpdatedAt
                 }, cancellationToken);

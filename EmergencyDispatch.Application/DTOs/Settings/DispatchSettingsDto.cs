@@ -21,7 +21,8 @@ public class DispatchSettingsDto
     public double RecoveryMinutes { get; set; } = 5;
 
     /// <summary>
-    /// Sự cố chưa được xác minh quá số giờ này sẽ tự hủy (CancellationReason.AutoExpired)
+    /// Sự cố chưa được xác minh quá số giờ này được đánh dấu "Quá hạn – cần rà soát" và cảnh báo Operator + Admin (BR-09).
+    /// Không tự hủy. Giữ tên khóa autoExpireHours để tương thích dữ liệu / FE đã có
     /// </summary>
     public double AutoExpireHours { get; set; } = 24;
 

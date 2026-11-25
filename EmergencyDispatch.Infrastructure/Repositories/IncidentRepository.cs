@@ -125,8 +125,11 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         return await _context.Incidents
             .Where(i => (i.Status == IncidentStatus.Pending
                          || i.Status == IncidentStatus.AiProcessing
-                         || i.Status == IncidentStatus.AiProcessed)
+                         || i.Status == IncidentStatus.AiProcessed
+                         || i.Status == IncidentStatus.Escalated)
                         && i.VerifiedAt == null
+                        && i.StaleFlaggedAt == null
+                        && i.DuplicateOfIncidentId == null
                         && i.CreatedAt < cutoffUtc)
             .Select(i => i.Id)
             .ToListAsync(cancellationToken);
