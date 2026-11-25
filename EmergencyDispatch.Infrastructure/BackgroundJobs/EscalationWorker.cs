@@ -61,6 +61,14 @@ public sealed class EscalationWorker : BackgroundService
         try
         {
             using var scope = _scopeFactory.CreateScope();
+
+            // Tổ không nhận lệnh quá thời gian cấu hình → tự rút lệnh, trả xe, sự cố về hàng chờ, báo Operator trạm
+            var withdrawn = await scope.ServiceProvider.GetRequiredService<IDispatchService>().ExpireUnacceptedAssignmentsAsync(cancellationToken);
+            if (withdrawn > 0)
+            {
+                _logger.LogWarning("[Escalation Engine] Đã tự rút {Count} lệnh điều phối tổ không phản hồi.", withdrawn);
+            }
+
             var escalationService = scope.ServiceProvider.GetRequiredService<IEscalationService>();
 
             var escalatedCount = await escalationService.ProcessEscalationsAsync(cancellationToken);

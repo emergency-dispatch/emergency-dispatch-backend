@@ -39,4 +39,10 @@ public class EscalationSettingsDto
     /// Ngưỡng chờ (phút) cho yêu cầu chi viện / vấn đề từ hiện trường chưa được trung tâm xử lý xong → báo lên Admin
     /// </summary>
     public double FieldRequestThresholdMinutes { get; set; } = 3;
+
+    /// <summary>
+    /// Thời gian (phút) chờ tổ nhận lệnh. Quá thời gian mà lượt vẫn ở trạng thái Dispatched → hệ thống tự rút lệnh
+    /// (Rejected / NoResponse), trả xe về Sẵn sàng, đưa sự cố về hàng chờ và báo Operator trạm. 0 = tắt
+    /// </summary>
+    public double AcceptTimeoutMinutes { get; set; } = 3;
 }

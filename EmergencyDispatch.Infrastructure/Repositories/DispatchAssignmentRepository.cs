@@ -182,6 +182,14 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<Guid>> GetIncidentIdsWithUnacceptedBeforeAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default)
+        => await _dbSet
+            .AsNoTracking()
+            .Where(d => d.Status == DispatchAssignmentStatus.Dispatched && d.DispatchedAt <= cutoffUtc)
+            .Select(d => d.IncidentId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<DispatchAssignment>> GetActiveWithDetailsAsync(Guid? stationId, CancellationToken cancellationToken = default)
     {
         var query = _dbSet

@@ -50,6 +50,11 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
     Task<IReadOnlyList<DispatchAssignment>> GetAllActiveAsync();
 
     /// <summary>
+    /// Id sự cố có lượt điều phối phát trước cutoff mà tổ vẫn chưa nhận lệnh (còn Dispatched) → hệ thống tự rút lệnh
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetIncidentIdsWithUnacceptedBeforeAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lượt phân công đang chạy kèm sự cố + xe + trạm. stationId != null → lượt của sự cố trạm đó phụ trách hoặc xe trạm đó
     /// </summary>
     Task<IReadOnlyList<DispatchAssignment>> GetActiveWithDetailsAsync(Guid? stationId, CancellationToken cancellationToken = default);

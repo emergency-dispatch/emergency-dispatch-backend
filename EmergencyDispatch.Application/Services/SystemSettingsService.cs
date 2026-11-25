@@ -226,6 +226,8 @@ public class SystemSettingsService : ISystemSettingsService
 
         if (!(s.RadiusMultiplier > 0)) errors.Add("Hệ số mở rộng bán kính phải lớn hơn 0.");
         if (!(s.FieldRequestThresholdMinutes > 0) || !IsHalfStep(s.FieldRequestThresholdMinutes)) errors.Add("Ngưỡng chờ xử lý yêu cầu từ hiện trường phải > 0 và theo bước 0.5 phút.");
+        if (!(s.AcceptTimeoutMinutes == 0 || (s.AcceptTimeoutMinutes >= 1 && s.AcceptTimeoutMinutes <= 30)) || !IsHalfStep(s.AcceptTimeoutMinutes))
+            errors.Add("Thời gian chờ tổ nhận lệnh phải là 0 (tắt) hoặc từ 1 đến 30 phút, theo bước 0.5 phút.");
 
         var lastStep = dispatchStepsKm.Count > 0 ? dispatchStepsKm.Max() : 0;
         if (!(s.MaxRadiusKm > 0)) errors.Add("Bán kính tối đa phải lớn hơn 0.");

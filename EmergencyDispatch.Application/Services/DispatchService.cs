@@ -1,5 +1,6 @@
 using EmergencyDispatch.Application.Localization;
 using System.Text.Json;
+using System.Globalization;
 using EmergencyDispatch.Application.DTOs.Common;
 using EmergencyDispatch.Application.DTOs.Dispatch;
 using EmergencyDispatch.Application.DTOs.Notification;
@@ -773,21 +774,26 @@ public class DispatchService : IDispatchService
             await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
         }
 
-        // BR-22: cảnh báo trung tâm để điều xe thay thế ngay
-        await _notificationService.NotifyRolesAsync(new[] { UserRole.Operator, UserRole.Admin }, new NotificationRequest
+        // BR-22: cảnh báo trung tâm để điều xe thay thế ngay — chỉ Operator trạm phụ trách sự cố + trạm có xe (xe đi hỗ trợ) + Admin,
+        // không báo Operator các trạm không liên quan
+        var rejectRecipients = await CommandCenterIdsAsync(incident?.ResponsibleStationId, unit?.StationId);
+        if (rejectRecipients.Count > 0)
         {
-            Type = NotificationType.StatusUpdate,
-            Title = "Đội cứu hộ từ chối nhiệm vụ",
-            Message = new LocalizedText("[{0}] Xe {1} từ chối sự cố \"{2}\" ({3}). {4}", incident?.Code, unit?.PlateNumber, incident?.Title, dto.Reason,
-                settled == IncidentSettlement.Closed
-                    ? new LocalizedText("Sự cố đã tự đóng vì tổ khác đã nghiệm thu.")
-                    : remainingActive > 0 ? new LocalizedText("Còn {0} xe đang xử lý.", remainingActive)
-                    : incident?.Status == IncidentStatus.Escalated ? new LocalizedText("Sự cố đang leo thang — cần điều xe thay thế ngay.")
-                    : new LocalizedText("Cần điều xe thay thế.")),
-            IncidentId = incident?.Id,
-            Data = new { assignmentId = assignment.Id, reason = dto.Reason.ToString(), incidentClosed = settled == IncidentSettlement.Closed },
-            HighPriority = settled == IncidentSettlement.ReturnedToQueue
-        }, cancellationToken);
+            await _notificationService.NotifyUsersAsync(rejectRecipients, new NotificationRequest
+            {
+                Type = NotificationType.StatusUpdate,
+                Title = "Đội cứu hộ từ chối nhiệm vụ",
+                Message = new LocalizedText("[{0}] Xe {1} từ chối sự cố \"{2}\" ({3}). {4}", incident?.Code, unit?.PlateNumber, incident?.Title, dto.Reason,
+                    settled == IncidentSettlement.Closed
+                        ? new LocalizedText("Sự cố đã tự đóng vì tổ khác đã nghiệm thu.")
+                        : remainingActive > 0 ? new LocalizedText("Còn {0} xe đang xử lý.", remainingActive)
+                        : incident?.Status == IncidentStatus.Escalated ? new LocalizedText("Sự cố đang leo thang — cần điều xe thay thế ngay.")
+                        : new LocalizedText("Cần điều xe thay thế.")),
+                IncidentId = incident?.Id,
+                Data = new { assignmentId = assignment.Id, reason = dto.Reason.ToString(), incidentClosed = settled == IncidentSettlement.Closed },
+                HighPriority = settled == IncidentSettlement.ReturnedToQueue
+            }, cancellationToken);
+        }
 
         return ApiResponseDto<DispatchAssignmentResponseDto>.SuccessResult(
             assignmentDto,
@@ -797,6 +803,193 @@ public class DispatchService : IDispatchService
                 IncidentSettlement.ReturnedToQueue => "Đã từ chối nhiệm vụ. Trung tâm điều phối sẽ giao xe thay thế.",
                 _ => "Đã từ chối nhiệm vụ."
             });
+    }
+
+    /// <summary>
+    /// Vai trò ghi trong lịch sử / audit khi hệ thống tự thao tác (VD tự rút lệnh tổ không phản hồi)
+    /// </summary>
+    public const string SystemActorRole = "System";
+
+    /// <summary>
+    /// Tổ không phản hồi: lượt còn Dispatched quá AcceptTimeoutMinutes (cấu hình leo thang) → hệ thống tự rút lệnh
+    /// (Rejected / NoResponse), trả xe về Sẵn sàng, hủy yêu cầu hiện trường của lượt, đưa sự cố về hàng chờ
+    /// (sự cố đang leo thang giữ Escalated), ghi lịch sử + audit và báo Operator trạm: tổ nào, bao nhiêu thành viên, xe nào.
+    /// EscalationWorker gọi định kỳ. Trả về số lượt đã rút
+    /// </summary>
+    public async Task<int> ExpireUnacceptedAssignmentsAsync(CancellationToken cancellationToken = default)
+    {
+        var settings = await _settingsService.GetEscalationSettingsAsync(cancellationToken);
+        var timeoutMinutes = settings?.AcceptTimeoutMinutes ?? 0;
+        if (!(timeoutMinutes > 0)) return 0;
+
+        var cutoff = DateTime.UtcNow.AddMinutes(-timeoutMinutes);
+        var total = 0;
+        foreach (var incidentId in await _assignmentRepository.GetIncidentIdsWithUnacceptedBeforeAsync(cutoff, cancellationToken) ?? Array.Empty<Guid>())
+        {
+            try
+            {
+                total += await ExpireUnacceptedForIncidentAsync(incidentId, cutoff, timeoutMinutes, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Không tự rút được lệnh quá hạn chưa nhận của sự cố {IncidentId}", incidentId);
+                _incidentRepository.ClearChangeTracker();
+            }
+        }
+        return total;
+    }
+
+    private async Task<int> ExpireUnacceptedForIncidentAsync(Guid incidentId, DateTime cutoff, double timeoutMinutes, CancellationToken cancellationToken)
+    {
+        var incident = await _incidentRepository.GetIncidentWithDetailsAsync(incidentId, cancellationToken);
+        if (incident == null) return 0;
+
+        var expired = new List<(DispatchAssignment Assignment, RescueUnit? Unit)>();
+        var changedUnits = new List<RescueUnit>();
+        var minutesText = timeoutMinutes.ToString("0.#", CultureInfo.InvariantCulture);
+        var notes = $"Hệ thống tự rút lệnh: tổ không phản hồi sau {minutesText} phút.";
+
+        // Khóa sự cố + đọc lại trong khóa: tổ vừa bấm nhận lệnh (cùng khóa) thì lượt không còn Dispatched và được bỏ qua
+        await using (var writeLock = await _incidentRepository.BeginLockedTransactionAsync(incident.Id, cancellationToken))
+        {
+            await _incidentRepository.ReloadAsync(incident, cancellationToken);
+            var now = DateTime.UtcNow;
+            foreach (var assignment in await _assignmentRepository.GetByIncidentIdAsync(incident.Id) ?? new List<DispatchAssignment>())
+            {
+                if (assignment.Status != DispatchAssignmentStatus.Dispatched || assignment.DispatchedAt > cutoff) continue;
+
+                var unit = assignment.RescueUnit ?? await _rescueUnitRepository.GetByIdAsync(assignment.RescueUnitId);
+                assignment.Status = DispatchAssignmentStatus.Rejected;
+                assignment.RejectionReason = RejectionReason.NoResponse;
+                assignment.RejectionNotes = notes;
+                assignment.RejectedAt = now;
+                assignment.UpdatedAt = now;
+                await _assignmentRepository.AddStatusHistoryAsync(new AssignmentStatusHistory
+                {
+                    AssignmentId = assignment.Id,
+                    OldStatus = DispatchAssignmentStatus.Dispatched,
+                    NewStatus = DispatchAssignmentStatus.Rejected,
+                    ChangedByUserId = null,
+                    RejectionReason = RejectionReason.NoResponse,
+                    Notes = notes,
+                    ChangedAt = now
+                });
+                if (unit is { Status: RescueUnitStatus.Dispatched })
+                {
+                    unit.Status = RescueUnitStatus.Available;
+                    unit.UpdatedAt = now;
+                    await SaveUnitAsync(unit, changedUnits, cancellationToken);
+                }
+                await _assignmentRepository.UpdateAsync(assignment);
+                expired.Add((assignment, unit));
+            }
+
+            if (expired.Count == 0) return 0;
+
+            await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+            {
+                IncidentId = incident.Id,
+                ActorRole = SystemActorRole,
+                Action = AuditAction.AssignmentRejected,
+                Description = $"Hệ thống tự rút lệnh {expired.Count} xe ({string.Join(", ", expired.Select(e => e.Unit?.PlateNumber))}): tổ không phản hồi sau {minutesText} phút",
+                NewStateJson = JsonSerializer.Serialize(new
+                {
+                    autoWithdrawn = true,
+                    reason = RejectionReason.NoResponse.ToString(),
+                    timeoutMinutes,
+                    assignments = expired.Select(e => new
+                    {
+                        assignmentId = e.Assignment.Id,
+                        plate = e.Unit?.PlateNumber,
+                        teamId = CrewTeamOf(e.Assignment, e.Unit),
+                        dispatchedAt = e.Assignment.DispatchedAt
+                    })
+                }),
+                Timestamp = now
+            }, cancellationToken);
+            await _incidentRepository.SaveChangesAsync(cancellationToken);
+            await writeLock.CommitAsync(cancellationToken);
+        }
+        await PublishUnitsAsync(changedUnits, cancellationToken);
+
+        _logger.LogWarning("Tự rút {Count} lệnh chưa nhận của sự cố {IncidentId} ({Plates}) sau {Minutes} phút",
+            expired.Count, incident.Id, string.Join(", ", expired.Select(e => e.Unit?.PlateNumber)), minutesText);
+
+        await _fieldRequestService.CancelOpenAsync(incident.Id, expired.Select(e => e.Assignment.Id).ToArray(),
+            "Tự hủy: tổ không phản hồi lệnh điều phối.", cancellationToken);
+
+        var settled = await SettleIncidentAfterAssignmentEndedAsync(incident, null, SystemActorRole,
+            new LocalizedText("Tổ không phản hồi lệnh sau {0} phút", minutesText), cancellationToken);
+        var remainingActive = settled == IncidentSettlement.StillActive
+            ? (await _assignmentRepository.GetFreshByIncidentIdAsync(incident.Id, cancellationToken) ?? Array.Empty<DispatchAssignment>()).Count(a => a.IsActive)
+            : 0;
+        LocalizedText outcome = settled == IncidentSettlement.Closed
+            ? new LocalizedText("Sự cố đã tự đóng vì tổ khác đã nghiệm thu.")
+            : remainingActive > 0 ? new LocalizedText("Còn {0} xe đang xử lý.", remainingActive)
+            : incident.Status == IncidentStatus.Escalated ? new LocalizedText("Sự cố đang leo thang — cần điều xe thay thế ngay.")
+            : new LocalizedText("Sự cố đã về hàng chờ, cần điều xe thay thế.");
+
+        // Mỗi tổ một thông báo: tổ nào, bao nhiêu thành viên, những xe nào không phản hồi
+        foreach (var group in expired.GroupBy(e => (StationId: e.Unit?.StationId ?? Guid.Empty, TeamId: CrewTeamOf(e.Assignment, e.Unit))))
+        {
+            var crewIds = group.Key.StationId == Guid.Empty
+                ? (IReadOnlyCollection<Guid>)Array.Empty<Guid>()
+                : await _notificationService.GetCrewUserIdsAsync(group.Key.StationId, group.Key.TeamId, cancellationToken) ?? (IReadOnlyCollection<Guid>)Array.Empty<Guid>();
+            foreach (var (assignment, unit) in group)
+            {
+                await _realtimeNotifier.AssignmentStatusChangedAsync(MapToAssignmentDto(assignment, incident, unit), crewIds, cancellationToken);
+            }
+
+            var plates = string.Join(", ", group.Select(e => e.Unit?.PlateNumber).Where(p => !string.IsNullOrWhiteSpace(p)));
+            var teamName = group.Key.TeamId is Guid teamId
+                ? group.Select(e => e.Assignment.StationTeam?.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n))
+                  ?? (await _teamRepository.GetByIdAsync(teamId, cancellationToken))?.Name
+                : null;
+            LocalizedText crewLabel = teamName != null
+                ? new LocalizedText("Tổ {0}", teamName)
+                : new LocalizedText("Nhân viên trạm (xe chưa gán tổ)");
+
+            if (group.Key.StationId != Guid.Empty)
+            {
+                await _notificationService.NotifyCrewAsync(group.Key.StationId, group.Key.TeamId, new NotificationRequest
+                {
+                    Type = NotificationType.StatusUpdate,
+                    Title = "LỆNH ĐIỀU PHỐI ĐÃ BỊ RÚT",
+                    Message = new LocalizedText("[{0}] Tổ không nhận lệnh sau {1} phút nên hệ thống đã rút lệnh. Xe {2} trở về Sẵn sàng.",
+                        incident.Code, minutesText, plates),
+                    IncidentId = incident.Id,
+                    Data = new { assignmentIds = group.Select(e => e.Assignment.Id), reason = RejectionReason.NoResponse.ToString() }
+                }, cancellationToken);
+            }
+
+            var recipients = await CommandCenterIdsAsync(incident.ResponsibleStationId, group.Key.StationId == Guid.Empty ? null : group.Key.StationId);
+            if (recipients.Count > 0)
+            {
+                await _notificationService.NotifyUsersAsync(recipients, new NotificationRequest
+                {
+                    Type = NotificationType.StatusUpdate,
+                    Title = "TỔ KHÔNG PHẢN HỒI LỆNH ĐIỀU PHỐI",
+                    Message = new LocalizedText("[{0}] {1} ({2} thành viên) với {3} xe ({4}) không nhận lệnh sau {5} phút. Hệ thống đã rút lệnh và trả xe. {6}",
+                        incident.Code, crewLabel, crewIds.Count, group.Count(), plates, minutesText, outcome),
+                    IncidentId = incident.Id,
+                    Data = new
+                    {
+                        reason = RejectionReason.NoResponse.ToString(),
+                        teamId = group.Key.TeamId,
+                        teamName,
+                        memberCount = crewIds.Count,
+                        unitCount = group.Count(),
+                        plates,
+                        assignmentIds = group.Select(e => e.Assignment.Id),
+                        incidentClosed = settled == IncidentSettlement.Closed
+                    },
+                    HighPriority = settled != IncidentSettlement.Closed
+                }, cancellationToken);
+            }
+        }
+
+        await _realtimeNotifier.IncidentUpdatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
+        return expired.Count;
     }
 
     public async Task<ApiResponseDto<DispatchAssignmentResponseDto>> GetAssignmentByIdAsync(
@@ -1337,7 +1530,7 @@ public class DispatchService : IDispatchService
     /// Khóa giống nghiệm thu nên hai tổ kết thúc cùng lúc vẫn đóng đúng một lần.
     /// </summary>
     private async Task<IncidentSettlement> SettleIncidentAfterAssignmentEndedAsync(
-        Incident incident, Guid actorId, string actorRole, LocalizedText endedBy, CancellationToken cancellationToken)
+        Incident incident, Guid? actorId, string actorRole, LocalizedText endedBy, CancellationToken cancellationToken)
     {
         await using var lockScope = await _incidentRepository.BeginLockedTransactionAsync(incident.Id, cancellationToken);
         await _incidentRepository.ReloadAsync(incident, cancellationToken);
@@ -1444,7 +1637,7 @@ public class DispatchService : IDispatchService
     /// <summary>
     /// Việc sau khi sự cố đóng (nghiệm thu hoặc tự đóng): đóng báo cáo đã gom (BR-07), báo người dân (FR-CIT-04)
     /// </summary>
-    private async Task AfterIncidentClosedAsync(Incident incident, Guid actorId, CancellationToken cancellationToken)
+    private async Task AfterIncidentClosedAsync(Incident incident, Guid? actorId, CancellationToken cancellationToken)
     {
         if (incident.LinkedReportCount > 0)
         {
@@ -1478,10 +1671,7 @@ public class DispatchService : IDispatchService
     /// </summary>
     private async Task NotifyCommandCenterAsync(Incident incident, LocalizedText title, LocalizedText message, bool highPriority, CancellationToken cancellationToken)
     {
-        var recipients = (await _userRepository.GetActiveByRolesAsync(new[] { UserRole.Operator, UserRole.Admin }) ?? new List<User>())
-            .Where(u => u.Role == UserRole.Admin || incident.ResponsibleStationId == null || u.StationId == incident.ResponsibleStationId)
-            .Select(u => u.Id)
-            .ToList();
+        var recipients = await CommandCenterIdsAsync(incident.ResponsibleStationId);
         if (recipients.Count == 0) return;
         await _notificationService.NotifyUsersAsync(recipients, new NotificationRequest
         {
@@ -1492,6 +1682,19 @@ public class DispatchService : IDispatchService
             HighPriority = highPriority
         }, cancellationToken);
     }
+
+    /// <summary>
+    /// Trung tâm chỉ huy của sự cố: Admin + Operator trạm phụ trách (sự cố chưa có trạm → mọi Operator)
+    /// + Operator trạm có xe (khi xe trạm khác đi hỗ trợ)
+    /// </summary>
+    private async Task<List<Guid>> CommandCenterIdsAsync(Guid? responsibleStationId, Guid? unitStationId = null)
+        => (await _userRepository.GetActiveByRolesAsync(new[] { UserRole.Operator, UserRole.Admin }) ?? new List<User>())
+            .Where(u => u.Role == UserRole.Admin
+                        || responsibleStationId == null
+                        || u.StationId == responsibleStationId
+                        || (unitStationId.HasValue && u.StationId == unitStationId))
+            .Select(u => u.Id)
+            .ToList();
 
     public const string SignatureRequiredMessage = "Cần chữ ký xác nhận của thành viên tổ trước khi nộp báo cáo nghiệm thu.";
 

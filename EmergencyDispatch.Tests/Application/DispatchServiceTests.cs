@@ -601,13 +601,22 @@ public class DispatchServiceTests
     {
         var (a, inc, _, staff) = Mission(DispatchAssignmentStatus.Dispatched);
         inc.Status = IncidentStatus.Escalated;
-        EmergencyDispatch.Application.DTOs.Notification.NotificationRequest? sent = null;
-        _notify.Setup(n => n.NotifyRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>(), It.IsAny<EmergencyDispatch.Application.DTOs.Notification.NotificationRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<IReadOnlyCollection<UserRole>, EmergencyDispatch.Application.DTOs.Notification.NotificationRequest, CancellationToken>((_, n, _) => sent = n);
+        var opOwn = new User { Role = UserRole.Operator, StationId = _stationA, Status = UserStatus.Active };
+        var opOther = new User { Role = UserRole.Operator, StationId = _stationB, Status = UserStatus.Active };
+        var admin = new User { Role = UserRole.Admin, Status = UserStatus.Active };
+        _users.Setup(u => u.GetActiveByRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>())).ReturnsAsync(new List<User> { opOwn, opOther, admin });
+        NotificationRequest? sent = null;
+        IReadOnlyCollection<Guid>? recipients = null;
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.Is<NotificationRequest>(x => x.Title.Vi == "Đội cứu hộ từ chối nhiệm vụ"), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyCollection<Guid> ids, NotificationRequest n, CancellationToken _) => (recipients, sent) = (ids, n))
+            .Returns(Task.CompletedTask);
 
         var r = await _svc.RejectAssignmentAsync(a.Id, new RejectAssignmentDto { Reason = RejectionReason.TooFar }, staff.Id);
 
         Assert.True(r.Success);
+        // Chỉ trung tâm của sự cố (Operator trạm phụ trách + Admin), không báo Operator trạm khác
+        Assert.Equal(new[] { opOwn.Id, admin.Id }.OrderBy(x => x), recipients!.OrderBy(x => x));
+        _notify.Verify(n => n.NotifyRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Equal(IncidentStatus.Escalated, inc.Status);
         Assert.Equal(EmergencyDispatch.Application.Localization.LocalizationHelper.Localize("Đã từ chối nhiệm vụ. Trung tâm điều phối sẽ giao xe thay thế."), r.Message);
         Assert.True(sent!.HighPriority);
@@ -1578,6 +1587,82 @@ public class DispatchServiceTests
 
         Assert.True((await _svc.GetCompletionReportByIdAsync(mine.Id, staff.Id)).Success);
         Assert.Equal(ApiErrorCodes.Forbidden, (await _svc.GetCompletionReportByIdAsync(other.Id, staff.Id)).ErrorCode);
+    }
+
+    // ===================== Tự rút lệnh khi tổ không phản hồi (25/11/2026) =====================
+    private (DispatchAssignment A, Incident I, RescueUnit U, StationTeam Team) UnansweredOrder(double minutesAgo, DispatchAssignmentStatus status = DispatchAssignmentStatus.Dispatched)
+    {
+        var u = Unit(RescueUnitType.FireTruck, 2, RescueUnitStatus.Dispatched);
+        var team = _crews.Single(c => c.Id == u.StationTeamId);
+        var second = Staffer(_stationA);
+        team.Members.Add(new StationTeamMember { TeamId = team.Id, StaffId = second.Id, Staff = second });
+        var inc = Incident(status: IncidentStatus.Dispatched);
+        var a = new DispatchAssignment
+        {
+            IncidentId = inc.Id, Incident = inc, RescueUnitId = u.Id, RescueUnit = u, StationTeamId = team.Id,
+            Status = status, DispatchedAt = DateTime.UtcNow.AddMinutes(-minutesAgo)
+        };
+        inc.DispatchAssignments.Add(a);
+        _assign.Setup(x => x.GetByIncidentIdAsync(inc.Id)).ReturnsAsync(() => inc.DispatchAssignments.ToList());
+        _assign.Setup(x => x.GetIncidentIdsWithUnacceptedBeforeAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { inc.Id });
+        _notify.Setup(n => n.GetCrewUserIdsAsync(_stationA, team.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(team.Members.Select(m => m.StaffId).ToList());
+        return (a, inc, u, team);
+    }
+
+    [Fact]
+    public async Task UnacceptedOrder_PastTimeout_IsWithdrawn_UnitReleased_IncidentRequeued_OperatorToldTeamMembersAndPlates()
+    {
+        var (a, inc, u, team) = UnansweredOrder(minutesAgo: 4);
+        var opOwn = new User { Role = UserRole.Operator, StationId = _stationA, Status = UserStatus.Active };
+        var opOther = new User { Role = UserRole.Operator, StationId = _stationB, Status = UserStatus.Active };
+        _users.Setup(x => x.GetActiveByRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>())).ReturnsAsync(new List<User> { opOwn, opOther });
+        NotificationRequest? alert = null;
+        IReadOnlyCollection<Guid>? alertTo = null;
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.Is<NotificationRequest>(x => x.Title.Vi == "TỔ KHÔNG PHẢN HỒI LỆNH ĐIỀU PHỐI"), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyCollection<Guid> ids, NotificationRequest n, CancellationToken _) => (alertTo, alert) = (ids, n))
+            .Returns(Task.CompletedTask);
+
+        Assert.Equal(1, await _svc.ExpireUnacceptedAssignmentsAsync());
+
+        Assert.Equal(DispatchAssignmentStatus.Rejected, a.Status);
+        Assert.Equal(RejectionReason.NoResponse, a.RejectionReason);
+        Assert.Equal(RescueUnitStatus.Available, u.Status);
+        Assert.Equal(IncidentStatus.Verified, inc.Status);
+        _assign.Verify(x => x.AddStatusHistoryAsync(It.Is<AssignmentStatusHistory>(h => h.RejectionReason == RejectionReason.NoResponse && h.ChangedByUserId == null)), Times.Once);
+        _incidents.Verify(x => x.AddAuditTrailAsync(It.Is<IncidentAuditTrail>(t => t.ActorRole == DispatchService.SystemActorRole && t.Description.Contains("không phản hồi")), It.IsAny<CancellationToken>()), Times.Once);
+
+        Assert.Equal(new[] { opOwn.Id }, alertTo);
+        Assert.Contains(team.Name, alert!.Message.Vi);
+        Assert.Contains("(2 thành viên)", alert.Message.Vi);
+        Assert.Contains(u.PlateNumber, alert.Message.Vi);
+        Assert.Contains("về hàng chờ", alert.Message.Vi);
+        _notify.Verify(n => n.NotifyCrewAsync(_stationA, team.Id, It.Is<NotificationRequest>(x => x.Title.Vi == "LỆNH ĐIỀU PHỐI ĐÃ BỊ RÚT"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(2, DispatchAssignmentStatus.Dispatched)]   // chưa quá 3 phút
+    [InlineData(10, DispatchAssignmentStatus.Accepted)]    // tổ đã nhận lệnh
+    public async Task UnacceptedOrder_NotDueOrAlreadyAccepted_IsLeftAlone(double minutesAgo, DispatchAssignmentStatus status)
+    {
+        var (a, inc, u, _) = UnansweredOrder(minutesAgo, status);
+
+        Assert.Equal(0, await _svc.ExpireUnacceptedAssignmentsAsync());
+
+        Assert.Equal(status, a.Status);
+        Assert.Equal(RescueUnitStatus.Dispatched, u.Status);
+        Assert.Equal(IncidentStatus.Dispatched, inc.Status);
+    }
+
+    [Fact]
+    public async Task UnacceptedOrder_TimeoutZero_FeatureOff()
+    {
+        _settings.Setup(s => s.GetEscalationSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new EscalationSettingsDto { AcceptTimeoutMinutes = 0 });
+        var (a, _, _, _) = UnansweredOrder(minutesAgo: 30);
+
+        Assert.Equal(0, await _svc.ExpireUnacceptedAssignmentsAsync());
+        Assert.Equal(DispatchAssignmentStatus.Dispatched, a.Status);
     }
 
     // ===================== Người báo trùng nhận thông báo tiến độ của sự cố gốc (23/11/2026) =====================

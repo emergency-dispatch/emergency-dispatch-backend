@@ -288,7 +288,7 @@ public class Incident : BaseEntity
     /// <summary>
     /// Đóng hồ sơ sự cố hoàn tất
     /// </summary>
-    public void Close(Guid closedById, string resolutionSummary)
+    public void Close(Guid? closedById, string resolutionSummary)
     {
         ClosedByUserId = closedById;
         ClosedAt = DateTime.UtcNow;

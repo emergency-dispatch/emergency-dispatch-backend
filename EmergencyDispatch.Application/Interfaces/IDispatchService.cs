@@ -152,4 +152,10 @@ public interface IDispatchService
         Guid incidentId,
         bool onlyAcceptedUnits,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Hệ thống tự rút các lệnh tổ chưa nhận quá thời gian cấu hình (escalation.acceptTimeoutMinutes): trả xe, sự cố về hàng chờ,
+    /// ghi log và báo Operator trạm. Trả về số lượt đã rút
+    /// </summary>
+    Task<int> ExpireUnacceptedAssignmentsAsync(CancellationToken cancellationToken = default);
 }

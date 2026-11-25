@@ -534,6 +534,16 @@ public static partial class LocalizationCatalog
         { "[{0}] Trung tâm đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "[{0}] The command center has assigned your incident to a rescue team and is waiting for the team to accept." },
         { "Đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "The incident has been assigned to a rescue team, waiting for the team to accept." },
         { "Đội cứu hộ đã nhận lệnh", "Rescue team accepted" },
+        // Tự rút lệnh khi tổ không phản hồi (25/11/2026)
+        { "Tổ không phản hồi lệnh sau {0} phút", "The team did not respond to the order within {0} min" },
+        { "Sự cố đã về hàng chờ, cần điều xe thay thế.", "The incident is back in the queue — a replacement vehicle is needed." },
+        { "Tổ {0}", "Team {0}" },
+        { "Nhân viên trạm (xe chưa gán tổ)", "Station staff (vehicle without a team)" },
+        { "LỆNH ĐIỀU PHỐI ĐÃ BỊ RÚT", "DISPATCH ORDER WITHDRAWN" },
+        { "[{0}] Tổ không nhận lệnh sau {1} phút nên hệ thống đã rút lệnh. Xe {2} trở về Sẵn sàng.", "[{0}] The team did not accept within {1} min, so the system withdrew the order. Vehicle {2} is back to Available." },
+        { "TỔ KHÔNG PHẢN HỒI LỆNH ĐIỀU PHỐI", "TEAM DID NOT RESPOND TO DISPATCH ORDER" },
+        { "[{0}] {1} ({2} thành viên) với {3} xe ({4}) không nhận lệnh sau {5} phút. Hệ thống đã rút lệnh và trả xe. {6}", "[{0}] {1} ({2} member(s)) with {3} vehicle(s) ({4}) did not accept within {5} min. The system withdrew the order and released the vehicles. {6}" },
+        { "Thời gian chờ tổ nhận lệnh phải là 0 (tắt) hoặc từ 1 đến 30 phút, theo bước 0.5 phút.", "The team acceptance timeout must be 0 (off) or 1 to 30 minutes, in 0.5-minute steps." },
         // Người báo trùng theo dõi sự cố gốc (23/11/2026)
         { "Báo cáo của bạn trùng với sự cố đang xử lý", "Your report duplicates an incident already being handled" },
         { "[{0}] Báo cáo của bạn trùng với sự cố {1} đang được xử lý. Bạn có thể theo dõi tiến độ và xe cứu hộ của sự cố {1}.", "[{0}] Your report duplicates incident {1}, which is already being handled. You can follow the progress and rescue vehicles of incident {1}." },

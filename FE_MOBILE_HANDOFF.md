@@ -1760,3 +1760,49 @@ Ca SC-261123-0390 đã lưu trong DB không tự sửa lại; Operator chốt ta
    - Không gọi API danh sách bổ sung.
    - Không hiện khối người báo và hồ sơ y tế.
    - Thêm dòng "Bạn đang theo dõi sự cố này vì báo cáo của bạn đã được xác nhận trùng".
+
+## 49. Cập nhật 25/11/2026: realtime còn thiếu ở mobile và cảnh báo mất GPS (theo nhận xét tài liệu)
+
+Bối cảnh: tài liệu báo cáo ghi NFR realtime qua SignalR (< 1 s), nhưng hiện tại chỉ web dùng SignalR. Backend **không cần đổi gì**: hub `/hubs/incidents`, `/hubs/tracking` và các sự kiện đã có đủ (xem mục 3.3 và `API_DOCUMENTATION.md`).
+
+**1. [Mobile] Nối SignalR** (mục 3.3 cũ: web đã làm, mobile chưa).
+- Cài `@microsoft/signalr`, kết nối với `accessTokenFactory` (token qua query `access_token`), bật `withAutomaticReconnect`.
+- Citizen: `SubscribeIncident(incidentId)` trên `/hubs/tracking` khi mở màn theo dõi; nghe `ReceiveRescueUnitLocation`, `ReceiveAssignmentStatus`, `ReceiveIncidentStatus`. Giữ polling hiện tại (5 s ở `CitizenTrackingModal`, 2,5 s ở `SafetyMapScreen`) chỉ làm dự phòng khi mất kết nối, giãn ra 30–60 s.
+- Staff: nghe `ReceiveJobAssigned`, `ReceiveAssignmentStatus`, `ReceiveTrafficTaskAssigned`, `ReceiveNotification`, `ForceLogout` trên `/hubs/incidents`.
+
+**2. [Mobile] Gửi GPS dày hơn khi có nhiệm vụ.** `IncidentOverviewScreen` đang gửi mỗi **15 s**; tài liệu (BR-23) yêu cầu dày hơn. Đề xuất 4–5 s khi lượt đang `Accepted / EnRoute`, giữ 15 s khi `OnScene`. Dùng `PUT /api/rescue-units/{id}/location` như hiện tại, hoặc hub `UpdateLocation` trên `/hubs/tracking` (cần token RescueStaff đúng trạm của xe).
+
+**3. [Web] Cảnh báo "Signal Lost" trên live map.** Xe đang có nhiệm vụ mà `lastLocationUpdateAt` (hoặc thời điểm sự kiện `ReceiveRescueUnitLocation` cuối) cũ hơn **60 s** → marker nhấp nháy và nhãn "Mất tín hiệu GPS". Không cần API mới: dữ liệu đã có trong `DispatchContext`.
+
+Khi làm xong 1–3, báo nhóm tài liệu sửa lại các mục 8.2, 8.3, 8.5, 8.7 trong `D:\SEP490\CAP_NHAT_TAI_LIEU_GDOC.md`.
+
+## 49. Cập nhật 25/11/2026: tổ không phản hồi lệnh → hệ thống tự rút lệnh
+
+**Backend (áp dụng cho mọi lệnh, AI tự điều lẫn Operator điều tay):** worker quét mỗi 30 giây. Lượt điều phối còn `Dispatched` quá `escalation.acceptTimeoutMinutes` phút (mặc định **3**, `0` = tắt, từ 1 đến 30, bước 0.5) thì hệ thống:
+- Chuyển lượt sang `Rejected` với `rejectionReason = "NoResponse"`, ghi chú "Hệ thống tự rút lệnh: tổ không phản hồi sau X phút."
+- Trả xe về `Available` và tự hủy yêu cầu hiện trường của lượt đó.
+- Đưa sự cố về hàng chờ `Verified`. Sự cố đang leo thang thì giữ `Escalated`; nếu tổ khác đã nghiệm thu thì sự cố tự đóng.
+- Ghi log:
+  - lịch sử trạng thái lượt (`changedByUserId = null`);
+  - audit sự cố: `action = AssignmentRejected`, `actorRole = "System"`, `newStateJson.autoWithdrawn = true`, kèm biển số, tổ và giờ phát lệnh;
+  - log server.
+- Gửi thông báo:
+  - **Operator trạm phụ trách + Operator trạm có xe + Admin:** "TỔ KHÔNG PHẢN HỒI LỆNH ĐIỀU PHỐI — [mã] Tổ X (N thành viên) với K xe (biển số) không nhận lệnh sau 3 phút. Hệ thống đã rút lệnh và trả xe. Sự cố đã về hàng chờ, cần điều xe thay thế." Ưu tiên cao. `data` có `teamId`, `teamName`, `memberCount`, `unitCount`, `plates`, `assignmentIds`, `reason = "NoResponse"`.
+  - **Thành viên tổ:** "LỆNH ĐIỀU PHỐI ĐÃ BỊ RÚT", kèm SignalR `ReceiveAssignmentStatus` với `status = Rejected`.
+
+**FE web/mobile cần làm:**
+1. **Admin → Cấu hình leo thang:** thêm ô "Thời gian chờ tổ nhận lệnh (phút)" cho `acceptTimeoutMinutes` (0 = tắt). Nếu PUT không gửi trường này thì backend dùng mặc định 3.
+2. **Staff (web `useStaffMission.onAssignmentStatus`):** khi `status = "Rejected"` và `rejectionReason = "NoResponse"` thì đóng popup nhận lệnh, tắt còi, hiện toast "Lệnh đã bị rút do tổ không phản hồi". Hiện code chỉ xử lý Accepted / EnRoute / OnScene / Completed. Mobile tự hết popup khi tải lại `my-assignments`.
+3. **Operator:**
+   - Hiện nhãn `NoResponse` là "Không phản hồi (hệ thống tự rút)" ở danh sách lượt và lịch sử.
+   - Audit timeline có `actorRole = "System"` thì hiện "Hệ thống".
+   - Thông báo "TỔ KHÔNG PHẢN HỒI…" nên mở sự cố để điều xe thay thế.
+
+## 50. Cập nhật 25/11/2026: ẩn công tắc "Tự động gửi SMS" (tài liệu đã bỏ SMS)
+
+Backend không có SMS gateway, luồng SOS cũng không đọc `ice.autoSendSmsOnSos`, nên công tắc này hiện chỉ lưu giá trị và không có tác dụng. Tài liệu Capstone đã bỏ toàn bộ chức năng SMS.
+
+1. **Mobile `ProfileScreen.tsx`:** bỏ khối "Toggle: Auto Send SMS GPS" và badge `profile.badge_sms_on/off`.
+2. **Mobile `ProfileEditModal.tsx` (tab 3):** bỏ công tắc "Tự động gửi SMS toạ độ khi bấm SOS". Giữ danh sách liên hệ ICE.
+3. Trường `autoSendSmsOnSos` / `smsTemplate` trong `types/profile.ts`, `types/user.ts`, `useProfileStore.ts` có thể để nguyên (không gây lỗi) hoặc xóa cùng lúc.
+
