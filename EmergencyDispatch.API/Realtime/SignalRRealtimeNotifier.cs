@@ -152,8 +152,16 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
 
             await CommandCenter(responsibleStationId, assignedStationIds.ToArray())
                 .SendAsync(RealtimeContract.ReceiveIncidentSupplement, supplement, cancellationToken);
+            // The incident group can also contain reporters of duplicate reports.
+            // Private audio/transcripts are fetched via the permission-checked API, never broadcast to that group.
+            var citizenPayload = new IncidentSupplementDto
+            {
+                Id = supplement.Id, IncidentId = supplement.IncidentId, TargetIncidentId = supplement.TargetIncidentId,
+                Note = supplement.Note, MediaUrls = supplement.MediaUrls, ReporterName = supplement.ReporterName,
+                CreatedAt = supplement.CreatedAt
+            };
             await _incidentHub.Clients.Group(RealtimeContract.IncidentGroup(supplement.TargetIncidentId))
-                .SendAsync(RealtimeContract.ReceiveIncidentSupplement, supplement, cancellationToken);
+                .SendAsync(RealtimeContract.ReceiveIncidentSupplement, citizenPayload, cancellationToken);
         }, "thông tin bổ sung", supplement.TargetIncidentId);
 
     public Task TrafficTaskChangedAsync(TrafficTaskEventDto task, IReadOnlyCollection<Guid> crewUserIds, CancellationToken cancellationToken = default)
@@ -234,7 +242,9 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
             .SendAsync(RealtimeContract.ReceiveTeamChanged, change, cancellationToken), "thay đổi tổ", change.TeamId);
 
     public Task SettingsChangedAsync(SettingsChangedEventDto change, CancellationToken cancellationToken = default)
-        => SafeAsync(() => _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+        => SafeAsync(() => (change.Key == "serviceArea"
+                ? _incidentHub.Clients.All
+                : _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup))
             .SendAsync(RealtimeContract.ReceiveSettingsChanged, change, cancellationToken), "cấu hình", change.Key);
 
     public Task NotificationReadAsync(Guid userId, NotificationReadEventDto read, CancellationToken cancellationToken = default)

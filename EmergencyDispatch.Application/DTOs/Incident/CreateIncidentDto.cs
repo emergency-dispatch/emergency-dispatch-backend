@@ -57,6 +57,9 @@ public class CreateIncidentDto
     /// </summary>
     public List<string> MediaUrls { get; set; } = new();
 
+    /// <summary>At most one audio receipt from POST /api/media/upload. Transcript can be reviewed before submission.</summary>
+    public List<EmergencyDispatch.Application.DTOs.Media.AudioAttachmentInputDto> AudioAttachments { get; set; } = new();
+
     /// <summary>
     /// Nhóm sự cố người báo chọn (tùy chọn): FireExplosion / TrafficAccident / Other. Dùng để gom báo cáo trùng trước khi AI chạy.
     /// Gửi incidentTypeCode thì bỏ qua trường này (nhóm lấy theo danh mục)

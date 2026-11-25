@@ -58,7 +58,7 @@ public class CreateOperatorIncidentDtoValidator : AbstractValidator<CreateOperat
             .WithMessage("Không được đính kèm quá 5 tệp tin phương tiện cho một sự cố.");
 
         RuleForEach(x => x.MediaUrls)
-            .Must(url => MediaUrlPolicy.IsTrusted(url, configuration))
+            .Must(url => MediaUrlPolicy.IsTrusted(url, configuration) && Services.AudioEvidence.LegacyType(url) != Domain.Enums.MediaType.Audio)
             .WithMessage("Ảnh / video phải được tải lên qua hệ thống (POST /api/media/upload).");
     }
 }

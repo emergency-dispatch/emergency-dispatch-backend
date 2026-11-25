@@ -485,7 +485,7 @@ Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ l
 ### PHÂN HỆ 3: TẢI LÊN HÌNH ẢNH / VIDEO (MEDIA UPLOAD)
 
 #### 3.1. Upload tệp tin lên Cloudinary (`POST /api/media/upload`)
-* **Mô tả**: Tải ảnh hoặc video hiện trường lên Cloudinary, trả về link trực tiếp có HTTPS.
+* **Mô tả**: Tải ảnh/video hoặc audio hiện trường. Ảnh/video giữ contract cũ; audio riêng tư trả `uploadToken`, xem phần Audio Evidence cuối tài liệu.
 * **Content-Type**: `multipart/form-data`
 * **Form Field**: `file` (tệp tin binary)
 * **Quy tắc kiểm tra (Validation Rule)**:
@@ -1049,6 +1049,7 @@ export enum UserRole {
 export enum MediaType {
   Photo = "Photo",
   Video = "Video",
+  Audio = "Audio",
 }
 
 // Loại xe cứu hộ
@@ -1471,7 +1472,7 @@ Response `data`: `{ incident: IncidentResponseDto, assignments: [...], dispatchS
 | `ReceiveRescueUnitStatus` | `/hubs/incidents` | Thêm: khi **tạo xe** và **xóa xe** | Mọi Operator / Admin, nhân viên trạm | Thêm `unitType`, `latitude`, `longitude`, `isDeleted` |
 | `ReceiveIncidentUpdate` | `/hubs/incidents` | Thêm: khi worker **leo thang** sự cố (`status = Escalated`) | Operator trạm phụ trách + Admin | `IncidentResponseDto` (rút gọn) |
 | **`ReceiveTeamChanged`** | `/hubs/incidents` | Tạo / sửa / xóa tổ; gán / gỡ nhân viên khỏi trạm hoặc tổ | Nhân viên trạm, Operator trạm, Admin | `{ stationId, teamId, teamName, action: Created\|Updated\|Deleted\|MembersChanged, staffId, changedAt }` |
-| **`ReceiveSettingsChanged`** | `/hubs/incidents` | `PUT /api/settings/escalation`, `/dispatch`, `/service-area` | Mọi Operator / Admin | `{ key: escalation\|dispatch\|serviceArea, updatedAt, updatedByName }` |
+| **`ReceiveSettingsChanged`** | `/hubs/incidents` | `PUT /api/settings/escalation`, `/dispatch`, `/service-area` | `serviceArea`: mọi kết nối trên `/hubs/incidents` (gồm Citizen); các key khác: Operator / Admin | `{ key: escalation\|dispatch\|serviceArea, updatedAt, updatedByName }` |
 | **`ReceiveNotificationRead`** | `/hubs/incidents` | `PUT /api/notifications/{id}/read`, `/read-all` | Chính người dùng (mọi thiết bị) | `{ notificationIds[], all, unreadCount }` |
 
 Về `incidentId` của vị trí xe: **server tự gắn** từ lượt phân công đang chạy của xe; giá trị `incidentId` client gửi lên hub bị bỏ qua. Vì vậy Citizen / Staff đã `SubscribeIncident` trên `/hubs/tracking` luôn nhận được vị trí xe của sự cố, và client không thể đẩy vị trí vào sự cố khác.
@@ -1746,7 +1747,7 @@ AI chỉ có độ tin cậy cao hoặc mới giao nhưng chưa được nhận 
 | `GET /api/citizen-incident-alerts?pageIndex=1&pageSize=20` | Citizen | Danh sách thông báo đã gửi vào hộp thư của chính người gọi, trong `ApiResponseDto.data` dạng phân trang |
 | `GET /api/citizen-incident-alerts/{id}` | Citizen | Chi tiết thông báo an toàn; 404 nếu không thuộc người gọi |
 
-Mặc định `enabled = false`. Server tự đặt `enabledFromUtc` khi bật, không nhận thời gian do client tự đặt. Chỉ các lần xác nhận/tiếp nhận từ mốc này mới được phát; tắt rồi bật lại tạo mốc mới. Các thông báo đã xếp hàng vẫn được giữ và có thể tiếp tục gửi sau khi bật lại nếu sự cố/người nhận còn hợp lệ.
+Mặc định `enabled = true`. Migration khởi tạo/bật cấu hình cũ một lần với `enabledFromUtc` bằng thời điểm chạy migration (UTC); giữ nguyên mốc của cấu hình đã bật hợp lệ. Mốc được lưu trong DB, không đặt lại khi restart; Admin vẫn có thể tắt sau đó. Server tự đặt `enabledFromUtc` khi bật, không nhận thời gian do client tự đặt. Chỉ các lần xác nhận/tiếp nhận từ mốc này mới được phát; tắt rồi bật lại tạo mốc mới. Các thông báo đã xếp hàng vẫn được giữ và có thể tiếp tục gửi sau khi bật lại nếu sự cố/người nhận còn hợp lệ.
 
 DTO chi tiết chỉ có `id`, `area`, `message`, `createdAt`. Nội dung Việt: **“Có sự cố tại {khu vực báo cáo}.”**; Anh: **“An incident has been reported at {reported area}.”** Khu vực lấy từ `LocationAddress`, loại bỏ HTML, URL, email và chuỗi giống số điện thoại; thiếu địa chỉ thì dùng tọa độ làm tròn ba chữ số thập phân. Không lấy tiêu đề, mô tả, ảnh, danh tính hoặc hồ sơ y tế người báo.
 
@@ -1801,3 +1802,22 @@ Server phát `ReceiveCitizenMapChanged` khi tập marker hoặc dữ liệu mark
 Đây là **tín hiệu tải lại**, không phải payload thêm/sửa marker. Worker quét khoảng 10 giây/lượt, không có cam kết độ trễ chính xác. Khi nhận sự kiện, client đọc lại API cho vùng đang xem và thay thế snapshot marker, gồm gỡ marker đã đóng/hủy. Phải đọc lại cả sau kết nối/subscribe/reconnect, không chờ sự kiện đầu tiên; có thể dùng polling dự phòng. `revision` chỉ so sánh bằng/khác, không phải số thứ tự thời gian. Nếu có nhiều trang, cần tải đủ trang cần hiển thị, không coi trang đầu là toàn bộ dữ liệu.
 
 Không thêm migration cho bản đồ. Lookup `by-alert` sử dụng bảng thông báo từ migration Citizen trước đó; chức năng thông báo và quy tắc truy cập sự cố riêng tư giữ nguyên.
+
+
+## Audio Evidence — 25/11/2026 (BE)
+
+Web/Mobile performs speech-to-text. BE stores the audio and client-provided transcript; no server STT provider/key is required. Giọng nói được client chuyển thành chữ, BE không tự nghe hay tự tạo bản chép lời.
+
+- `MediaType.Audio = 2` (JSON: `"Audio"`); Photo=0/Video=1 unchanged.
+- `POST /api/media/upload`: multipart field `file`; audio maximum **5 MiB, >0–30 seconds**, one audio per SOS/supplement, five total attachments per submission. Accept audio/mp4, audio/m4a, audio/x-m4a, audio/mpeg, audio/mp3, audio/aac, audio/webm, audio/ogg, audio/wav, audio/x-wav, audio/wave. MIME parameters such as `audio/webm;codecs=opus` are normalized. Cloudinary decodes and verifies duration and absence of a video track; do not trust a client-supplied duration. Unsupported/invalid/overlong audio returns 400.
+- Cloudinary must be configured for real audio upload; no fake image URL is returned as audio. Audio uses Cloudinary `video` resource type and `authenticated` delivery. `data.url` is the private asset identifier, **not a directly playable URL**. `data.uploadToken` is a protected 24-hour receipt, bound to the uploader when authenticated; an anonymous receipt acts as a bearer capability. Do not log/share receipts.
+- Submit `audioAttachments: [{ "uploadToken": "...", "transcript": "client-reviewed words" }]` in `POST /api/incidents` (or `/sos`) and `POST /api/incidents/{id}/supplements`. Transcript is optional, maximum **4000 characters**, stored separately from `description` (still <=200) or supplement `note` (<=1000). Do not truncate automatically. Audio URLs must not be sent in legacy `mediaUrls`; those remain images/videos.
+- Incident details expose audio in `mediaItems` with `id`, `mediaType`, `publicId`, `mediaUrl`, `mimeType`, `fileSizeBytes`, `durationSeconds`, `transcript`, `transcriptionStatus`. Status is `ClientProvided` or `Missing`; upload returns `AwaitingClientTranscript`. Supplement DTOs expose `audioAttachments` separately from legacy `mediaUrls`.
+- `POST /api/media/audio/preview-url`, body `{ "uploadToken": "..." }`: preview before submitting. Receipt is checked; signed playback URL lasts five minutes.
+- `GET /api/incidents/{incidentId}/audio/{mediaId}/playback-url`: JWT required, checks private incident permissions before issuing a five-minute URL.
+- `GET /api/incidents/{incidentId}/supplements/{supplementId}/audio/{mediaId}/playback-url`: JWT and supplement permissions required. Both return `{ "success": true, "data": { "url": "...", "expiresAt": "...Z" } }`, with `Cache-Control: no-store`. Refresh through BE if the link expires. These short-lived URLs grant playback to whoever possesses them until expiration.
+- Initial SOS: only photos enter YOLO/VLM; client speech text is appended to Qwen context as unverified citizen information. Audio-only SOS remains Pending/Unclassified for Operator; current image AI is not called without a photo. Audio attached without a usable transcript blocks automatic dispatch with `autoDispatchReasonCode = "audio-transcript-unavailable"`; Operator can listen/verify and dispatch manually. A transcript does not waive existing confidence/ensemble/availability rules.
+- Late evidence: existing `ReceiveIncidentSupplement` notifies authorized Operator/crew with audio metadata. The broader incident-following group receives the usual event without audio/transcripts; clients refetch through permission-checked API. No audio/transcript is added to public map or area announcements. Late evidence does not automatically cancel or repeat dispatch.
+- Apply migration `20261125141313_AddIncidentAudioEvidence` before running the updated BE. Existing photo/video values and rows are preserved.
+
+Web/Mobile still need camera+microphone capture, local STT/review, upload and audio players. This BE change does not implement those UIs. Integration/testing steps: [SOS_AUDIO_EVIDENCE_TESTING.md](SOS_AUDIO_EVIDENCE_TESTING.md).

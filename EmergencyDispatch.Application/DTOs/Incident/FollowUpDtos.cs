@@ -156,12 +156,13 @@ public class LinkedReportDto
 // ============================== D. Người báo bổ sung thông tin ==============================
 
 /// <summary>
-/// Người báo bổ sung ghi chú / ảnh vào sự cố của mình. Khách: gửi kèm guestCancellationToken
+/// Người báo bổ sung ghi chú, ảnh/video hoặc audio kèm text. Khách: gửi kèm guestCancellationToken
 /// </summary>
 public class AddSupplementDto
 {
     public string Note { get; set; } = string.Empty;
     public List<string> MediaUrls { get; set; } = new();
+    public List<EmergencyDispatch.Application.DTOs.Media.AudioAttachmentInputDto> AudioAttachments { get; set; } = new();
     public string? GuestCancellationToken { get; set; }
 }
 
@@ -175,6 +176,7 @@ public class IncidentSupplementDto
 
     public string Note { get; set; } = string.Empty;
     public List<string> MediaUrls { get; set; } = new();
+    public List<IncidentMediaDto> AudioAttachments { get; set; } = new();
     public string? ReporterName { get; set; }
     public DateTime CreatedAt { get; set; }
 }

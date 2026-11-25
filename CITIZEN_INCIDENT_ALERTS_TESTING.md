@@ -13,8 +13,8 @@ Citizen nhận thông báo khi tài khoản Active, chưa xóa; không cần onl
    dotnet ef database update --project EmergencyDispatch.Infrastructure --startup-project EmergencyDispatch.API
    ```
 
-3. Chạy API như thường. Worker đã được đăng ký sẵn. Swagger: đăng nhập Admin, Authorize bằng JWT; `GET /api/settings/citizen-incident-alerts` mặc định trả `values.enabled = false`.
-4. `PUT /api/settings/citizen-incident-alerts` với `{ "enabled": true }`. Kiểm tra `values.enabledFromUtc` là thời điểm server vừa ghi. Không nhập mốc thời gian cũ để phát lại lịch sử.
+3. Chạy API như thường. Worker đã được đăng ký sẵn. Swagger: đăng nhập Admin, Authorize bằng JWT; `GET /api/settings/citizen-incident-alerts` mặc định trả `values.enabled = true`, `values.enabledFromUtc` đã được lưu trong DB khi migration/khởi tạo. Restart API không được đổi mốc này. Migration này bật cấu hình cũ đang tắt một lần; Admin vẫn tắt được sau đó.
+4. Để thử bật lại: PUT `{ "enabled": false }`, rồi PUT `{ "enabled": true }` tới `/api/settings/citizen-incident-alerts`. Kiểm tra `values.enabledFromUtc` là thời điểm server vừa ghi. PUT true khi đã bật phải giữ nguyên mốc; sự cố đã xác nhận trước mốc không được gửi bù.
 5. Chỉ khi thử push thật: cấu hình Firebase theo hướng dẫn hiện có, đăng ký token thiết bị thử qua `PUT /api/users/fcm-token`, bật quyền thông báo trên thiết bị. Nếu không có token, chỉ đánh giá hộp thư/API, không ghi nhận push đã chạy.
 
 ## Các bước kiểm thử chính trên Swagger

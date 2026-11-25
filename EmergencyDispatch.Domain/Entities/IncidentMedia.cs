@@ -3,7 +3,7 @@ using EmergencyDispatch.Domain.Enums;
 namespace EmergencyDispatch.Domain.Entities;
 
 /// <summary>
-/// Tệp tin hình ảnh hoặc video đính kèm sự cố khẩn cấp
+/// Tệp ảnh, video hoặc bản ghi âm đính kèm sự cố khẩn cấp
 /// </summary>
 public class IncidentMedia : BaseEntity
 {
@@ -21,7 +21,7 @@ public class IncidentMedia : BaseEntity
     public string? PublicId { get; set; }
 
     /// <summary>
-    /// Loại media (Photo, Video)
+    /// Loại media (Photo, Video, Audio)
     /// </summary>
     public MediaType MediaType { get; set; } = MediaType.Photo;
 
@@ -34,4 +34,8 @@ public class IncidentMedia : BaseEntity
     /// MIME type thực tế của file (vd: image/jpeg, video/mp4)
     /// </summary>
     public string? MimeType { get; set; }
+
+    public double? DurationSeconds { get; set; }
+    public string? Transcript { get; set; }
+    public string? TranscriptionStatus { get; set; }
 }

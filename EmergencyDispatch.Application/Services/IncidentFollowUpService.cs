@@ -39,6 +39,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
     private readonly ILogger<IncidentFollowUpService> _logger;
 
     private readonly ITypeCatalogRepository? _typeCatalog;
+    private readonly IAudioUploadTokenService? _audioTokens;
 
     public IncidentFollowUpService(
         IIncidentRepository incidentRepository,
@@ -53,9 +54,11 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         IGuestCancellationTokenService guestTokens,
         IConfiguration configuration,
         ILogger<IncidentFollowUpService> logger,
-        ITypeCatalogRepository? typeCatalog = null)
+        ITypeCatalogRepository? typeCatalog = null,
+        IAudioUploadTokenService? audioTokens = null)
     {
         _typeCatalog = typeCatalog;
+        _audioTokens = audioTokens;
         _incidentRepository = incidentRepository;
         _userRepository = userRepository;
         _supplementRepository = supplementRepository;
@@ -415,7 +418,10 @@ public class IncidentFollowUpService : IIncidentFollowUpService
     {
         var note = dto.Note?.Trim() ?? string.Empty;
         var media = (dto.MediaUrls ?? new List<string>()).Where(u => !string.IsNullOrWhiteSpace(u)).Select(u => u.Trim()).ToList();
-        if (note.Length == 0 && media.Count == 0)
+        if (!AudioEvidence.TryResolve(dto.AudioAttachments, media.Count, _audioTokens, actorUserId,
+                out var audioMedia, out var audioError))
+            return ApiResponseDto<IncidentSupplementDto>.FailureResult(audioError!);
+        if (note.Length == 0 && media.Count == 0 && audioMedia.Count == 0)
         {
             return ApiResponseDto<IncidentSupplementDto>.FailureResult("Vui lòng nhập nội dung hoặc đính kèm ảnh bổ sung.");
         }
@@ -425,7 +431,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             return ApiResponseDto<IncidentSupplementDto>.FailureResult("Nội dung bổ sung không được vượt quá 1000 ký tự.");
         }
 
-        if (media.Count > MaxSupplementMedia || media.Any(u => !MediaUrlPolicy.IsTrusted(u, _configuration)))
+        if (media.Count > MaxSupplementMedia || media.Any(u => !MediaUrlPolicy.IsTrusted(u, _configuration) || AudioEvidence.LegacyType(u) == MediaType.Audio))
         {
             return ApiResponseDto<IncidentSupplementDto>.FailureResult(
                 LocalizationHelper.Localize("Tối đa {0} ảnh / video, và phải được tải lên qua hệ thống (POST /api/media/upload).", MaxSupplementMedia));
@@ -466,12 +472,13 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             IncidentId = incident.Id,
             ReporterUserId = actorUserId,
             Note = note,
+            AudioAttachmentsJson = audioMedia.Count == 0 ? null : JsonSerializer.Serialize(audioMedia.Select(AudioEvidence.ToDto)),
             MediaUrls = media
         };
         await _supplementRepository.AddAsync(supplement);
 
         var description = $"Người báo bổ sung thông tin" + (target.Id != incident.Id ? $" (từ báo cáo gom {CodeOf(incident)})" : string.Empty)
-                          + (note.Length > 0 ? $": {note}" : string.Empty) + (media.Count > 0 ? $" (+{media.Count} ảnh / video)" : string.Empty);
+                          + (note.Length > 0 ? $": {note}" : string.Empty) + (media.Count > 0 ? $" (+{media.Count} ảnh / video)" : string.Empty) + (audioMedia.Count > 0 ? " (+1 bản ghi âm)" : string.Empty);
         await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
         {
             IncidentId = target.Id,
@@ -499,7 +506,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "Người báo bổ sung thông tin hiện trường",
-                Message = new LocalizedText("{0}: {1}", target.Title, note.Length > 0 ? note : "ảnh / video mới"),
+                Message = new LocalizedText("{0}: {1}", target.Title, note.Length > 0 ? note : audioMedia.Count > 0 ? "bản ghi âm mới" : "ảnh / video mới"),
                 IncidentId = target.Id,
                 HighPriority = true
             }, cancellationToken);
@@ -584,7 +591,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
 
         if (photo != null)
         {
-            await _aiQueue.EnqueueAsync(new AiAnalysisJob(report.Id, photo, report.Description, now), cancellationToken);
+            await _aiQueue.EnqueueAsync(new AiAnalysisJob(report.Id, photo, AudioEvidence.AiContext(report.Description, report.MediaItems), now), cancellationToken);
         }
 
         await _realtimeNotifier.IncidentCreatedAsync(IncidentService.MapToResponseDto(report), cancellationToken);
@@ -694,6 +701,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
         TargetIncidentId = targetIncidentId,
         Note = s.Note,
         MediaUrls = s.MediaUrls,
+        AudioAttachments = string.IsNullOrWhiteSpace(s.AudioAttachmentsJson) ? new() : JsonSerializer.Deserialize<List<IncidentMediaDto>>(s.AudioAttachmentsJson) ?? new(),
         ReporterName = reporterName,
         CreatedAt = s.CreatedAt
     };

@@ -1777,7 +1777,7 @@ Nội dung chỉ có “Có sự cố tại [khu vực báo cáo]” / “An inc
 - Khử trùng popup theo `notificationId` khi FCM và SignalR cùng đến hoặc nhà cung cấp gửi lại. Hiển thị mức thông tin thường, không dùng chuông/DND bypass của RescueStaff.
 - Dùng `Accept-Language: vi/en` khi đọc API; cập nhật `UiLanguage` và FCM token bằng API có sẵn để push đúng ngôn ngữ.
 
-Backend mặc định tắt. Sau khi áp dụng migration `20261123145602_AddCitizenIncidentAlerts`, Admin bật `PUT /api/settings/citizen-incident-alerts` với `{ "enabled": true }`; mốc kích hoạt do server đặt. Chỉ bật trên môi trường thử với tài khoản/thiết bị thử trước khi vận hành. Tắt dừng tạo/gửi mới; thông báo đã lưu không bị xóa.
+Backend mặc định bật từ migration `20261125090000_EnableCitizenIncidentAlertsByDefault`, kèm mốc UTC được lưu trong DB. Migration bật cấu hình cũ đang tắt một lần, không phát bù các xác nhận trước mốc. Sau đó Admin vẫn tắt/bật qua `PUT /api/settings/citizen-incident-alerts`; restart không thay đổi lựa chọn hay mốc đã lưu. Tắt dừng tạo/gửi mới; thông báo đã lưu không bị xóa.
 
 Backend xử lý lưu bền, chống tạo hai lần, retry FCM và kiểm tra người nhận còn Active trước khi gửi. Hiển thị push trên thiết bị vẫn cần token, quyền thông báo và cấu hình Firebase hợp lệ; chưa thể coi kiểm thử unit/PostgreSQL là kiểm thử hiển thị trên điện thoại.
 
@@ -1846,7 +1846,26 @@ Backend không có SMS gateway, luồng SOS cũng không đọc `ice.autoSendSms
 2. **Mobile `ProfileEditModal.tsx` (tab 3):** bỏ công tắc "Tự động gửi SMS toạ độ khi bấm SOS". Giữ danh sách liên hệ ICE.
 3. Trường `autoSendSmsOnSos` / `smsTemplate` trong `types/profile.ts`, `types/user.ts`, `useProfileStore.ts` có thể để nguyên (không gây lỗi) hoặc xóa cùng lúc.
 
-## 51. Cập nhật 25/11/2026: độ chính xác GPS trên mobile (theo nhận xét tài liệu)
+## 54. Cập nhật BE 25/11/2026: cảnh báo Citizen mặc định bật và vùng phục vụ realtime
+
+- Citizen incident alerts default to enabled / Cảnh báo Citizen mặc định bật. Migration `20261125090000_EnableCitizenIncidentAlertsByDefault` bật cấu hình cũ đang tắt một lần và ghi mốc UTC bền vững; giữ mốc của cấu hình đã bật hợp lệ. Không đổi mốc mỗi lần đọc/restart. Admin vẫn có thể tắt sau migration; chỉ các xác nhận/Staff tiếp nhận từ mốc bật mới đủ điều kiện thông báo.
+- `ReceiveSettingsChanged` trên `/hubs/incidents`: `key == "serviceArea"` được gửi một lần tới mọi kết nối, gồm Citizen; các key khác giữ phạm vi Operator/Admin. Citizen nhận sự kiện thì gọi lại API công khai `GET /api/settings/service-area` và vẽ lại vùng trên bản đồ. Tải lại cấu hình khi reconnect để bù sự kiện bị lỡ. BE không tự vẽ giao diện.
+
+
+## 55. Cập nhật 25/11/2026: SOS có ảnh + audio + bản chép lời từ client
+
+**BE ready; Web/Mobile UI chưa sửa.** Client dùng một nguồn micro để ghi file và chuyển giọng nói thành chữ, cho người dùng kiểm tra lại. BE không gọi dịch vụ Speech-to-Text.
+
+1. Upload ảnh như cũ; upload audio qua `POST /api/media/upload` (field `file`, <=5 MiB, >0–30 giây, không có track video). Giữ `uploadToken`; không đưa URL audio vào `mediaUrls` và không tự đổi đuôi WebM thành MP3. Thiếu Cloudinary thật sẽ báo lỗi audio, không trả ảnh giả.
+2. Gửi SOS gồm `mediaUrls` chỉ có ảnh/video và `audioAttachments: [{ uploadToken, transcript }]`. Transcript <=4000 ký tự, description <=200; không tự cắt mất nội dung. Mỗi request chỉ một audio, tối đa năm attachment tổng cộng. Có thể tạo SOS trước rồi gửi cùng cấu trúc qua `POST /api/incidents/{id}/supplements` (kèm guestCancellationToken nếu là Guest).
+3. Nghe trước khi gửi: `POST /api/media/audio/preview-url` với `{ uploadToken }`. Sau khi gắn vào ca: `GET /api/incidents/{id}/audio/{mediaId}/playback-url`; audio bổ sung dùng `/api/incidents/{id}/supplements/{supplementId}/audio/{mediaId}/playback-url`. Dùng `response.data.url` cho player; link có hạn 5 phút, hết hạn gọi BE lấy lại. URL media gốc là authenticated asset, không phát trực tiếp được.
+4. Bản ghi và text trả trong `mediaItems` của chi tiết sự cố; bản ghi bổ sung trong `audioAttachments` của supplement. Operator/Staff mở cùng API chi tiết có phân quyền để nghe/đọc. Người báo trùng không được đọc audio của người báo gốc. Audio không phát lên bản đồ Citizen.
+5. Qwen nhận ảnh + transcript; YOLO chỉ nhận ảnh. Có audio nhưng thiếu transcript thì không tự điều phối, Operator thẩm định. Chỉ audio, không ảnh: giữ Pending cho Operator. Audio bổ sung phát `ReceiveIncidentSupplement`, không tự điều lại xe; nhóm theo dõi sự cố không nhận nội dung audio/transcript qua broadcast, cần tải lại API nếu có quyền.
+6. Đóng modal phải dừng tracks/recorder, thu hồi object URLs và giữ dữ liệu nếu upload lỗi. Micro bị từ chối hoặc STT lỗi phải cho phép gửi bằng ảnh/ghi chú, hoặc audio không transcript để Operator xử lý. BE không thể ghi/chụp thay client.
+
+Contract và Swagger: xem phần **Audio Evidence** trong `API_DOCUMENTATION.md`; kịch bản trong `SOS_AUDIO_EVIDENCE_TESTING.md`. Migration: `20261125141313_AddIncidentAudioEvidence`.
+
+## 56. Cập nhật 25/11/2026: độ chính xác GPS trên mobile (theo nhận xét tài liệu)
 
 Tài liệu chốt mục tiêu **≤ 20 m ngoài trời**. Mobile hiện chưa đạt được:
 
@@ -1861,7 +1880,7 @@ Tài liệu chốt mục tiêu **≤ 20 m ngoài trời**. Mobile hiện chưa �
 4. **(Tùy chọn) gửi `accuracy` (mét) lên backend.** Cần thêm trường ở DTO tạo sự cố; báo backend nếu làm.
 5. **Bỏ chữ "Độ chính xác GPS cao"** ở `MapboxView.tsx` (popup vị trí người dùng), hoặc thay bằng giá trị ±X m thật.
 
-## 52. Cập nhật 25/11/2026: Guest SOS bắt buộc số điện thoại gọi lại (chỉ kiểm tra ở mobile)
+## 57. Cập nhật 25/11/2026: Guest SOS bắt buộc số điện thoại gọi lại (chỉ kiểm tra ở mobile)
 
 Tài liệu chốt: Guest phải có SĐT gọi lại. **Backend không đổi**: `ReporterPhone` vẫn tùy chọn, nên mobile tự kiểm tra.
 
@@ -1875,7 +1894,7 @@ Tài liệu chốt: Guest phải có SĐT gọi lại. **Backend không đổi**
 3. **Người đã đăng nhập mà hồ sơ chưa có SĐT:** hiện gợi ý thêm SĐT (giống web `CitizenPhoneModal`), **không chặn** gửi SOS.
 4. Khi Guest đăng nhập hoặc đăng ký thì có thể xóa `GUEST_CALLBACK_PHONE`, hoặc điền sẵn số này vào form đăng ký.
 
-## 53. Cập nhật 25/11/2026: ưu tiên hotline Trung tâm / trạm Khu CNC trước 114 / 115 (theo nhận xét tài liệu)
+## 58. Cập nhật 25/11/2026: ưu tiên hotline Trung tâm / trạm Khu CNC trước 114 / 115 (theo nhận xét tài liệu)
 
 Quy định: **trong vùng phục vụ**, nút gọi khẩn luôn đưa hotline của trạm đang xử lý (`Station.PhoneNumber`) hoặc hotline chung của Trung tâm lên trước. 114 / 115 / 113 chỉ là lựa chọn phụ. **Ngoài vùng phục vụ** thì giữ 114 / 115 như hiện tại (`OutOfServiceAreaModal`).
 
@@ -1888,7 +1907,7 @@ Quy định: **trong vùng phục vụ**, nút gọi khẩn luôn đưa hotline 
 5. **Web footer trang chủ (`landing.ts` `footerFire114`…):** thêm dòng hotline Trung tâm Khu CNC lên đầu, 113 / 114 / 115 bên dưới.
 6. **Hotline chung của Trung tâm:** hiện chưa có trong cấu hình. Trước mắt có thể đặt hằng số ở FE / mobile, hoặc dùng SĐT trạm chính. Nếu muốn Admin cấu hình được thì báo backend thêm khóa setting (VD `contact.commandCenterHotline`) và trả về qua API cấu hình công khai.
 
-## 54. Cập nhật 25/11/2026: bỏ tự hủy 24h, thay bằng cờ "Quá hạn – cần rà soát" (BR-09)
+## 59. Cập nhật 25/11/2026: bỏ tự hủy 24h, thay bằng cờ "Quá hạn – cần rà soát" (BR-09)
 
 **Backend đã đổi:**
 - `IncidentStaleReviewWorker` (thay `IncidentAutoExpireWorker`) quét mỗi giờ. Sự cố **chưa xác minh** quá `dispatch.autoExpireHours` giờ (mặc định 24; trạng thái Pending / AiProcessing / AiProcessed / Escalated chưa xác minh) **không bị hủy nữa**. Thay vào đó:

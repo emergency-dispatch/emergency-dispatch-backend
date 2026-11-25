@@ -8,7 +8,7 @@ namespace EmergencyDispatch.Application.Interfaces;
 public interface IMediaUploadService
 {
     /// <summary>
-    /// Upload stream ảnh hoặc video lên Cloudinary
+    /// Upload ảnh/video hoặc audio lên Cloudinary; audio được lưu authenticated và kiểm tra thời lượng.
     /// </summary>
     Task<MediaUploadResultDto> UploadAsync(Stream stream, string fileName, string contentType, CancellationToken cancellationToken = default);
 

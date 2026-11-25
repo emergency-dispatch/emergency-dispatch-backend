@@ -468,6 +468,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(m => m.MediaUrl).HasMaxLength(1000).IsRequired();
             entity.Property(m => m.PublicId).HasMaxLength(500);
             entity.Property(m => m.MimeType).HasMaxLength(50);
+            entity.Property(m => m.Transcript).HasMaxLength(4000);
+            entity.Property(m => m.TranscriptionStatus).HasMaxLength(32);
 
             entity.HasOne(m => m.Incident)
                   .WithMany(i => i.MediaItems)
@@ -803,6 +805,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         {
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Note).HasMaxLength(1000);
+            entity.Property(s => s.AudioAttachmentsJson).HasColumnType("jsonb");
             entity.HasIndex(s => s.IncidentId).HasDatabaseName("IX_IncidentSupplements_IncidentId");
             entity.HasOne(s => s.Incident).WithMany(i => i.Supplements).HasForeignKey(s => s.IncidentId).OnDelete(DeleteBehavior.Cascade);
             entity.HasQueryFilter(s => !s.IsDeleted);

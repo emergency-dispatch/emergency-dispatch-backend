@@ -21,6 +21,18 @@ public class SystemSettingRepository : ISystemSettingRepository
             .FirstOrDefaultAsync(s => s.Key == key, cancellationToken);
     }
 
+    public async Task<SystemSetting> GetOrCreateAsync(string key, string initialValueJson, CancellationToken cancellationToken = default)
+    {
+        // Preserve the winning activation timestamp when several instances initialize together.
+        await _context.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "SystemSettings" ("Id", "Key", "ValueJson", "CreatedAt", "IsDeleted")
+            VALUES ({Guid.NewGuid()}, {key}, {initialValueJson}, {DateTime.UtcNow}, FALSE)
+            ON CONFLICT ("Key") DO NOTHING
+            """, cancellationToken);
+        return await GetByKeyAsync(key, cancellationToken)
+            ?? throw new InvalidOperationException("System setting initialization did not persist.");
+    }
+
     public async Task<SystemSetting> UpsertAsync(string key, string valueJson, Guid? updatedByUserId, CancellationToken cancellationToken = default)
     {
         var setting = await _context.SystemSettings.FirstOrDefaultAsync(s => s.Key == key, cancellationToken);

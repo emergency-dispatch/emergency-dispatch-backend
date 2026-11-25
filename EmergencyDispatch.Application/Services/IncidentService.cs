@@ -47,6 +47,7 @@ public class IncidentService : IIncidentService
     private readonly ISpatialQueryService? _spatial;
     private readonly IEscalationRepository? _escalationRepository;
     private readonly IFieldRequestService? _fieldRequestService;
+    private readonly IAudioUploadTokenService? _audioTokens;
 
     /// <summary>
     /// Geofencing: có ranh giới đa giác → PostGIS ST_Distance tới đa giác; không có / lỗi → hình tròn tâm + bán kính
@@ -97,10 +98,12 @@ public class IncidentService : IIncidentService
         ITypeCatalogRepository? typeCatalog = null,
         ISpatialQueryService? spatial = null,
         IEscalationRepository? escalationRepository = null,
-        IFieldRequestService? fieldRequestService = null)
+        IFieldRequestService? fieldRequestService = null,
+        IAudioUploadTokenService? audioTokens = null)
     {
         _escalationRepository = escalationRepository;
         _fieldRequestService = fieldRequestService;
+        _audioTokens = audioTokens;
         _spatial = spatial;
         _typeCatalog = typeCatalog;
         _followUpService = followUpService;
@@ -204,6 +207,10 @@ public class IncidentService : IIncidentService
             if (replay != null) return replay;
         }
 
+        if (!AudioEvidence.TryResolve(dto.AudioAttachments, dto.MediaUrls?.Count ?? 0,
+                _audioTokens, userId, out var audioMedia, out var audioError))
+            return ApiResponseDto<IncidentResponseDto>.FailureResult(audioError!);
+
         // FR-OP-03 / BR-05: chặn SOS từ số điện thoại đang trong danh sách đen
         var now = DateTime.UtcNow;
         if (normalizedPhone != null)
@@ -285,8 +292,7 @@ public class IncidentService : IIncidentService
             {
                 if (string.IsNullOrWhiteSpace(url)) continue;
 
-                var isVideo = url.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                              url.EndsWith(".mov", StringComparison.OrdinalIgnoreCase);
+                var isVideo = AudioEvidence.LegacyType(url) == MediaType.Video;
 
                 incident.MediaItems.Add(new IncidentMedia
                 {
@@ -296,6 +302,8 @@ public class IncidentService : IIncidentService
                 });
             }
         }
+
+        foreach (var audio in audioMedia) incident.MediaItems.Add(audio);
 
         // 4. Xác định ảnh hiện trường cho AI (VLM chỉ nhận ảnh, ưu tiên Photo)
         var mediaToAnalyze = incident.MediaItems.FirstOrDefault(m => m.MediaType == MediaType.Photo)?.MediaUrl;
@@ -385,7 +393,7 @@ public class IncidentService : IIncidentService
             if (hasPhoto)
             {
                 await _aiQueue.EnqueueAsync(
-                    new AiAnalysisJob(incident.Id, mediaToAnalyze!, dto.Description, DateTime.UtcNow, QuickCheckOnly: true),
+                    new AiAnalysisJob(incident.Id, mediaToAnalyze!, AudioEvidence.AiContext(dto.Description, incident.MediaItems), DateTime.UtcNow, QuickCheckOnly: true),
                     cancellationToken);
             }
 
@@ -403,7 +411,7 @@ public class IncidentService : IIncidentService
         if (willAnalyze)
         {
             await _aiQueue.EnqueueAsync(
-                new AiAnalysisJob(incident.Id, mediaToAnalyze!, dto.Description, DateTime.UtcNow),
+                new AiAnalysisJob(incident.Id, mediaToAnalyze!, AudioEvidence.AiContext(dto.Description, incident.MediaItems), DateTime.UtcNow),
                 cancellationToken);
 
             _logger.LogInformation("Sự cố {IncidentId} đã vào hàng đợi phân tích AI.", incident.Id);
@@ -530,8 +538,7 @@ public class IncidentService : IIncidentService
 
         foreach (var url in dto.MediaUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
         {
-            var isVideo = url.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                          url.EndsWith(".mov", StringComparison.OrdinalIgnoreCase);
+            var isVideo = AudioEvidence.LegacyType(url) == MediaType.Video;
             incident.MediaItems.Add(new IncidentMedia
             {
                 MediaUrl = url.Trim(),
@@ -2070,14 +2077,7 @@ public class IncidentService : IIncidentService
             CancelledByUserId = incident.CancelledByUserId,
             CancelledByName = incident.CancelledByUser?.FullName,
             CancellationNote = incident.CancellationNote,
-            MediaItems = incident.MediaItems.Select(m => new IncidentMediaDto
-            {
-                Id = m.Id,
-                MediaUrl = m.MediaUrl,
-                MediaType = m.MediaType,
-                FileSizeBytes = m.FileSizeBytes,
-                MimeType = m.MimeType
-            }).ToList(),
+            MediaItems = incident.MediaItems.Where(m => !m.IsDeleted).Select(AudioEvidence.ToDto).ToList(),
             AiClassification = aiDto,
             ReporterMedicalProfile = medicalProfile
         };
