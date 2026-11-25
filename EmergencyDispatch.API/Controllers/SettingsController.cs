@@ -93,6 +93,18 @@ public class SettingsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponseDto<SettingsDefaultsDto>), StatusCodes.Status200OK)]
     public IActionResult GetDefaults() => Ok(ApiResponseDto<SettingsDefaultsDto>.Ok(new SettingsDefaultsDto()));
 
+    /// <summary>Area-only citizen announcement settings / Cấu hình thông báo khu vực cho người dân.</summary>
+    [HttpGet("citizen-incident-alerts")]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCitizenIncidentAlerts(CancellationToken cancellationToken)
+        => Ok(ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>.Ok(await _settingsService.GetCitizenIncidentAlertRecordAsync(cancellationToken)));
+
+    [HttpPut("citizen-incident-alerts")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateCitizenIncidentAlerts([FromBody] CitizenIncidentAlertSettingsDto dto, CancellationToken cancellationToken)
+        => this.ToHttpResult(await _settingsService.UpdateCitizenIncidentAlertAsync(dto, GetCurrentUserId(), cancellationToken));
+
     private Guid GetCurrentUserId()
         => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
 }

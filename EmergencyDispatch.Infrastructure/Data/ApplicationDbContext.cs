@@ -151,6 +151,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
     // 6. Notifications
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<CitizenIncidentAlert> CitizenIncidentAlerts => Set<CitizenIncidentAlert>();
+    public DbSet<CitizenIncidentAlertDelivery> CitizenIncidentAlertDeliveries => Set<CitizenIncidentAlertDelivery>();
 
     // 7. Escalation & Feedback & Traffic
     public DbSet<EscalationRule> EscalationRules => Set<EscalationRule>();
@@ -628,6 +630,28 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         });
 
         // ==================== 17. NOTIFICATION ====================
+        modelBuilder.Entity<CitizenIncidentAlert>(entity =>
+        {
+            entity.HasKey(a => a.Id);
+            entity.HasOne(a => a.Incident).WithMany().HasForeignKey(a => a.IncidentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(a => a.IncidentId).IsUnique();
+            entity.HasIndex(a => a.CreatedAt);
+            entity.Property(a => a.AreaVi).HasMaxLength(300);
+            entity.Property(a => a.AreaEn).HasMaxLength(300);
+            entity.Property(a => a.TriggerKind).HasMaxLength(40);
+        });
+        modelBuilder.Entity<CitizenIncidentAlertDelivery>(entity =>
+        {
+            entity.HasKey(d => d.Id);
+            entity.HasOne(d => d.Alert).WithMany().HasForeignKey(d => d.AlertId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(d => d.Notification).WithMany().HasForeignKey(d => d.NotificationId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(d => new { d.AlertId, d.UserId }).IsUnique();
+            entity.HasIndex(d => d.NotificationId).IsUnique();
+            entity.HasIndex(d => new { d.CompletedAt, d.NextAttemptAt, d.LeaseUntil });
+            entity.Property(d => d.LastError).HasMaxLength(500);
+        });
+
         modelBuilder.Entity<Notification>(entity =>
         {
             entity.HasKey(n => n.Id);

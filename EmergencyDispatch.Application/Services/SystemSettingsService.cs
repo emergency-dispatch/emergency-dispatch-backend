@@ -20,6 +20,7 @@ public class SystemSettingsService : ISystemSettingsService
     public const string EscalationKey = "escalation";
     public const string ServiceAreaKey = "serviceArea";
     public const string DuplicateDetectionKey = "duplicateDetection";
+    public const string CitizenIncidentAlertsKey = "citizenIncidentAlerts";
     private const double WeightSumTolerance = 0.001;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -169,6 +170,27 @@ public class SystemSettingsService : ISystemSettingsService
         if (!(s.RadiusMeters >= 20 && s.RadiusMeters <= 2000)) errors.Add("Bán kính gom báo cáo trùng phải từ 20 đến 2000 m.");
         if (!(s.WindowMinutes >= 1 && s.WindowMinutes <= 120)) errors.Add("Khung thời gian gom báo cáo trùng phải từ 1 đến 120 phút.");
         return errors;
+    }
+
+    public async Task<CitizenIncidentAlertSettingsDto> GetCitizenIncidentAlertSettingsAsync(CancellationToken cancellationToken = default)
+        => (await GetCitizenIncidentAlertRecordAsync(cancellationToken)).Values;
+
+    public Task<SettingsRecordDto<CitizenIncidentAlertSettingsDto>> GetCitizenIncidentAlertRecordAsync(CancellationToken cancellationToken = default)
+        => LoadAsync<CitizenIncidentAlertSettingsDto>(CitizenIncidentAlertsKey, cancellationToken);
+
+    public async Task<ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>> UpdateCitizenIncidentAlertAsync(
+        CitizenIncidentAlertSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default)
+    {
+        var before = await GetCitizenIncidentAlertSettingsAsync(cancellationToken);
+        // Ignore client-supplied timestamps. Enabling does not broadcast older confirmed incidents.
+        values.EnabledFromUtc = values.Enabled && (!before.Enabled || !before.EnabledFromUtc.HasValue)
+            ? DateTime.UtcNow : before.EnabledFromUtc;
+        await _repository.UpsertAsync(CitizenIncidentAlertsKey, JsonSerializer.Serialize(values, JsonOptions), actorUserId, cancellationToken);
+        await _auditService.LogAsync(SystemAuditAction.SettingsUpdated, AuditEntityTypes.Settings, null, CitizenIncidentAlertsKey,
+            CitizenIncidentAlertMessages.SettingsSaved, before, values, cancellationToken);
+        var record = await GetCitizenIncidentAlertRecordAsync(cancellationToken);
+        await PublishSettingsAsync(CitizenIncidentAlertsKey, record.UpdatedAt, record.UpdatedByName, cancellationToken);
+        return ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>.SuccessResult(record, CitizenIncidentAlertMessages.SettingsSaved);
     }
 
     private Task PublishSettingsAsync(string key, DateTime? updatedAt, string? updatedByName, CancellationToken cancellationToken)

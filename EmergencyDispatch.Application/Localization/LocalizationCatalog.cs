@@ -191,6 +191,16 @@ public static partial class LocalizationCatalog
             ViToEn.TryAdd(kv.Key, kv.Value);
         }
 
+        foreach (var kv in CitizenIncidentAlertViToEn)
+        {
+            ViToEn.TryAdd(kv.Key, kv.Value);
+        }
+
+        foreach (var kv in CitizenMapViToEn)
+        {
+            ViToEn.TryAdd(kv.Key, kv.Value);
+        }
+
         foreach (var kv in ViToEn)
         {
             if (!EnToVi.ContainsKey(kv.Value))
