@@ -48,9 +48,10 @@ public interface IIncidentService
     Task<ApiResponseDto<IncidentResponseDto>> CancelIncidentAsync(Guid id, string reason, Guid? cancelledByUserId = null, CancellationToken cancellationToken = default, string? guestCancellationToken = null, CancellationReason? reasonCode = null);
 
     /// <summary>
-    /// Tự hủy sự cố chưa được xác minh sau maxAge (CancellationReason.AutoExpired). Trả số sự cố đã hủy.
+    /// Đánh dấu "Quá hạn – cần rà soát" các sự cố chưa được xác minh sau maxAge: ghi StaleFlaggedAt + audit,
+    /// cảnh báo Operator của trạm và Admin. Không tự hủy (chỉ người mới hủy được). Trả số sự cố đã đánh dấu.
     /// </summary>
-    Task<int> AutoExpireStaleIncidentsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
+    Task<int> FlagStaleIncidentsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Giữ / gia hạn khóa mềm 2 phút khi Operator mở sự cố (FR-OP-02, BR-15). Người khác đang giữ → CONFLICT (MSG32)

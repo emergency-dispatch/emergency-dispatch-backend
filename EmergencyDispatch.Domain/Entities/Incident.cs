@@ -202,6 +202,12 @@ public class Incident : BaseEntity
     public double? DistanceOutsideAreaKm { get; set; }
 
     /// <summary>
+    /// Thời điểm hệ thống đánh dấu "Quá hạn – cần rà soát": chưa được Operator xác minh sau StaleReviewHours (mặc định 24h).
+    /// Hệ thống không tự hủy; sự cố vẫn ở hàng đợi cho tới khi Operator / Admin xử lý
+    /// </summary>
+    public DateTime? StaleFlaggedAt { get; set; }
+
+    /// <summary>
     /// Loại sự cố đã xác nhận (Cháy nổ / Tai nạn). Mặc định lấy từ AI, Operator xác nhận hoặc sửa khi verify.
     /// Dùng để chọn chủng loại xe khi gợi ý điều phối (BR-13).
     /// </summary>

@@ -747,18 +747,62 @@ public class IncidentServiceTests
     }
 
     [Fact]
-    public async Task AutoExpire_CancelsStaleIncidentsWithSystemReason()
+    public async Task FlagStale_MarksUnverifiedIncident_AuditsAndWarnsCommandCenter_WithoutCancelling()
     {
-        var stale = Existing(IncidentStatus.Pending);
-        var done = Existing(IncidentStatus.Completed);
+        var stale = Existing(IncidentStatus.AiProcessed, i => i.CreatedAt = DateTime.UtcNow.AddHours(-30));
+        var op = new User { FullName = "Op Q7", Role = UserRole.Operator, StationId = _q7.Id };
+        var admin = new User { FullName = "Admin", Role = UserRole.Admin };
+        _users.Setup(u => u.GetActiveByRolesAsync(It.IsAny<IReadOnlyCollection<UserRole>>())).ReturnsAsync(new List<User> { op, admin });
         _incidents.Setup(i => i.GetStaleUnverifiedIdsAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Guid> { stale.Id, done.Id });
+            .ReturnsAsync(new List<Guid> { stale.Id });
 
-        var n = await _svc.AutoExpireStaleIncidentsAsync(TimeSpan.FromHours(24));
+        var n = await _svc.FlagStaleIncidentsAsync(TimeSpan.FromHours(24));
 
         Assert.Equal(1, n);
-        Assert.Equal(CancellationReason.AutoExpired, stale.CancellationReason);
-        Assert.Equal(IncidentStatus.Completed, done.Status);
+        Assert.NotNull(stale.StaleFlaggedAt);
+        Assert.Equal(IncidentStatus.AiProcessed, stale.Status);
+        Assert.Null(stale.CancellationReason);
+        _incidents.Verify(i => i.AddAuditTrailAsync(It.Is<IncidentAuditTrail>(a =>
+            a.Action == AuditAction.StaleFlagged && a.ActorRole == "System" && a.IncidentId == stale.Id), It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(x => x.NotifyUsersAsync(
+            It.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(op.Id) && ids.Contains(admin.Id)),
+            It.Is<NotificationRequest>(r => r.IncidentId == stale.Id && r.HighPriority && r.Type == NotificationType.Escalation),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _rt.Verify(r => r.IncidentUpdatedAsync(It.Is<IncidentResponseDto>(d => d.IsStale), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(IncidentStatus.Verified)]
+    [InlineData(IncidentStatus.Dispatched)]
+    [InlineData(IncidentStatus.Completed)]
+    [InlineData(IncidentStatus.Cancelled)]
+    public async Task FlagStale_SkipsIncidentsThatAreNoLongerAwaitingVerification(IncidentStatus status)
+    {
+        var inc = Existing(status);
+        _incidents.Setup(i => i.GetStaleUnverifiedIdsAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { inc.Id });
+
+        var n = await _svc.FlagStaleIncidentsAsync(TimeSpan.FromHours(24));
+
+        Assert.Equal(0, n);
+        Assert.Null(inc.StaleFlaggedAt);
+        Assert.Equal(status, inc.Status);
+        _notify.Verify(x => x.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task FlagStale_AlreadyFlagged_IsNotFlaggedOrNotifiedAgain()
+    {
+        var flaggedAt = DateTime.UtcNow.AddHours(-2);
+        var inc = Existing(IncidentStatus.Pending, i => i.StaleFlaggedAt = flaggedAt);
+        _incidents.Setup(i => i.GetStaleUnverifiedIdsAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { inc.Id });
+
+        var n = await _svc.FlagStaleIncidentsAsync(TimeSpan.FromHours(24));
+
+        Assert.Equal(0, n);
+        Assert.Equal(flaggedAt, inc.StaleFlaggedAt);
+        _notify.Verify(x => x.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<NotificationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // =============== Lock ===============

@@ -19,7 +19,8 @@ public interface IIncidentRepository : IGenericRepository<Incident>
         IReadOnlyCollection<IncidentStatus>? statuses = null);
 
     /// <summary>
-    /// Sự cố chưa được Operator xác minh (Pending / AiProcessing / AiProcessed) tạo trước cutoffUtc — để tự hủy sau 24h
+    /// Sự cố chưa được Operator xác minh (Pending / AiProcessing / AiProcessed / Escalated chưa xác minh), tạo trước cutoffUtc,
+    /// chưa bị đánh dấu quá hạn và không phải báo cáo đã gom — để đánh dấu "Quá hạn – cần rà soát" (không tự hủy)
     /// </summary>
     Task<List<Guid>> GetStaleUnverifiedIdsAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default);
 

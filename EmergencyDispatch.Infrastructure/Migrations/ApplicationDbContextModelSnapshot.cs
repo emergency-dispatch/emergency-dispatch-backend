@@ -989,6 +989,9 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                     b.Property<int>("Source")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("StaleFlaggedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 

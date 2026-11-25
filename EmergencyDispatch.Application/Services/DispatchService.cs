@@ -2365,7 +2365,8 @@ public class DispatchService : IDispatchService
             ResponsibleStationId = incident.ResponsibleStationId,
             ResponsibleStationName = incident.ResponsibleStation?.Name,
             IsOutOfServiceArea = incident.IsOutOfServiceArea,
-            DistanceOutsideAreaKm = incident.DistanceOutsideAreaKm
+            DistanceOutsideAreaKm = incident.DistanceOutsideAreaKm,
+            StaleFlaggedAt = incident.StaleFlaggedAt
         };
     }
 

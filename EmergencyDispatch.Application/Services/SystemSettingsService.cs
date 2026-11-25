@@ -236,7 +236,7 @@ public class SystemSettingsService : ISystemSettingsService
         else if (steps[^1] > maxRadiusKm) errors.Add(LocalizationHelper.Localize("Nấc cuối không được vượt bán kính tối đa của cấu hình leo thang ({0} km).", maxRadiusKm));
 
         if (!(s.RecoveryMinutes > 0)) errors.Add("Thời gian hồi sức phải lớn hơn 0.");
-        if (!(s.AutoExpireHours >= 1 && s.AutoExpireHours <= 168)) errors.Add("Thời gian tự hủy sự cố chưa xác minh phải từ 1 đến 168 giờ.");
+        if (!(s.AutoExpireHours >= 1 && s.AutoExpireHours <= 168)) errors.Add("Thời gian đánh dấu sự cố quá hạn chưa xác minh phải từ 1 đến 168 giờ.");
         if (!(s.AutoDispatchMinConfidence >= 0.5 && s.AutoDispatchMinConfidence <= 1)) errors.Add("Ngưỡng độ tin cậy tự điều phối phải từ 0.5 đến 1.");
         if (s.AutoDispatchMode is not (AutoDispatchModes.Single or AutoDispatchModes.Ensemble)) errors.Add("Chế độ AI tự điều phối phải là Single (một model) hoặc Ensemble (3 AI bỏ phiếu).");
         if (!(s.AutoDispatchDuplicateRadiusMeters >= 50 && s.AutoDispatchDuplicateRadiusMeters <= 5000)) errors.Add("Bán kính nghi trùng khi tự điều phối phải từ 50 đến 5000 m.");

@@ -151,7 +151,7 @@ public enum CancellationReason
     Duplicate = 1,        // Trùng lặp sự cố khác
     TestReport = 2,       // Báo cáo thử nghiệm
     CitizenCancelled = 3, // Citizen tự hủy
-    AutoExpired = 4,      // Hết hạn 24h
+    AutoExpired = 4,      // Hết hạn 24h — chỉ còn trong dữ liệu cũ; từ 25/11/2026 hệ thống đánh dấu quá hạn (StaleFlaggedAt), không tự hủy
     Other = 5             // Lý do khác
 }
 
@@ -192,5 +192,6 @@ public enum AuditAction
     SupplementAdded = 29,          // Người báo bổ sung ghi chú / ảnh
     LinkedReportsRestored = 30,    // Sự cố gốc bị hủy → các báo cáo đã gom quay lại hàng đợi
     AutoDispatched = 31,           // AI đủ tin cậy → hệ thống tự xác minh và điều xe
-    AutoDispatchSkipped = 32       // AI đủ tin cậy nhưng không tự điều (nghi trùng, hết xe...) → Operator
+    AutoDispatchSkipped = 32,      // AI đủ tin cậy nhưng không tự điều (nghi trùng, hết xe...) → Operator
+    StaleFlagged = 33              // Chưa được xác minh quá hạn → hệ thống đánh dấu cần rà soát và cảnh báo (không tự hủy)
 }

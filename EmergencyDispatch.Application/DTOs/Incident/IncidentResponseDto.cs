@@ -103,6 +103,12 @@ public class IncidentResponseDto
     public double? DistanceOutsideAreaKm { get; set; }
 
     /// <summary>
+    /// "Quá hạn – cần rà soát": thời điểm hệ thống đánh dấu sự cố chưa được xác minh sau StaleReviewHours (null = chưa quá hạn)
+    /// </summary>
+    public DateTime? StaleFlaggedAt { get; set; }
+    public bool IsStale => StaleFlaggedAt.HasValue;
+
+    /// <summary>
     /// Loại sự cố đã xác nhận (AI đề xuất hoặc Operator sửa khi verify)
     /// </summary>
     public IncidentEventType EventType { get; set; }

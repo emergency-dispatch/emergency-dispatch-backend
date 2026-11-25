@@ -1221,18 +1221,60 @@ public class IncidentService : IIncidentService
         return await CancelCoreAsync(incident, reason, code, cancellingUser, cancellationToken);
     }
 
-    public async Task<int> AutoExpireStaleIncidentsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+    public const string StaleFlagTitle = "SỰ CỐ QUÁ HẠN – CẦN RÀ SOÁT";
+
+    /// <summary>
+    /// BR-09: sự cố chưa được xác minh sau maxAge → đánh dấu "Quá hạn – cần rà soát" và cảnh báo trung tâm chỉ huy.
+    /// Không tự hủy: sự cố vẫn ở hàng đợi, chỉ Operator / Admin mới hủy được (một sự cố khẩn cấp thật không được biến mất âm thầm)
+    /// </summary>
+    public async Task<int> FlagStaleIncidentsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
     {
         var ids = await _incidentRepository.GetStaleUnverifiedIdsAsync(DateTime.UtcNow - maxAge, cancellationToken);
+        var hoursText = maxAge.TotalHours.ToString("0.#", CultureInfo.InvariantCulture);
         var count = 0;
         foreach (var id in ids)
         {
             var incident = await _incidentRepository.GetIncidentWithDetailsAsync(id, cancellationToken);
-            if (incident == null || incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled) continue;
+            if (incident == null) continue;
 
-            var result = await CancelCoreAsync(incident,
-                $"Tự động hủy: không được xác minh sau {maxAge.TotalHours:0.#} giờ.", CancellationReason.AutoExpired, null, cancellationToken);
-            if (result.Success) count++;
+            // Khóa + đọc lại: Operator có thể vừa xác minh / hủy kể từ lúc lấy danh sách
+            await using var staleLock = await _incidentRepository.BeginLockedTransactionAsync(incident.Id, cancellationToken);
+            await _incidentRepository.ReloadAsync(incident, cancellationToken);
+            if (incident.VerifiedAt != null
+                || incident.StaleFlaggedAt != null
+                || incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled
+                    or IncidentStatus.Verified or IncidentStatus.Dispatched or IncidentStatus.InProgress)
+            {
+                continue;
+            }
+
+            var now = DateTime.UtcNow;
+            incident.StaleFlaggedAt = now;
+            incident.UpdatedAt = now;
+            await _incidentRepository.AddAuditTrailAsync(new IncidentAuditTrail
+            {
+                IncidentId = incident.Id,
+                ActorRole = DispatchService.SystemActorRole,
+                Action = AuditAction.StaleFlagged,
+                Description = $"Hệ thống đánh dấu quá hạn: chưa được xác minh sau {hoursText} giờ, cần Operator rà soát (không tự hủy)",
+                OldStateJson = JsonSerializer.Serialize(new { status = incident.Status.ToString(), staleFlaggedAt = (DateTime?)null }),
+                NewStateJson = JsonSerializer.Serialize(new { status = incident.Status.ToString(), staleFlaggedAt = now, staleAfterHours = maxAge.TotalHours })
+            }, cancellationToken);
+            await _incidentRepository.SaveChangesAsync(cancellationToken);
+            if (staleLock != null) await staleLock.CommitAsync(cancellationToken);
+            count++;
+
+            await NotifyCommandCenterAsync(incident.ResponsibleStationId, new NotificationRequest
+            {
+                Type = NotificationType.Escalation,
+                Title = StaleFlagTitle,
+                Message = new LocalizedText("[{0}] Sự cố chưa được xác minh sau {1} giờ. Hệ thống không tự hủy; vui lòng rà soát: xác minh và điều xe, hoặc hủy kèm lý do.",
+                    incident.Code, hoursText),
+                IncidentId = incident.Id,
+                Data = new { staleFlaggedAt = now, staleAfterHours = maxAge.TotalHours, status = incident.Status.ToString() },
+                HighPriority = true
+            }, cancellationToken);
+            await _realtimeNotifier.IncidentUpdatedAsync(MapToResponseDto(incident), cancellationToken);
         }
         return count;
     }
@@ -2016,6 +2058,7 @@ public class IncidentService : IIncidentService
             ResponsibleStationName = incident.ResponsibleStation?.Name,
             IsOutOfServiceArea = incident.IsOutOfServiceArea,
             DistanceOutsideAreaKm = incident.DistanceOutsideAreaKm,
+            StaleFlaggedAt = incident.StaleFlaggedAt,
             EventType = incident.EventType != IncidentEventType.None
                 ? incident.EventType
                 : incident.AiClassification?.EventType ?? IncidentEventType.None,
