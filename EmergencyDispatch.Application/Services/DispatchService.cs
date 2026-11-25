@@ -632,7 +632,7 @@ public class DispatchService : IDispatchService
         }
 
         // Chưa báo biển số cho người dân: tổ có thể từ chối → chỉ báo đã giao, biển số gửi khi tổ nhận lệnh (Accepted)
-        var dispatchWatchers = await ReporterIdsAsync(incident, cancellationToken);
+        var dispatchWatchers = ReporterIds(incident);
         if (dispatchWatchers.Count > 0)
         {
             await _notificationService.NotifyUsersAsync(dispatchWatchers, new NotificationRequest
@@ -1486,7 +1486,7 @@ public class DispatchService : IDispatchService
 
         // FR-CIT-04 (MSG37, MSG40): báo người dân khi tổ nhận lệnh (lần đầu biết biển số), khi xe xuất phát và khi tới hiện trường
         var progressWatchers = incident != null && dto.Status is DispatchAssignmentStatus.Accepted or DispatchAssignmentStatus.EnRoute or DispatchAssignmentStatus.OnScene
-            ? await ReporterIdsAsync(incident, cancellationToken)
+            ? ReporterIds(incident)
             : Array.Empty<Guid>();
         if (incident != null && progressWatchers.Count > 0)
         {
@@ -1653,7 +1653,7 @@ public class DispatchService : IDispatchService
             await _incidentRepository.SaveChangesAsync(cancellationToken);
         }
 
-        var closeWatchers = await ReporterIdsAsync(incident, cancellationToken);
+        var closeWatchers = ReporterIds(incident);
         if (closeWatchers.Count > 0)
         {
             await _notificationService.NotifyUsersAsync(closeWatchers, new NotificationRequest
@@ -2086,15 +2086,11 @@ public class DispatchService : IDispatchService
     }
 
     /// <summary>
-    /// Người theo dõi sự cố nhận thông báo tiến độ: người báo gốc + người dân có báo cáo đã được xác nhận trùng vào sự cố này
+    /// Chỉ người báo gốc nhận thông báo tiến độ trong danh sách chuông/push.
+    /// Người báo trùng vẫn theo dõi sự cố qua API và SignalR, không nhận thêm thông báo tiến độ.
     /// </summary>
-    private async Task<IReadOnlyCollection<Guid>> ReporterIdsAsync(Incident incident, CancellationToken cancellationToken)
-    {
-        var ids = new HashSet<Guid>();
-        if (incident.ReportedByUserId is Guid owner) ids.Add(owner);
-        ids.UnionWith(await _incidentRepository.GetConfirmedDuplicateReporterIdsAsync(incident.Id, cancellationToken) ?? (IReadOnlyList<Guid>)Array.Empty<Guid>());
-        return ids;
-    }
+    private static IReadOnlyCollection<Guid> ReporterIds(Incident incident)
+        => incident.ReportedByUserId is Guid owner ? new[] { owner } : Array.Empty<Guid>();
 
     /// <summary>
     /// Quy tắc loại xe của loại sự cố (bảng IncidentTypeUnitRules); chưa có danh mục / chưa biết loại → danh sách rỗng

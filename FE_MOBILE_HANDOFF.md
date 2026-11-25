@@ -1750,7 +1750,7 @@ Ca SC-261123-0390 đã lưu trong DB không tự sửa lại; Operator chốt ta
 
 **Thông báo:**
 - Lúc Operator xác nhận trùng, người báo nhận: "Báo cáo của bạn trùng với sự cố đang xử lý". Thông báo có `incidentId = parentId`, `data = { reportId, parentIncidentId }`.
-- Sau đó họ nhận cùng các thông báo tiến độ với người báo gốc: đã giao đội, tổ nhận lệnh, xe đang đến, xe tới nơi, hoàn tất.
+- Cập nhật 25/11/2026: thông báo tiến độ (đã giao đội, tổ nhận lệnh, xe đang đến, xe tới nơi, hoàn tất) chỉ gửi cho người báo gốc. Người báo trùng không nhận các dòng thông báo này trong danh sách chuông/push; vẫn nhận cập nhật theo dõi qua SignalR `ReceiveIncidentStatus` / `ReceiveAssignmentStatus` và API. Client cập nhật bản đồ/trạng thái từ các event này, không tự tạo chuông thông báo tiến độ cho người báo trùng. Thông báo xác nhận trùng ở trên và cảnh báo khu vực Citizen là các luồng riêng, giữ nguyên.
 
 **FE/mobile cần làm:**
 1. **"Báo cáo của tôi"** (`GET /incidents/my-reports`): với báo cáo `status = Cancelled` và `cancellationReason = Duplicate` có `linkedToIncidentId`, hiện nhãn "Trùng với sự cố đang xử lý" kèm nút **"Theo dõi sự cố gốc"**. Nút mở màn chi tiết hoặc màn theo dõi xe với `linkedToIncidentId`.

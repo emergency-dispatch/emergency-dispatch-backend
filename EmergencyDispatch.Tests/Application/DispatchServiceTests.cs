@@ -1665,11 +1665,13 @@ public class DispatchServiceTests
         Assert.Equal(DispatchAssignmentStatus.Dispatched, a.Status);
     }
 
-    // ===================== Người báo trùng nhận thông báo tiến độ của sự cố gốc (23/11/2026) =====================
-    [Fact]
-    public async Task ConfirmedDuplicateReporters_GetProgressNotifications()
+    // ===================== Chỉ người báo gốc nhận thông báo tiến độ; báo trùng giữ realtime theo dõi =====================
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Dispatch_OnlyOriginalReporterGetsNotification_ConfirmedDuplicateIsExcluded(bool hasOriginalReporter)
     {
-        var reporter = Guid.NewGuid();
+        Guid? reporter = hasOriginalReporter ? Guid.NewGuid() : null;
         var duplicateReporter = Guid.NewGuid();
         var inc = Incident(tweak: i => i.ReportedByUserId = reporter);
         _incidents.Setup(r => r.GetConfirmedDuplicateReporterIdsAsync(inc.Id, It.IsAny<CancellationToken>()))
@@ -1682,7 +1684,67 @@ public class DispatchServiceTests
 
         Assert.True((await _svc.AssignUnitAsync(new AssignDispatchDto { IncidentId = inc.Id, RescueUnitId = u.Id }, _operatorId)).Success);
 
-        Assert.Equal(new[] { reporter, duplicateReporter }.OrderBy(x => x), recipients.OrderBy(x => x));
+        Assert.Equal(reporter is Guid owner ? new[] { owner } : Array.Empty<Guid>(), recipients);
+        Assert.DoesNotContain(duplicateReporter, recipients);
+    }
+
+    [Theory]
+    [InlineData(DispatchAssignmentStatus.Dispatched, DispatchAssignmentStatus.Accepted, true)]
+    [InlineData(DispatchAssignmentStatus.Accepted, DispatchAssignmentStatus.EnRoute, true)]
+    [InlineData(DispatchAssignmentStatus.EnRoute, DispatchAssignmentStatus.OnScene, true)]
+    [InlineData(DispatchAssignmentStatus.Dispatched, DispatchAssignmentStatus.Accepted, false)]
+    [InlineData(DispatchAssignmentStatus.Accepted, DispatchAssignmentStatus.EnRoute, false)]
+    [InlineData(DispatchAssignmentStatus.EnRoute, DispatchAssignmentStatus.OnScene, false)]
+    public async Task Progress_OnlyOriginalReporterGetsNotification_TrackingRealtimeIsPreserved(
+        DispatchAssignmentStatus previous, DispatchAssignmentStatus next, bool hasOriginalReporter)
+    {
+        var (assignment, incident, _, staff) = Mission(previous);
+        Guid? reporter = hasOriginalReporter ? Guid.NewGuid() : null;
+        incident.ReportedByUserId = reporter;
+        var duplicateReporter = Guid.NewGuid();
+        _incidents.Setup(r => r.GetConfirmedDuplicateReporterIdsAsync(incident.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { duplicateReporter });
+        var recipients = new List<Guid>();
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.Is<NotificationRequest>(r => r.Type == NotificationType.StatusUpdate), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyCollection<Guid> ids, NotificationRequest _, CancellationToken _) => recipients.AddRange(ids))
+            .Returns(Task.CompletedTask);
+
+        var result = await _svc.UpdateAssignmentStatusAsync(assignment.Id, new UpdateAssignmentStatusDto { Status = next }, staff.Id);
+
+        Assert.True(result.Success);
+        Assert.Equal(reporter is Guid owner ? new[] { owner } : Array.Empty<Guid>(), recipients);
+        Assert.DoesNotContain(duplicateReporter, recipients);
+        _rt.Verify(r => r.AssignmentStatusChangedAsync(
+            It.Is<DispatchAssignmentResponseDto>(d => d.Id == assignment.Id && d.Status == next),
+            It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Completion_OnlyOriginalReporterGetsNotification_ConfirmedDuplicateIsExcluded(bool hasOriginalReporter)
+    {
+        var (assignment, incident, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+        Guid? reporter = hasOriginalReporter ? Guid.NewGuid() : null;
+        incident.ReportedByUserId = reporter;
+        incident.LinkedReportCount = 1;
+        var duplicateReporter = Guid.NewGuid();
+        _incidents.Setup(r => r.GetConfirmedDuplicateReporterIdsAsync(incident.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { duplicateReporter });
+        var recipients = new List<Guid>();
+        _notify.Setup(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.Is<NotificationRequest>(r => r.Type == NotificationType.StatusUpdate), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyCollection<Guid> ids, NotificationRequest _, CancellationToken _) => recipients.AddRange(ids))
+            .Returns(Task.CompletedTask);
+
+        var result = await _svc.ResolveAssignmentAsync(assignment.Id, Report("https://x/a.jpg"), staff.Id);
+
+        Assert.True(result.Success);
+        Assert.Equal(IncidentStatus.Completed, incident.Status);
+        Assert.Equal(reporter is Guid owner ? new[] { owner } : Array.Empty<Guid>(), recipients);
+        Assert.DoesNotContain(duplicateReporter, recipients);
+        _followUp.Verify(f => f.CloseLinkedReportsAsync(incident.Id, staff.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ===================== Người dân chỉ thấy xe khi tổ đã nhận lệnh (23/11/2026) =====================
