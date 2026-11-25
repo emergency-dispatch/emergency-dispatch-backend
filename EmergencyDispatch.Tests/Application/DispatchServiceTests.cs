@@ -1589,6 +1589,32 @@ public class DispatchServiceTests
         Assert.Equal(ApiErrorCodes.Forbidden, (await _svc.GetCompletionReportByIdAsync(other.Id, staff.Id)).ErrorCode);
     }
 
+    // Sự cố đã đóng mà không có lượt nghiệm thu: tracking không được trả PendingDispatch (client hiện nhầm "đang xử lý")
+    [Theory]
+    [InlineData(IncidentStatus.Completed, DispatchAssignmentStatus.Cancelled)]
+    [InlineData(IncidentStatus.Cancelled, DispatchAssignmentStatus.Rejected)]
+    public async Task CitizenTracking_ClosedIncidentWithoutCompletedUnit_ReportsIncidentStatus(IncidentStatus incStatus, DispatchAssignmentStatus assignmentStatus)
+    {
+        var (_, inc, _, _) = Mission(assignmentStatus, incStatus);
+
+        var r = await _svc.GetCitizenTrackingAsync(inc.Id, onlyAcceptedUnits: true);
+
+        Assert.Empty(r.Data!.Units);
+        Assert.Equal(incStatus.ToString(), r.Data.DispatchStatus);
+        Assert.Equal(incStatus.ToString(), r.Data.IncidentStatus);
+    }
+
+    [Fact]
+    public async Task CitizenTracking_CompletedIncident_ShowsCompletedUnit()
+    {
+        var (a, inc, u, _) = Mission(DispatchAssignmentStatus.Completed, IncidentStatus.Completed);
+
+        var r = await _svc.GetCitizenTrackingAsync(inc.Id, onlyAcceptedUnits: true);
+
+        Assert.Equal("Completed", r.Data!.DispatchStatus);
+        Assert.Equal(u.PlateNumber, Assert.Single(r.Data.Units).PlateNumber);
+    }
+
     // ===================== Tự rút lệnh khi tổ không phản hồi (25/11/2026) =====================
     private (DispatchAssignment A, Incident I, RescueUnit U, StationTeam Team) UnansweredOrder(double minutesAgo, DispatchAssignmentStatus status = DispatchAssignmentStatus.Dispatched)
     {

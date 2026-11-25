@@ -2018,6 +2018,15 @@ public class DispatchService : IDispatchService
                 "Đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.");
         }
 
+        // Sự cố đã đóng / hủy mà không có lượt nghiệm thu (VD Operator đóng tay, xe bị thu hồi):
+        // không trả "PendingDispatch" — client đọc dispatchStatus trước incidentStatus sẽ hiện nhầm "đang xử lý"
+        if (shown.Count == 0 && incident.Status is IncidentStatus.Completed or IncidentStatus.Cancelled)
+        {
+            result.DispatchStatus = incident.Status.ToString();
+            return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result,
+                incident.Status == IncidentStatus.Completed ? "Sự cố đã được xử lý xong." : "Sự cố đã bị hủy.");
+        }
+
         if (shown.Count == 0)
         {
             return ApiResponseDto<CitizenTrackingResponseDto>.SuccessResult(result,

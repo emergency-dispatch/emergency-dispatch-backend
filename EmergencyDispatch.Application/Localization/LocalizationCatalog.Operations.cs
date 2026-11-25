@@ -538,6 +538,9 @@ public static partial class LocalizationCatalog
         { "[{0}] Trung tâm đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "[{0}] The command center has assigned your incident to a rescue team and is waiting for the team to accept." },
         { "Đã giao sự cố cho đội cứu hộ, đang chờ đội xác nhận nhận lệnh.", "The incident has been assigned to a rescue team, waiting for the team to accept." },
         { "Đội cứu hộ đã nhận lệnh", "Rescue team accepted" },
+        // Tracking sự cố đã đóng (25/11/2026)
+        { "Sự cố đã được xử lý xong.", "The incident has been resolved." },
+        { "Sự cố đã bị hủy.", "The incident has been cancelled." },
         // Tự rút lệnh khi tổ không phản hồi (25/11/2026)
         { "Tổ không phản hồi lệnh sau {0} phút", "The team did not respond to the order within {0} min" },
         { "Sự cố đã về hàng chờ, cần điều xe thay thế.", "The incident is back in the queue — a replacement vehicle is needed." },
