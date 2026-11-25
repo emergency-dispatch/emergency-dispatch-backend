@@ -431,6 +431,8 @@ using (var scope = app.Services.CreateScope())
             await context.Database.MigrateAsync();
         }
         await DbInitializer.SeedAsync(context, seedDemoAdmin: app.Environment.IsDevelopment());
+        // Persist the initial publication cutoff before background workers start.
+        await services.GetRequiredService<ISystemSettingsService>().GetCitizenIncidentAlertSettingsAsync();
         logger.LogInformation("Database migration và seed dữ liệu hoàn tất thành công.");
     }
     catch (Exception ex)

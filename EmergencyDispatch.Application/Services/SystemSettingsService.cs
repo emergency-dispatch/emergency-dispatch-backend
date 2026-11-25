@@ -175,8 +175,20 @@ public class SystemSettingsService : ISystemSettingsService
     public async Task<CitizenIncidentAlertSettingsDto> GetCitizenIncidentAlertSettingsAsync(CancellationToken cancellationToken = default)
         => (await GetCitizenIncidentAlertRecordAsync(cancellationToken)).Values;
 
-    public Task<SettingsRecordDto<CitizenIncidentAlertSettingsDto>> GetCitizenIncidentAlertRecordAsync(CancellationToken cancellationToken = default)
-        => LoadAsync<CitizenIncidentAlertSettingsDto>(CitizenIncidentAlertsKey, cancellationToken);
+    public async Task<SettingsRecordDto<CitizenIncidentAlertSettingsDto>> GetCitizenIncidentAlertRecordAsync(CancellationToken cancellationToken = default)
+    {
+        var setting = await _repository.GetByKeyAsync(CitizenIncidentAlertsKey, cancellationToken);
+        if (setting == null)
+        {
+            var defaults = new CitizenIncidentAlertSettingsDto { EnabledFromUtc = DateTime.UtcNow };
+            setting = await _repository.GetOrCreateAsync(CitizenIncidentAlertsKey,
+                JsonSerializer.Serialize(defaults, JsonOptions), cancellationToken);
+        }
+        var record = ReadRecord<CitizenIncidentAlertSettingsDto>(setting);
+        // Invalid/legacy settings without a publication window must not resume delivery.
+        if (!record.Values.EnabledFromUtc.HasValue) record.Values.Enabled = false;
+        return record;
+    }
 
     public async Task<ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>> UpdateCitizenIncidentAlertAsync(
         CitizenIncidentAlertSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default)
@@ -266,6 +278,11 @@ public class SystemSettingsService : ISystemSettingsService
             return new SettingsRecordDto<T> { Values = new T() };
         }
 
+        return ReadRecord<T>(setting);
+    }
+
+    private SettingsRecordDto<T> ReadRecord<T>(EmergencyDispatch.Domain.Entities.SystemSetting setting) where T : new()
+    {
         T values;
         try
         {
@@ -273,7 +290,7 @@ public class SystemSettingsService : ISystemSettingsService
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Cấu hình '{Key}' trong DB không đọc được, dùng giá trị mặc định.", key);
+            _logger.LogWarning(ex, "Cấu hình '{Key}' trong DB không đọc được, dùng giá trị mặc định.", setting.Key);
             values = new T();
         }
 

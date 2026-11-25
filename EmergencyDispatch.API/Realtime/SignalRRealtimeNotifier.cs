@@ -234,7 +234,9 @@ public class SignalRRealtimeNotifier : IRealtimeNotifier
             .SendAsync(RealtimeContract.ReceiveTeamChanged, change, cancellationToken), "thay đổi tổ", change.TeamId);
 
     public Task SettingsChangedAsync(SettingsChangedEventDto change, CancellationToken cancellationToken = default)
-        => SafeAsync(() => _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup)
+        => SafeAsync(() => (change.Key == "serviceArea"
+                ? _incidentHub.Clients.All
+                : _incidentHub.Clients.Group(RealtimeContract.OperatorsGroup))
             .SendAsync(RealtimeContract.ReceiveSettingsChanged, change, cancellationToken), "cấu hình", change.Key);
 
     public Task NotificationReadAsync(Guid userId, NotificationReadEventDto read, CancellationToken cancellationToken = default)

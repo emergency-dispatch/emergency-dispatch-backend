@@ -20,19 +20,49 @@ public class CitizenIncidentAlertSettingsTests
             .ReturnsAsync((string key, CancellationToken _) => _store.TryGetValue(key, out var json) ? new SystemSetting { Key = key, ValueJson = json } : null);
         repo.Setup(r => r.UpsertAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string key, string json, Guid? _, CancellationToken _) => { _store[key] = json; return new SystemSetting { Key = key, ValueJson = json }; });
+        repo.Setup(r => r.GetOrCreateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, string json, CancellationToken _) =>
+            {
+                _store.TryAdd(key, json);
+                return new SystemSetting { Key = key, ValueJson = _store[key] };
+            });
         _service = new(repo.Object, NullLogger<SystemSettingsService>.Instance, new Mock<ISystemAuditService>().Object, new Mock<IRealtimeNotifier>().Object);
     }
 
     [Fact]
-    public async Task DefaultIsDisabledAndDoesNotHaveAnActivationTime()
+    public async Task DefaultIsEnabledAndActivationTimeIsPersistedOnce()
     {
+        var before = DateTime.UtcNow;
         var settings = await _service.GetCitizenIncidentAlertSettingsAsync();
-        Assert.False(settings.Enabled); Assert.Null(settings.EnabledFromUtc);
+        Assert.True(settings.Enabled);
+        Assert.InRange(settings.EnabledFromUtc!.Value, before, DateTime.UtcNow);
+        Assert.True(_store.ContainsKey(SystemSettingsService.CitizenIncidentAlertsKey));
+        var again = await _service.GetCitizenIncidentAlertSettingsAsync();
+        Assert.Equal(settings.EnabledFromUtc, again.EnabledFromUtc);
+    }
+
+    [Fact]
+    public async Task StoredAdminOptOutRemainsDisabled()
+    {
+        _store[SystemSettingsService.CitizenIncidentAlertsKey] = "{\"enabled\":false}";
+        var settings = await _service.GetCitizenIncidentAlertSettingsAsync();
+        Assert.False(settings.Enabled);
+        Assert.Null(settings.EnabledFromUtc);
+    }
+
+    [Fact]
+    public async Task InvalidStoredConfigurationCannotPublishWithoutACutoff()
+    {
+        _store[SystemSettingsService.CitizenIncidentAlertsKey] = "invalid json";
+        var settings = await _service.GetCitizenIncidentAlertSettingsAsync();
+        Assert.False(settings.Enabled);
+        Assert.Null(settings.EnabledFromUtc);
     }
 
     [Fact]
     public async Task EnablingUsesServerTimeAndIgnoresClientBackdating()
     {
+        _store[SystemSettingsService.CitizenIncidentAlertsKey] = "{\"enabled\":false}";
         var before = DateTime.UtcNow;
         var response = await _service.UpdateCitizenIncidentAlertAsync(new() { Enabled = true, EnabledFromUtc = DateTime.UnixEpoch }, Guid.NewGuid());
         Assert.True(response.Success);

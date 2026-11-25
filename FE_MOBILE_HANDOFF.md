@@ -1777,7 +1777,7 @@ Nội dung chỉ có “Có sự cố tại [khu vực báo cáo]” / “An inc
 - Khử trùng popup theo `notificationId` khi FCM và SignalR cùng đến hoặc nhà cung cấp gửi lại. Hiển thị mức thông tin thường, không dùng chuông/DND bypass của RescueStaff.
 - Dùng `Accept-Language: vi/en` khi đọc API; cập nhật `UiLanguage` và FCM token bằng API có sẵn để push đúng ngôn ngữ.
 
-Backend mặc định tắt. Sau khi áp dụng migration `20261123145602_AddCitizenIncidentAlerts`, Admin bật `PUT /api/settings/citizen-incident-alerts` với `{ "enabled": true }`; mốc kích hoạt do server đặt. Chỉ bật trên môi trường thử với tài khoản/thiết bị thử trước khi vận hành. Tắt dừng tạo/gửi mới; thông báo đã lưu không bị xóa.
+Backend mặc định bật từ migration `20261125090000_EnableCitizenIncidentAlertsByDefault`, kèm mốc UTC được lưu trong DB. Migration bật cấu hình cũ đang tắt một lần, không phát bù các xác nhận trước mốc. Sau đó Admin vẫn tắt/bật qua `PUT /api/settings/citizen-incident-alerts`; restart không thay đổi lựa chọn hay mốc đã lưu. Tắt dừng tạo/gửi mới; thông báo đã lưu không bị xóa.
 
 Backend xử lý lưu bền, chống tạo hai lần, retry FCM và kiểm tra người nhận còn Active trước khi gửi. Hiển thị push trên thiết bị vẫn cần token, quyền thông báo và cấu hình Firebase hợp lệ; chưa thể coi kiểm thử unit/PostgreSQL là kiểm thử hiển thị trên điện thoại.
 
@@ -1845,3 +1845,8 @@ Backend không có SMS gateway, luồng SOS cũng không đọc `ice.autoSendSms
 1. **Mobile `ProfileScreen.tsx`:** bỏ khối "Toggle: Auto Send SMS GPS" và badge `profile.badge_sms_on/off`.
 2. **Mobile `ProfileEditModal.tsx` (tab 3):** bỏ công tắc "Tự động gửi SMS toạ độ khi bấm SOS". Giữ danh sách liên hệ ICE.
 3. Trường `autoSendSmsOnSos` / `smsTemplate` trong `types/profile.ts`, `types/user.ts`, `useProfileStore.ts` có thể để nguyên (không gây lỗi) hoặc xóa cùng lúc.
+
+## 54. Cập nhật BE 25/11/2026: cảnh báo Citizen mặc định bật và vùng phục vụ realtime
+
+- Citizen incident alerts default to enabled / Cảnh báo Citizen mặc định bật. Migration `20261125090000_EnableCitizenIncidentAlertsByDefault` bật cấu hình cũ đang tắt một lần và ghi mốc UTC bền vững; giữ mốc của cấu hình đã bật hợp lệ. Không đổi mốc mỗi lần đọc/restart. Admin vẫn có thể tắt sau migration; chỉ các xác nhận/Staff tiếp nhận từ mốc bật mới đủ điều kiện thông báo.
+- `ReceiveSettingsChanged` trên `/hubs/incidents`: `key == "serviceArea"` được gửi một lần tới mọi kết nối, gồm Citizen; các key khác giữ phạm vi Operator/Admin. Citizen nhận sự kiện thì gọi lại API công khai `GET /api/settings/service-area` và vẽ lại vùng trên bản đồ. Tải lại cấu hình khi reconnect để bù sự kiện bị lỡ. BE không tự vẽ giao diện.

@@ -1471,7 +1471,7 @@ Response `data`: `{ incident: IncidentResponseDto, assignments: [...], dispatchS
 | `ReceiveRescueUnitStatus` | `/hubs/incidents` | Thêm: khi **tạo xe** và **xóa xe** | Mọi Operator / Admin, nhân viên trạm | Thêm `unitType`, `latitude`, `longitude`, `isDeleted` |
 | `ReceiveIncidentUpdate` | `/hubs/incidents` | Thêm: khi worker **leo thang** sự cố (`status = Escalated`) | Operator trạm phụ trách + Admin | `IncidentResponseDto` (rút gọn) |
 | **`ReceiveTeamChanged`** | `/hubs/incidents` | Tạo / sửa / xóa tổ; gán / gỡ nhân viên khỏi trạm hoặc tổ | Nhân viên trạm, Operator trạm, Admin | `{ stationId, teamId, teamName, action: Created\|Updated\|Deleted\|MembersChanged, staffId, changedAt }` |
-| **`ReceiveSettingsChanged`** | `/hubs/incidents` | `PUT /api/settings/escalation`, `/dispatch`, `/service-area` | Mọi Operator / Admin | `{ key: escalation\|dispatch\|serviceArea, updatedAt, updatedByName }` |
+| **`ReceiveSettingsChanged`** | `/hubs/incidents` | `PUT /api/settings/escalation`, `/dispatch`, `/service-area` | `serviceArea`: mọi kết nối trên `/hubs/incidents` (gồm Citizen); các key khác: Operator / Admin | `{ key: escalation\|dispatch\|serviceArea, updatedAt, updatedByName }` |
 | **`ReceiveNotificationRead`** | `/hubs/incidents` | `PUT /api/notifications/{id}/read`, `/read-all` | Chính người dùng (mọi thiết bị) | `{ notificationIds[], all, unreadCount }` |
 
 Về `incidentId` của vị trí xe: **server tự gắn** từ lượt phân công đang chạy của xe; giá trị `incidentId` client gửi lên hub bị bỏ qua. Vì vậy Citizen / Staff đã `SubscribeIncident` trên `/hubs/tracking` luôn nhận được vị trí xe của sự cố, và client không thể đẩy vị trí vào sự cố khác.
@@ -1746,7 +1746,7 @@ AI chỉ có độ tin cậy cao hoặc mới giao nhưng chưa được nhận 
 | `GET /api/citizen-incident-alerts?pageIndex=1&pageSize=20` | Citizen | Danh sách thông báo đã gửi vào hộp thư của chính người gọi, trong `ApiResponseDto.data` dạng phân trang |
 | `GET /api/citizen-incident-alerts/{id}` | Citizen | Chi tiết thông báo an toàn; 404 nếu không thuộc người gọi |
 
-Mặc định `enabled = false`. Server tự đặt `enabledFromUtc` khi bật, không nhận thời gian do client tự đặt. Chỉ các lần xác nhận/tiếp nhận từ mốc này mới được phát; tắt rồi bật lại tạo mốc mới. Các thông báo đã xếp hàng vẫn được giữ và có thể tiếp tục gửi sau khi bật lại nếu sự cố/người nhận còn hợp lệ.
+Mặc định `enabled = true`. Migration khởi tạo/bật cấu hình cũ một lần với `enabledFromUtc` bằng thời điểm chạy migration (UTC); giữ nguyên mốc của cấu hình đã bật hợp lệ. Mốc được lưu trong DB, không đặt lại khi restart; Admin vẫn có thể tắt sau đó. Server tự đặt `enabledFromUtc` khi bật, không nhận thời gian do client tự đặt. Chỉ các lần xác nhận/tiếp nhận từ mốc này mới được phát; tắt rồi bật lại tạo mốc mới. Các thông báo đã xếp hàng vẫn được giữ và có thể tiếp tục gửi sau khi bật lại nếu sự cố/người nhận còn hợp lệ.
 
 DTO chi tiết chỉ có `id`, `area`, `message`, `createdAt`. Nội dung Việt: **“Có sự cố tại {khu vực báo cáo}.”**; Anh: **“An incident has been reported at {reported area}.”** Khu vực lấy từ `LocationAddress`, loại bỏ HTML, URL, email và chuỗi giống số điện thoại; thiếu địa chỉ thì dùng tọa độ làm tròn ba chữ số thập phân. Không lấy tiêu đề, mô tả, ảnh, danh tính hoặc hồ sơ y tế người báo.
 
