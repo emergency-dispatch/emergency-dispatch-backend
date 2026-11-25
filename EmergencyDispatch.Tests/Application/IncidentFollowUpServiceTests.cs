@@ -54,19 +54,39 @@ public class IncidentFollowUpServiceTests
     }
 
     [Fact]
-    public async Task AddSupplement_AudioAndTranscriptArePersistedAndBroadcastWithoutReDispatching()
+    public async Task AddSupplement_AudioAndSingleNoteArePersistedWithoutReDispatching()
     {
         var owner = Citizen(); var incident = Incident(IncidentStatus.Pending, i => i.ReportedByUserId = owner.Id);
         var media = new IncidentMediaDto { MediaUrl = "https://res.cloudinary.com/demo/video/authenticated/v1/emergency_dispatch/audio/a.m4a",
             PublicId = "emergency_dispatch/audio/a", MediaType = MediaType.Audio, DurationSeconds = 10, MimeType = "audio/mp4" };
-        var input = new AddSupplementDto { AudioAttachments = new() { new() { UploadToken = _audioTokens.Create(media, owner.Id), Transcript = "Có người bị thương" } } };
+        var input = new AddSupplementDto { Note = "Có người bị thương", AudioAttachments = new() { new() { UploadToken = _audioTokens.Create(media, owner.Id) } } };
         var result = await _svc.AddSupplementAsync(incident.Id, input, owner.Id);
         Assert.True(result.Success);
-        Assert.Equal("Có người bị thương", Assert.Single(result.Data!.AudioAttachments).Transcript);
-        Assert.Contains("Có người bị thương", System.Text.Json.JsonSerializer.Deserialize<List<IncidentMediaDto>>(_savedSupplements.Single().AudioAttachmentsJson!)!.Single().Transcript);
+        Assert.Equal("Có người bị thương", result.Data!.Note);
+        Assert.Single(result.Data.AudioAttachments);
+        Assert.Equal(input.Note, _savedSupplements.Single().Note);
+        Assert.DoesNotContain("Transcript", _savedSupplements.Single().AudioAttachmentsJson!);
         _rt.Verify(x => x.IncidentSupplementAddedAsync(It.Is<IncidentSupplementDto>(s => s.AudioAttachments.Count == 1),
             incident.ResponsibleStationId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
         _queue.Verify(q => q.EnqueueAsync(It.IsAny<AiAnalysisJob>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddSupplement_FullSceneTextIsSavedWhileNotificationUsesOnlyAPreview()
+    {
+        var owner = Citizen();
+        var incident = Incident(IncidentStatus.Pending, i =>
+        {
+            i.ReportedByUserId = owner.Id;
+            i.DispatchAssignments.Add(new DispatchAssignment { Status = DispatchAssignmentStatus.EnRoute, RescueUnit = new RescueUnit { StationId = _station } });
+        });
+        var input = new AddSupplementDto { Note = new string('đ', 4000) };
+        var result = await _svc.AddSupplementAsync(incident.Id, input, owner.Id);
+        Assert.True(result.Success);
+        Assert.Equal(input.Note, result.Data!.Note);
+        Assert.Equal(input.Note, _savedSupplements.Single().Note);
+        _notify.Verify(n => n.NotifyCrewAsync(_station, It.IsAny<Guid?>(), It.Is<NotificationRequest>(r =>
+            r.Message.ToString()!.Length < 1000 && r.Message.ToString()!.Contains("…")), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private void AsRole(UserRole? role, Guid? station = null)
@@ -474,7 +494,7 @@ public class IncidentFollowUpServiceTests
     {
         var inc = Incident(IncidentStatus.Pending);
         Assert.False((await _svc.AddSupplementAsync(inc.Id, new AddSupplementDto { Note = "  " }, null)).Success);
-        Assert.False((await _svc.AddSupplementAsync(inc.Id, new AddSupplementDto { Note = new string('x', 1001), GuestCancellationToken = "good" }, null)).Success);
+        Assert.False((await _svc.AddSupplementAsync(inc.Id, new AddSupplementDto { Note = new string('x', 4001), GuestCancellationToken = "good" }, null)).Success);
     }
 
     [Fact]

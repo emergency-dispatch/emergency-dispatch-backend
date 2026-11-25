@@ -1,76 +1,63 @@
-# Kiểm thử SOS Audio Evidence (BE)
+# SOS Audio — nội dung duy nhất description/note
 
-## Phạm vi
+## Contract hiện tại
 
-Web/Mobile ghi âm và chuyển lời nói thành chữ. BE nhận audio + text, lưu vào ca và cung cấp phát lại có phân quyền. Các bước dưới đây là hướng dẫn chạy thật; test dùng Cloudinary SDK mock không chứng minh upload/phát trên thiết bị đã thành công.
+- Web/Mobile chuyển giọng nói thành chữ vào cùng ô mô tả có thể chỉnh sửa.
+- Tạo SOS: `description` <=4000 ký tự. Bổ sung: `note` <=4000. Không có transcript/transcriptionStatus riêng.
+- `audioAttachments: [{ "uploadToken": "..." }]`, tối đa một audio và tổng năm attachment mỗi request.
+- Upload audio <=5 MiB, >0–30 giây; lưu riêng tư và cấp link nghe 5 phút sau khi kiểm tra quyền.
 
-## Chuẩn bị
+## Swagger
 
-- DB thử riêng, cấu hình Cloudinary thật, tài khoản Citizen/Operator/Staff và một Citizen khác. Không dùng DB vận hành để chạy kịch bản tạo SOS.
-- Áp dụng migration `20261125141313_AddIncidentAudioEvidence` bằng quy trình migrate hiện có.
-- Chuẩn bị ảnh hợp lệ; file M4A/MP3/WebM/OGG/WAV audio-only <=5 MiB, <=30 giây; một file >30 giây và một file video giả MIME audio.
-- Swagger `/swagger`, đăng nhập Citizen và Authorize. Không cần dịch vụ STT/API key ở BE.
-
-## Upload và preview
-
-1. `POST /api/media/upload`, chọn file audio thật. Mong đợi Audio, durationSeconds thực tế, uploadToken, status AwaitingClientTranscript. URL gốc không mở công khai được.
-2. `POST /api/media/audio/preview-url`: `{ "uploadToken": "token từ bước 1" }`. Mở data.url, nghe đúng file; expiresAt khoảng 5 phút. Hết hạn gọi lại để lấy link mới.
-3. Quá 5 MiB, quá 30 giây, file hỏng hoặc video có MIME audio: HTTP 400. Không có Cloudinary thật: lỗi rõ ràng, không trả URL ảnh giả.
-
-## Tạo SOS kèm ảnh và âm thanh
-
-Upload ảnh bằng API cũ, sau đó gửi `POST /api/incidents` hoặc `/api/incidents/sos`:
+1. Dùng DB thử riêng, áp migration mới `20261125154731_UnifyIncidentDescription`, cấu hình Cloudinary thật. Chưa chạy migration trên DB vận hành trong đợt sửa này.
+2. Đăng nhập Citizen, upload ảnh và audio qua `POST /api/media/upload` (form field file). Audio trả uploadToken, durationSeconds; không trả bản chép lời.
+3. Gửi `POST /api/incidents` hoặc `/sos`:
 
 ```json
 {
-  "description": "Tai nạn có người bị thương",
+  "description": "Tai nạn xe máy. Có hai người bị thương, cần cứu hộ.",
   "latitude": 10.84,
   "longitude": 106.80,
   "locationAddress": "Đường tại khu vực thử nghiệm",
-  "mediaUrls": ["URL ảnh do BE upload trả về"],
-  "audioAttachments": [
-    { "uploadToken": "token audio", "transcript": "Có hai người bị thương, một người đang nằm trên đường." }
-  ]
+  "mediaUrls": ["URL ảnh đã upload"],
+  "audioAttachments": [{ "uploadToken": "token audio" }]
 }
 ```
 
-- Chọn tọa độ thuộc vùng thử đã cấu hình để không bị geofencing/cooldown chặn. Giá trị trong ví dụ là dữ liệu nhập mẫu, không phải bằng chứng chạy test.
-- GET chi tiết bằng tài khoản có quyền: audio là Audio, có durationSeconds/transcript; ảnh vẫn Photo. Audio không được đưa vào job phân tích ảnh; Qwen nhận ngữ cảnh transcript cùng ảnh.
-- `GET /api/incidents/{id}/audio/{mediaId}/playback-url`: owner/Operator/Staff có quyền lấy được link; Citizen khác bị từ chối, không được ký URL trước khi kiểm tra quyền. Thiếu claim UserId hợp lệ: 401. Bản ghi không thuộc ca: 404.
-- Sửa token, token hết hạn hoặc token của tài khoản khác: bị từ chối. Transcript >4000, >1 audio hoặc tổng >5 file: bị từ chối. Description vẫn tối đa 200; không dùng description để chứa toàn bộ bản chép lời dài.
+Chọn tọa độ thật trong vùng thử đã cấu hình. Ví dụ payload không phải bằng chứng đã chạy trên DB vận hành.
 
-## Hai nhánh điều phối
-
-- Ảnh + audio + transcript hợp lệ: vẫn qua các quy tắc AI/ensemble/confidence hiện có; audio không làm giảm yêu cầu an toàn đó.
-- Ảnh + audio không transcript (null/rỗng): lưu được audio; khi đến cổng tự điều phối phải dừng với audio-transcript-unavailable để Operator nghe và xác nhận.
-- Chỉ audio, không ảnh: Pending/Unclassified; không gọi YOLO/VLM cho file âm thanh. Operator mở nghe rồi xử lý thủ công.
-- Bỏ audio hoàn toàn: luồng SOS ảnh/ghi chú hiện có hoạt động như cũ.
-
-## Bổ sung sau khi đã gửi SOS
-
-`POST /api/incidents/{id}/supplements`:
+4. GET chi tiết: mô tả đầy đủ nằm trong description; mediaItems chứa audio và duration/MIME/publicId, không có transcript/transcriptionStatus. Kiểm tra chuỗi 4000 được nhận, 4001 bị từ chối. JSON audio còn gửi transcript phải bị từ chối thay vì bỏ qua âm thầm.
+5. Preview: POST `/api/media/audio/preview-url` với uploadToken. Sau khi tạo ca: GET `/api/incidents/{id}/audio/{mediaId}/playback-url`. Người có quyền nhận data.url/expiresAt; tài khoản khác không được ký link. URL gốc unsigned bị từ chối, URL ký hết hạn bị từ chối. Receipt khác chủ/hết hạn/sửa nội dung bị từ chối.
+6. Ảnh + description + audio: Qwen nhận description một lần, YOLO chỉ nhận ảnh. Audio + description rỗng: khi đến cổng tự điều phối phải dừng với audio-description-unavailable; Operator nghe/xác nhận. Không ảnh: Pending, không đưa audio vào mô hình ảnh.
+7. Bổ sung qua POST `/api/incidents/{id}/supplements`:
 
 ```json
 {
-  "note": "Cập nhật hiện trường",
-  "audioAttachments": [{ "uploadToken": "token audio", "transcript": "Người bị thương vẫn đang chờ cứu hộ." }]
+  "note": "Người bị thương vẫn đang chờ cứu hộ.",
+  "audioAttachments": [{ "uploadToken": "token audio" }]
 }
 ```
 
-- Guest phải kèm guestCancellationToken theo contract bổ sung hiện có. Người khác không được thêm; ca đã đóng không được thêm.
-- `GET /api/incidents/{id}/supplements` giữ audio metadata và text; route nghe: `/api/incidents/{id}/supplements/{supplementId}/audio/{mediaId}/playback-url`.
-- Operator/crew được phân công nhận ReceiveIncidentSupplement. Nhóm theo dõi rộng không được nhận audio/transcript trong broadcast. Không phát audio qua notification khu vực hoặc bản đồ công khai; không tự phát lại/hủy lệnh điều phối.
-- Restart rồi đọc lại ca/supplement: audio, transcript, duration còn nguyên. Media Photo/Video cũ không thay đổi enum hay dữ liệu.
+Guest kèm guestCancellationToken theo contract hiện có. Kiểm tra note đầy đủ được lưu, push chỉ chứa đoạn xem trước. Operator/crew nhận event đầy đủ; nhóm theo dõi rộng không nhận note/tên/ảnh/audio mà phải tải API có phân quyền. Không tự điều phối lại ca.
+8. Audio supplement nghe qua `/api/incidents/{id}/supplements/{supplementId}/audio/{mediaId}/playback-url`. Người báo trùng không được đọc description/audio của người báo gốc. Bản đồ và thông báo khu vực không chứa nội dung riêng tư.
 
-## Kết quả thực thi
+## Kiểm tra migration dữ liệu cũ
 
-Ghi riêng build, ngày chạy, DB thử, thiết bị/trình duyệt, request/response đã che token và kết quả nghe thật. Không ghi nhận upload Cloudinary hoặc phát âm thanh trên điện thoại là Passed chỉ dựa vào test mock.
+- Mô tả cũ + Transcript trong media Audio được ghép vào Description, cách nhau bằng dòng trống; phần đã có không bị thêm lần hai.
+- Transcript trong JSON supplement (PascalCase/camelCase) chuyển sang Note, sau đó bỏ các key text/status khỏi audio JSON.
+- Nội dung cũ tổng cộng >4000 vẫn giữ đầy đủ trong cột text; giới hạn 4000 chỉ cho request mới. Không làm hiện lại lời nói của audio đã xóa.
+- Audio ID/publicId/duration và file gốc giữ nguyên. Hai cột Transcript/TranscriptionStatus được bỏ sau backfill.
+- Không phát thông báo hay tự điều phối từ migration. Rollback không cắt Note về 1000 và không tách lại được phần nhập tay/lời nói đã gộp.
+
+## Bằng chứng kiểm thử
+
+Kết quả đợt sửa gộp nội dung được ghi sau khi chạy test. Kiểm thử camera/microphone/trình nghe trên Web/Mobile và inference Qwen/YOLO thật không nằm trong đợt này.
+Lần triển khai audio trước đã có 6 kiểm tra Cloudinary thật bằng WAV một giây tự sinh (upload, thời lượng, link riêng tư/hết hạn, xóa file test); phần upload và phát audio không bị thay đổi trong đợt gộp text.
 
 
-### Đã kiểm tra ngày 25/11/2026
+### Kết quả đợt gộp description — 25/11/2026
 
-- Toàn bộ suite BE: **1063 Passed, 0 Failed, 2 Skipped** (1065 total). Có test hồi quy cho codec video rỗng của SDK, URL Cloudinary đã ký, receipt hết hạn/khác người, transcript quá dài, quyền nghe, SignalR và gửi lại SOS theo idempotency key.
-- **11 kiểm tra PostgreSQL thật trên DB cục bộ riêng**: áp migration vào schema trước feature, giữ nguyên ảnh/video và note cũ, lưu/đọc lại enum Audio=2, duration/MIME/size/transcript, JSONB supplement và không nhân đôi sau restart. Môi trường thử không có PostGIS nên chỉ bỏ bootstrap extension trong probe; không kiểm thử thao tác không gian. PostgreSQL thử đã dừng.
-- **6 kiểm tra Cloudinary thật** bằng WAV một giây tự sinh: upload và đọc duration; tạo URL nghe 5 phút; URL gốc không ký bị từ chối; URL ký hợp lệ tải được dữ liệu; URL hết hạn bị từ chối; file test được xóa. Không gửi bản ghi hay ảnh người dùng và không ghi khóa/URL ký vào báo cáo.
-- `dotnet ef migrations has-pending-model-changes`: không có model change chưa được migration bao phủ.
-- Giới hạn: chưa kiểm thử thu camera/microphone hoặc phát audio trên điện thoại/trình duyệt. Không chạy inference Qwen/YOLO thật trong đợt này; phần truyền transcript vào job AI và cổng tự điều phối được kiểm tra bằng automated tests. Chưa chạy deploy hay lệnh migrate lên DB vận hành.
+- Toàn bộ suite BE: **1066 Passed, 0 Failed, 2 Skipped** (1068 total).
+- **15 kiểm tra PostgreSQL riêng Passed**: backfill Description/Note, chống chép trùng, PascalCase/camelCase JSON cũ, giữ dữ liệu dài hơn 4000 sau khi gộp, không làm hiện lại audio đã xóa, giữ metadata, bỏ cột cũ, rollback/reapply không cắt hay nhân đôi text.
+- EF xác nhận model/snapshot đã khớp migration. Không áp dụng migration lên DB vận hành trong đợt này; PostgreSQL thử đã dừng.
+- Chưa sửa UI Web/Mobile, chưa gọi Qwen/YOLO thật hay chạy lại Cloudinary trong đợt chỉ gộp text này.

@@ -393,7 +393,7 @@ public class IncidentService : IIncidentService
             if (hasPhoto)
             {
                 await _aiQueue.EnqueueAsync(
-                    new AiAnalysisJob(incident.Id, mediaToAnalyze!, AudioEvidence.AiContext(dto.Description, incident.MediaItems), DateTime.UtcNow, QuickCheckOnly: true),
+                    new AiAnalysisJob(incident.Id, mediaToAnalyze!, incident.Description, DateTime.UtcNow, QuickCheckOnly: true),
                     cancellationToken);
             }
 
@@ -411,7 +411,7 @@ public class IncidentService : IIncidentService
         if (willAnalyze)
         {
             await _aiQueue.EnqueueAsync(
-                new AiAnalysisJob(incident.Id, mediaToAnalyze!, AudioEvidence.AiContext(dto.Description, incident.MediaItems), DateTime.UtcNow),
+                new AiAnalysisJob(incident.Id, mediaToAnalyze!, incident.Description, DateTime.UtcNow),
                 cancellationToken);
 
             _logger.LogInformation("Sự cố {IncidentId} đã vào hàng đợi phân tích AI.", incident.Id);
@@ -802,6 +802,7 @@ public class IncidentService : IIncidentService
         dto.ReporterMedicalProfile = null;
         dto.GuestCancellationToken = null;
         dto.MediaItems = new List<IncidentMediaDto>();
+        dto.Description = string.Empty; // Scene text may contain private speech-to-text content.
         dto.OperatorNotes = null;
         dto.LockedByOperatorId = null;
         dto.LockedByOperatorName = null;

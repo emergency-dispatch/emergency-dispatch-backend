@@ -17,5 +17,10 @@ public static partial class LocalizationCatalog
         { "Không thể mở bản ghi âm.", "The recording could not be opened." },
         { "Không tìm thấy bản ghi âm.", "Recording not found." },
         { "bản ghi âm mới", "new audio recording" },
+        { "Mô tả không được vượt quá 4000 ký tự", "The description must not exceed 4000 characters." },
+        { "Mô tả không được vượt quá 4000 ký tự.", "The description must not exceed 4000 characters." },
+        { "Mô tả sự việc không được vượt quá 4000 ký tự.", "The incident description must not exceed 4000 characters." },
+        { "Nội dung bổ sung không được vượt quá 4000 ký tự.", "The additional information must not exceed 4000 characters." },
+        { "AI không tự điều phối: bản ghi âm chưa có mô tả hiện trường. Cần Điều phối viên nghe và xác nhận.", "AI did not dispatch automatically: the recording has no scene description. An operator must listen and verify." },
     };
 }

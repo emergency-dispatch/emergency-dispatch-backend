@@ -160,6 +160,8 @@ public class LinkedReportDto
 /// </summary>
 public class AddSupplementDto
 {
+    /// <summary>Single text field for typed or speech-recognized updates.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(4000)]
     public string Note { get; set; } = string.Empty;
     public List<string> MediaUrls { get; set; } = new();
     public List<EmergencyDispatch.Application.DTOs.Media.AudioAttachmentInputDto> AudioAttachments { get; set; } = new();

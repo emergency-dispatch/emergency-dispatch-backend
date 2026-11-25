@@ -10,8 +10,6 @@ public class MediaUploadResultDto
     public long FileSizeBytes { get; set; }
     public string? MimeType { get; set; }
     public double? DurationSeconds { get; set; }
-    public string? Transcript { get; set; }
-    public string? TranscriptionStatus { get; set; }
     /// <summary>Audio only: opaque, user-bound upload receipt required when attaching to an incident.</summary>
     public string? UploadToken { get; set; }
     public bool IsSuccess { get; set; } = true;

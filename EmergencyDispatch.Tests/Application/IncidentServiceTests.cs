@@ -61,15 +61,17 @@ public class IncidentServiceTests
         var dto = withPhoto ? Sos(photo) : Sos();
         var media = new IncidentMediaDto { MediaUrl = "https://res.cloudinary.com/demo/video/authenticated/v1/emergency_dispatch/audio/a.webm",
             PublicId = "emergency_dispatch/audio/a", MediaType = MediaType.Audio, DurationSeconds = 10, MimeType = "audio/webm", FileSizeBytes = 1000 };
-        dto.AudioAttachments.Add(new() { UploadToken = _audioTokens.Create(media, null), Transcript = "Có người bị thương" });
+        dto.Description = "Có người bị thương";
+        dto.AudioAttachments.Add(new() { UploadToken = _audioTokens.Create(media, null) });
         Incident? saved = null;
         _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
         var result = await _svc.CreateIncidentAsync(dto);
         Assert.True(result.Success);
         var audio = Assert.Single(saved!.MediaItems, m => m.MediaType == MediaType.Audio);
-        Assert.Equal("Có người bị thương", audio.Transcript);
-        Assert.Contains(result.Data!.MediaItems, m => m.Id == audio.Id && m.DurationSeconds == 10 && m.Transcript == audio.Transcript);
-        if (withPhoto) _queue.Verify(q => q.EnqueueAsync(It.Is<AiAnalysisJob>(j => j.MediaUrl == photo && j.AdditionalContext!.Contains("Có người bị thương")), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("Có người bị thương", saved.Description);
+        Assert.Equal(saved.Description, result.Data!.Description);
+        Assert.Contains(result.Data.MediaItems, m => m.Id == audio.Id && m.DurationSeconds == 10);
+        if (withPhoto) _queue.Verify(q => q.EnqueueAsync(It.Is<AiAnalysisJob>(j => j.MediaUrl == photo && j.AdditionalContext == saved.Description), It.IsAny<CancellationToken>()), Times.Once);
         else { Assert.Equal(IncidentStatus.Pending, saved.Status); _queue.Verify(q => q.EnqueueAsync(It.IsAny<AiAnalysisJob>(), It.IsAny<CancellationToken>()), Times.Never); }
     }
 
@@ -849,10 +851,12 @@ public class IncidentServiceTests
         Assert.True(await _svc.CanAccessIncidentAsync(parent.Id, duplicateReporter.Id));
         Assert.False(await _svc.CanAccessIncidentAsync(parent.Id, stranger.Id));
 
+        parent.Description = "Nội dung giọng nói riêng tư";
         var view = await _svc.GetIncidentByIdAsync(parent.Id, duplicateReporter.Id);
         Assert.True(view.Success);
         var dto = view.Data!;
         Assert.True(dto.ViewedAsDuplicateReporter);
+        Assert.Empty(dto.Description);
         Assert.Equal(parent.Code, dto.Code);
         Assert.Equal(IncidentStatus.Dispatched, dto.Status);
         Assert.Null(dto.ReportedByUserId);
@@ -864,6 +868,7 @@ public class IncidentServiceTests
 
         var own = await _svc.GetIncidentByIdAsync(parent.Id, owner.Id);
         Assert.False(own.Data!.ViewedAsDuplicateReporter);
+        Assert.Equal(parent.Description, own.Data.Description);
         Assert.Equal("0901234567", own.Data.ReporterPhone);
 
         Assert.False((await _svc.GetIncidentByIdAsync(parent.Id, stranger.Id)).Success);

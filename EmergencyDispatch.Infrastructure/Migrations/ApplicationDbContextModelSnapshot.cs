@@ -1182,14 +1182,6 @@ namespace EmergencyDispatch.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<string>("Transcript")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("TranscriptionStatus")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1273,8 +1265,7 @@ namespace EmergencyDispatch.Infrastructure.Migrations
 
                     b.Property<string>("Note")
                         .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
+                        .HasColumnType("text");
 
                     b.Property<Guid?>("ReporterUserId")
                         .HasColumnType("uuid");

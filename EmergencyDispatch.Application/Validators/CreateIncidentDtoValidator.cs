@@ -17,7 +17,7 @@ public class CreateIncidentDtoValidator : AbstractValidator<CreateIncidentDto>
             .WithMessage("Kinh độ (Longitude) phải nằm trong khoảng -180 đến 180 độ.");
 
         RuleFor(x => x.Description)
-            .MaximumLength(200).WithMessage("Mô tả sự việc không được vượt quá 200 ký tự.");
+            .MaximumLength(4000).WithMessage("Mô tả sự việc không được vượt quá 4000 ký tự.");
 
         RuleFor(x => x.LocationAddress)
             .NotEmpty().WithMessage("Địa chỉ hiện trường là bắt buộc.")

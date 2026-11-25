@@ -155,7 +155,7 @@ public class CloudinaryMediaService : IMediaUploadService, IAudioPlaybackService
             {
                 Url = assetUrl,
                 PublicId = upload.PublicId, MediaType = MediaType.Audio, FileSizeBytes = upload.Bytes,
-                MimeType = contentType, DurationSeconds = duration, TranscriptionStatus = "AwaitingClientTranscript"
+                MimeType = contentType, DurationSeconds = duration
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

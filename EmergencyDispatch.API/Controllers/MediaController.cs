@@ -66,8 +66,7 @@ public class MediaController : ControllerBase
             result.UploadToken = _audioTokens.Create(new EmergencyDispatch.Application.DTOs.Incident.IncidentMediaDto
             {
                 MediaUrl = result.Url, PublicId = result.PublicId, MediaType = result.MediaType,
-                FileSizeBytes = result.FileSizeBytes, MimeType = result.MimeType, DurationSeconds = result.DurationSeconds,
-                TranscriptionStatus = "AwaitingClientTranscript"
+                FileSizeBytes = result.FileSizeBytes, MimeType = result.MimeType, DurationSeconds = result.DurationSeconds
             }, _currentUser?.UserId);
         }
         return Ok(ApiResponseDto<MediaUploadResultDto>.SuccessResult(result, "Tải tệp tin lên thành công."));

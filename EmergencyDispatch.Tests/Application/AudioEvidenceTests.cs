@@ -84,18 +84,17 @@ public class AudioEvidenceTests
     }
 
     [Fact]
-    public void ResolvingKeepsWebMAudioTypeAndClientTranscriptWithoutChangingReceipt()
+    public void AudioMetadataHasNoSeparateSceneTextField()
     {
-        var tokens = new AudioUploadTokenService(_provider);
-        var token = tokens.Create(Audio(), null);
-        Assert.True(AudioEvidence.TryResolve(new[] { new AudioAttachmentInputDto { UploadToken = token, Transcript = " Hai người bị thương " } },
-            1, tokens, null, out var media, out _));
+        var tokens = new AudioUploadTokenService(_provider); var token = tokens.Create(Audio(), null);
+        Assert.True(AudioEvidence.TryResolve(new[] { new AudioAttachmentInputDto { UploadToken = token } }, 1, tokens, null, out var media, out _));
         Assert.Equal(MediaType.Audio, media.Single().MediaType);
-        Assert.Equal("Hai người bị thương", media.Single().Transcript);
-        Assert.Equal("ClientProvided", media.Single().TranscriptionStatus);
-        Assert.True(tokens.TryRead(token, null, out var original)); Assert.Null(original!.Media.Transcript);
-        Assert.Contains("Hai người bị thương", AudioEvidence.AiContext("Tai nạn", media));
-        Assert.Equal("Tai nạn", AudioEvidence.AiContext("Tai nạn", Array.Empty<IncidentMedia>()));
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var json = System.Text.Json.JsonSerializer.Serialize(AudioEvidence.ToDto(media.Single()), options);
+        Assert.DoesNotContain("transcript", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("transcriptionStatus", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<System.Text.Json.JsonException>(() => System.Text.Json.JsonSerializer.Deserialize<AudioAttachmentInputDto>(
+            "{\"uploadToken\":\"token\",\"transcript\":\"old text\"}", options));
     }
 
     [Fact]
@@ -106,9 +105,6 @@ public class AudioEvidenceTests
         Assert.False(AudioEvidence.TryResolve(new[] { input, input }, 0, tokens, null, out _, out _));
         Assert.False(AudioEvidence.TryResolve(new[] { input }, 5, tokens, null, out _, out _));
         Assert.False(AudioEvidence.TryResolve(new[] { new AudioAttachmentInputDto { UploadToken = "bad" } }, 0, tokens, null, out _, out _));
-        input.Transcript = new string('a', 4001);
-        Assert.False(AudioEvidence.TryResolve(new[] { input }, 0, tokens, null, out _, out var error));
-        Assert.Equal(AudioEvidence.TranscriptTooLong, error);
     }
 
     [Theory]
@@ -123,16 +119,16 @@ public class AudioEvidenceTests
     }
 
     [Theory]
-    [InlineData(null, "audio-transcript-unavailable")]
-    [InlineData("   ", "audio-transcript-unavailable")]
+    [InlineData(null, "audio-description-unavailable")]
+    [InlineData("   ", "audio-description-unavailable")]
     [InlineData("Hai người bị thương", null)]
-    public void AutomaticDispatchRequiresUsableTranscriptWhenAudioIsAttached(string? transcript, string? reason)
+    public void AutomaticDispatchRequiresDescriptionWhenAudioIsAttached(string? description, string? reason)
     {
         var incident = new Incident
         {
             Status = IncidentStatus.AiProcessed, Severity = SeverityLevel.Level2, EventType = IncidentEventType.TrafficAccident,
             AiClassification = new() { IsSuccess = true, EventType = IncidentEventType.TrafficAccident, ConfidenceSource = "logprob", ConfidenceScore = .99 },
-            MediaItems = { new() { MediaType = MediaType.Audio, Transcript = transcript } }
+            Description = description ?? string.Empty, MediaItems = { new() { MediaType = MediaType.Audio } }
         };
         Assert.Equal(reason, AutoDispatchService.IneligibleReason(incident, new DispatchSettingsDto(), DateTime.UtcNow));
     }
@@ -205,7 +201,7 @@ public class AudioEvidenceTests
     }
 
     [Fact]
-    public async Task IncidentGroupDoesNotReceiveAudioOrTranscriptsFromAnotherReporter()
+    public async Task IncidentGroupDoesNotReceivePrivateAudioOrSceneText()
     {
         var clients = new Mock<Microsoft.AspNetCore.SignalR.IHubClients>();
         var crew = new Mock<Microsoft.AspNetCore.SignalR.IClientProxy>();
@@ -222,12 +218,12 @@ public class AudioEvidenceTests
         var notifier = new EmergencyDispatch.API.Realtime.SignalRRealtimeNotifier(hub.Object,
             new Mock<Microsoft.AspNetCore.SignalR.IHubContext<EmergencyDispatch.API.Hubs.TrackingHub>>().Object,
             NullLogger<EmergencyDispatch.API.Realtime.SignalRRealtimeNotifier>.Instance);
-        var dto = new IncidentSupplementDto { TargetIncidentId = incidentId, AudioAttachments = new() { Audio() } };
+        var dto = new IncidentSupplementDto { TargetIncidentId = incidentId, Note = "Private speech text", ReporterName = "Private name", AudioAttachments = new() { Audio() } };
         await notifier.IncidentSupplementAddedAsync(dto, stationId, Array.Empty<Guid>(), new[] { Guid.NewGuid() });
         foreach (var proxy in new[] { crew, operators }) proxy.Verify(p => p.SendCoreAsync("ReceiveIncidentSupplement",
             It.Is<object?[]>(args => ReferenceEquals(args[0], dto)), It.IsAny<CancellationToken>()), Times.Once);
         citizens.Verify(p => p.SendCoreAsync("ReceiveIncidentSupplement",
-            It.Is<object?[]>(args => ((IncidentSupplementDto)args[0]!).AudioAttachments.Count == 0), It.IsAny<CancellationToken>()), Times.Once);
+            It.Is<object?[]>(args => ((IncidentSupplementDto)args[0]!).AudioAttachments.Count == 0 && ((IncidentSupplementDto)args[0]!).Note == string.Empty && ((IncidentSupplementDto)args[0]!).ReporterName == null), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -278,6 +274,16 @@ public class AudioEvidenceTests
         Assert.True(result.IsSuccess);
         Assert.DoesNotContain("/s--", result.Url); Assert.Empty(new Uri(result.Url).Query);
         Assert.Contains("/video/authenticated/", result.Url);
+    }
+
+    [Theory]
+    [InlineData(4000, true)]
+    [InlineData(4001, false)]
+    public async Task SingleDescriptionSupportsFullSpeechTextAndEnforcesTheNewLimit(int length, bool expected)
+    {
+        var dto = new CreateIncidentDto { Latitude = 10, Longitude = 106, LocationAddress = "Road", Description = new string('a', length) };
+        var validator = new CreateIncidentDtoValidator(TestHelpers.Config());
+        Assert.Equal(expected, (await validator.ValidateAsync(dto)).IsValid);
     }
 
 }

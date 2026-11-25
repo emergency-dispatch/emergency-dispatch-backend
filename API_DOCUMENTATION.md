@@ -1221,7 +1221,7 @@ async function submitSosReport(file: File, description: string, lat: number, lng
 
 **Enum mới:** `RescueUnitStatus.CoolDown`, `RescueUnitStatus.OutOfService`, `DispatchAssignmentStatus.Rejected`, `IncidentEventType` (`None`, `FireExplosion`, `TrafficAccident`), `CrewRole`, `BlockDuration`, `BlockedNumberStatus`, `AuditAction.PhoneRevealed`, `AuditAction.ReporterBlocked`.
 
-**Giới hạn:** SOS 5 lần/phút/IP và 1 sự cố đang hoạt động / 3 phút / tài khoản hoặc SĐT; mô tả SOS ≤ 200 ký tự; đăng nhập 10 lần/phút/IP; sai mật khẩu 5 lần khóa 15 phút.
+**Giới hạn:** SOS 5 lần/phút/IP và 1 sự cố đang hoạt động / 3 phút / tài khoản hoặc SĐT; mô tả SOS ≤ 4000 ký tự; đăng nhập 10 lần/phút/IP; sai mật khẩu 5 lần khóa 15 phút.
 
 
 
@@ -1444,7 +1444,7 @@ Dùng khi Operator biết có sự cố từ bên ngoài (điện thoại, bộ 
 ```json
 {
   "title": "Cháy kho hàng khu B",          // tùy chọn, mặc định "Sự cố tại <địa chỉ>"
-  "description": "…",                      // tùy chọn, ≤ 1000 ký tự
+  "description": "…",                      // tùy chọn, ≤ 4000 ký tự
   "latitude": 10.73, "longitude": 106.72,
   "locationAddress": "Kho hàng khu B",     // bắt buộc
   "source": "PhoneCall",                   // bắt buộc: PhoneCall | Radio | Cctv | FieldObservation | Other
@@ -1573,7 +1573,7 @@ Cấu hình (Admin): `GET /api/settings/duplicate-detection` (Operator, Admin), 
 { "note": "Có người kẹt tầng 2", "mediaUrls": ["https://res.cloudinary.com/…/a.jpg"], "guestCancellationToken": "…" }
 ```
 
-* Cần `note` hoặc ít nhất 1 ảnh. `note` ≤ 1000. Tối đa 5 media, phải là URL do `POST /api/media/upload` trả về.
+* Cần `note` hoặc ít nhất 1 ảnh. `note` ≤ 4000. Tối đa 5 media, phải là URL do `POST /api/media/upload` trả về.
 * Sự cố đã `Completed` / `Cancelled` → 400. Tối đa 20 lần bổ sung mỗi sự cố → 429.
 * Báo cáo đang `Linked` → thông tin chuyển tới sự cố gốc (`targetIncidentId` trong response), nơi đội đang xử lý.
 * Thành công: audit `SupplementAdded` trên sự cố nhận, realtime **`ReceiveIncidentSupplement`** (Operator trạm phụ trách + nhóm trạm có xe đang xử lý + người theo dõi), push cho staff các trạm có xe đang xử lý.
@@ -1804,20 +1804,33 @@ Server phát `ReceiveCitizenMapChanged` khi tập marker hoặc dữ liệu mark
 Không thêm migration cho bản đồ. Lookup `by-alert` sử dụng bảng thông báo từ migration Citizen trước đó; chức năng thông báo và quy tắc truy cập sự cố riêng tư giữ nguyên.
 
 
-## Audio Evidence — 25/11/2026 (BE)
+## Audio Evidence — một nội dung description/note duy nhất
 
-Web/Mobile performs speech-to-text. BE stores the audio and client-provided transcript; no server STT provider/key is required. Giọng nói được client chuyển thành chữ, BE không tự nghe hay tự tạo bản chép lời.
+Web/Mobile tự chuyển giọng nói thành chữ, điền vào cùng ô mô tả có thể chỉnh sửa. BE không có trường `transcript`/`transcriptionStatus` trong API; không cần dịch vụ STT ở server.
 
-- `MediaType.Audio = 2` (JSON: `"Audio"`); Photo=0/Video=1 unchanged.
-- `POST /api/media/upload`: multipart field `file`; audio maximum **5 MiB, >0–30 seconds**, one audio per SOS/supplement, five total attachments per submission. Accept audio/mp4, audio/m4a, audio/x-m4a, audio/mpeg, audio/mp3, audio/aac, audio/webm, audio/ogg, audio/wav, audio/x-wav, audio/wave. MIME parameters such as `audio/webm;codecs=opus` are normalized. Cloudinary decodes and verifies duration and absence of a video track; do not trust a client-supplied duration. Unsupported/invalid/overlong audio returns 400.
-- Cloudinary must be configured for real audio upload; no fake image URL is returned as audio. Audio uses Cloudinary `video` resource type and `authenticated` delivery. `data.url` is the private asset identifier, **not a directly playable URL**. `data.uploadToken` is a protected 24-hour receipt, bound to the uploader when authenticated; an anonymous receipt acts as a bearer capability. Do not log/share receipts.
-- Submit `audioAttachments: [{ "uploadToken": "...", "transcript": "client-reviewed words" }]` in `POST /api/incidents` (or `/sos`) and `POST /api/incidents/{id}/supplements`. Transcript is optional, maximum **4000 characters**, stored separately from `description` (still <=200) or supplement `note` (<=1000). Do not truncate automatically. Audio URLs must not be sent in legacy `mediaUrls`; those remain images/videos.
-- Incident details expose audio in `mediaItems` with `id`, `mediaType`, `publicId`, `mediaUrl`, `mimeType`, `fileSizeBytes`, `durationSeconds`, `transcript`, `transcriptionStatus`. Status is `ClientProvided` or `Missing`; upload returns `AwaitingClientTranscript`. Supplement DTOs expose `audioAttachments` separately from legacy `mediaUrls`.
-- `POST /api/media/audio/preview-url`, body `{ "uploadToken": "..." }`: preview before submitting. Receipt is checked; signed playback URL lasts five minutes.
-- `GET /api/incidents/{incidentId}/audio/{mediaId}/playback-url`: JWT required, checks private incident permissions before issuing a five-minute URL.
-- `GET /api/incidents/{incidentId}/supplements/{supplementId}/audio/{mediaId}/playback-url`: JWT and supplement permissions required. Both return `{ "success": true, "data": { "url": "...", "expiresAt": "...Z" } }`, with `Cache-Control: no-store`. Refresh through BE if the link expires. These short-lived URLs grant playback to whoever possesses them until expiration.
-- Initial SOS: only photos enter YOLO/VLM; client speech text is appended to Qwen context as unverified citizen information. Audio-only SOS remains Pending/Unclassified for Operator; current image AI is not called without a photo. Audio attached without a usable transcript blocks automatic dispatch with `autoDispatchReasonCode = "audio-transcript-unavailable"`; Operator can listen/verify and dispatch manually. A transcript does not waive existing confidence/ensemble/availability rules.
-- Late evidence: existing `ReceiveIncidentSupplement` notifies authorized Operator/crew with audio metadata. The broader incident-following group receives the usual event without audio/transcripts; clients refetch through permission-checked API. No audio/transcript is added to public map or area announcements. Late evidence does not automatically cancel or repeat dispatch.
-- Apply migration `20261125141313_AddIncidentAudioEvidence` before running the updated BE. Existing photo/video values and rows are preserved.
+- Tạo SOS (`POST /api/incidents` hoặc `/sos`): toàn bộ nội dung nhập tay và lời nói nằm trong **`description`**, tối đa **4000 ký tự**. Operator tạo ca thủ công cũng nhận description <=4000.
+- Bổ sung (`POST /api/incidents/{id}/supplements`): dùng **`note`** hiện có, tối đa **4000 ký tự**, không thêm một ô lời nói khác. BE giữ đầy đủ nội dung; chỉ thông báo push có đoạn xem trước ngắn để không vượt giới hạn notification.
+- `audioAttachments` chỉ có `[{ "uploadToken": "..." }]`. Gửi thêm `transcript` trong phần tử audio sẽ bị từ chối (400), tránh âm thầm mất nội dung từ client cũ. `mediaUrls` chỉ chứa ảnh/video.
+- `POST /api/media/upload` nhận ảnh/video như cũ hoặc audio <=5 MiB, >0–30 giây. MIME audio: mp4/m4a/x-m4a, mpeg/mp3, aac, webm, ogg, wav/x-wav/wave. Backend kiểm tra codec/thời lượng thực qua Cloudinary; video giả MIME audio bị từ chối. Mỗi request tối đa 1 audio, 5 attachment tổng cộng.
+- Audio được lưu Cloudinary `authenticated`. URL gốc lưu trong DB không có chữ ký và không phát công khai được. Upload trả `uploadToken` có hạn 24 giờ, ràng buộc tài khoản nếu đã đăng nhập; receipt ẩn danh là bearer capability. Không log/chia sẻ receipt.
+- Preview: `POST /api/media/audio/preview-url` với `{ "uploadToken": "..." }`.
+- Nghe audio đã gắn vào ca: `GET /api/incidents/{incidentId}/audio/{mediaId}/playback-url`; audio bổ sung dùng `GET /api/incidents/{incidentId}/supplements/{supplementId}/audio/{mediaId}/playback-url`. JWT và quyền xem ca/supplement được kiểm tra trước khi ký URL. Response có `data.url`, `data.expiresAt`; URL có hạn **5 phút**, response no-store. Link trao quyền nghe cho người giữ link trong thời hạn đó.
+- `mediaItems` và supplement `audioAttachments` chỉ trả metadata: id, mediaUrl, publicId, mediaType=Audio, mimeType, fileSizeBytes, durationSeconds. Nội dung đọc ở description/note, không đọc từ metadata audio.
+- Qwen nhận ảnh + **description duy nhất**; YOLO chỉ nhận ảnh. Không có ảnh thì Pending/Unclassified cho Operator. Có audio nhưng description rỗng thì chặn tự điều phối bằng `audio-description-unavailable`, Operator nghe/xác nhận. Có mô tả không bỏ qua các điều kiện confidence/ensemble khác.
+- Bổ sung sau SOS phát `ReceiveIncidentSupplement` cho Operator/crew có quyền, không tự điều phối lại. Nhóm theo dõi rộng chỉ nhận event có ID/thời gian để refetch; không nhận note, ảnh, tên người báo hay audio. Người báo trùng xem ca gốc không được thấy description/audio riêng tư. Bản đồ/thông báo khu vực Citizen không chứa nội dung ghi âm.
+- Migration `20261125154731_UnifyIncidentDescription`: chuyển nội dung cột Transcript cũ vào Description, phần text trong JSON audio supplement vào Note; giữ dữ liệu cũ dài hơn limit mới, không chép trùng, giữ audio metadata rồi bỏ hai cột cũ. Giới hạn 4000 áp dụng cho request mới. Down giữ merged text và không thu hẹp Note về 1000.
 
-Web/Mobile still need camera+microphone capture, local STT/review, upload and audio players. This BE change does not implement those UIs. Integration/testing steps: [SOS_AUDIO_EVIDENCE_TESTING.md](SOS_AUDIO_EVIDENCE_TESTING.md).
+Payload tạo SOS:
+
+```json
+{
+  "description": "Tai nạn xe máy. Có hai người bị thương, cần cứu hộ.",
+  "latitude": 10.84,
+  "longitude": 106.80,
+  "locationAddress": "Khu vực thử nghiệm",
+  "mediaUrls": ["URL ảnh do BE upload trả về"],
+  "audioAttachments": [{ "uploadToken": "token audio" }]
+}
+```
+
+Chưa sửa giao diện Web/Mobile. Hướng dẫn và kết quả kiểm thử: [SOS_AUDIO_EVIDENCE_TESTING.md](SOS_AUDIO_EVIDENCE_TESTING.md).

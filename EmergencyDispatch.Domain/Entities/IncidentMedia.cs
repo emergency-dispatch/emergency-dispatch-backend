@@ -36,6 +36,4 @@ public class IncidentMedia : BaseEntity
     public string? MimeType { get; set; }
 
     public double? DurationSeconds { get; set; }
-    public string? Transcript { get; set; }
-    public string? TranscriptionStatus { get; set; }
 }

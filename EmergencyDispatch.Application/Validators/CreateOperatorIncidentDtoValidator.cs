@@ -27,7 +27,7 @@ public class CreateOperatorIncidentDtoValidator : AbstractValidator<CreateOperat
             .MaximumLength(300).WithMessage("Tiêu đề không được vượt quá 300 ký tự.");
 
         RuleFor(x => x.Description)
-            .MaximumLength(1000).WithMessage("Mô tả không được vượt quá 1000 ký tự.");
+            .MaximumLength(4000).WithMessage("Mô tả không được vượt quá 4000 ký tự.");
 
         RuleFor(x => x.Source)
             .Must(s => s != IncidentSource.CitizenApp && Enum.IsDefined(s))

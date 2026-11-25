@@ -426,9 +426,9 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             return ApiResponseDto<IncidentSupplementDto>.FailureResult("Vui lòng nhập nội dung hoặc đính kèm ảnh bổ sung.");
         }
 
-        if (note.Length > 1000)
+        if (note.Length > 4000)
         {
-            return ApiResponseDto<IncidentSupplementDto>.FailureResult("Nội dung bổ sung không được vượt quá 1000 ký tự.");
+            return ApiResponseDto<IncidentSupplementDto>.FailureResult("Nội dung bổ sung không được vượt quá 4000 ký tự.");
         }
 
         if (media.Count > MaxSupplementMedia || media.Any(u => !MediaUrlPolicy.IsTrusted(u, _configuration) || AudioEvidence.LegacyType(u) == MediaType.Audio))
@@ -500,13 +500,15 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             crewIds.UnionWith(await _notificationService.GetCrewUserIdsAsync(stationId, teamId, cancellationToken) ?? Array.Empty<Guid>());
         }
         await _realtimeNotifier.IncidentSupplementAddedAsync(dtoOut, target.ResponsibleStationId, stations, crewIds, cancellationToken);
+        var noteElements = System.Globalization.StringInfo.ParseCombiningCharacters(note);
+        var notePreview = noteElements.Length > 160 ? note[..noteElements[160]] + "…" : note;
         foreach (var (stationId, teamId) in crews)
         {
             await _notificationService.NotifyCrewAsync(stationId, teamId, new NotificationRequest
             {
                 Type = NotificationType.StatusUpdate,
                 Title = "Người báo bổ sung thông tin hiện trường",
-                Message = new LocalizedText("{0}: {1}", target.Title, note.Length > 0 ? note : audioMedia.Count > 0 ? "bản ghi âm mới" : "ảnh / video mới"),
+                Message = new LocalizedText("{0}: {1}", target.Title, note.Length > 0 ? notePreview : audioMedia.Count > 0 ? "bản ghi âm mới" : "ảnh / video mới"),
                 IncidentId = target.Id,
                 HighPriority = true
             }, cancellationToken);
@@ -591,7 +593,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
 
         if (photo != null)
         {
-            await _aiQueue.EnqueueAsync(new AiAnalysisJob(report.Id, photo, AudioEvidence.AiContext(report.Description, report.MediaItems), now), cancellationToken);
+            await _aiQueue.EnqueueAsync(new AiAnalysisJob(report.Id, photo, report.Description, now), cancellationToken);
         }
 
         await _realtimeNotifier.IncidentCreatedAsync(IncidentService.MapToResponseDto(report), cancellationToken);

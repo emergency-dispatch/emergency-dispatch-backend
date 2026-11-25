@@ -1852,15 +1852,77 @@ Backend không có SMS gateway, luồng SOS cũng không đọc `ice.autoSendSms
 - `ReceiveSettingsChanged` trên `/hubs/incidents`: `key == "serviceArea"` được gửi một lần tới mọi kết nối, gồm Citizen; các key khác giữ phạm vi Operator/Admin. Citizen nhận sự kiện thì gọi lại API công khai `GET /api/settings/service-area` và vẽ lại vùng trên bản đồ. Tải lại cấu hình khi reconnect để bù sự kiện bị lỡ. BE không tự vẽ giao diện.
 
 
-## 55. Cập nhật 25/11/2026: SOS có ảnh + audio + bản chép lời từ client
+## 55. Cập nhật 25/11/2026: SOS audio chỉ dùng một nội dung description
 
-**BE ready; Web/Mobile UI chưa sửa.** Client dùng một nguồn micro để ghi file và chuyển giọng nói thành chữ, cho người dùng kiểm tra lại. BE không gọi dịch vụ Speech-to-Text.
+**BE đã gộp text, Web/Mobile cần đổi payload/UI.** Người dân nói hoặc nhập vào **cùng một ô mô tả**; kết quả STT điền vào ô đó để kiểm tra/chỉnh sửa. Không tạo thêm ô transcript, không gửi text trong audio metadata.
 
-1. Upload ảnh như cũ; upload audio qua `POST /api/media/upload` (field `file`, <=5 MiB, >0–30 giây, không có track video). Giữ `uploadToken`; không đưa URL audio vào `mediaUrls` và không tự đổi đuôi WebM thành MP3. Thiếu Cloudinary thật sẽ báo lỗi audio, không trả ảnh giả.
-2. Gửi SOS gồm `mediaUrls` chỉ có ảnh/video và `audioAttachments: [{ uploadToken, transcript }]`. Transcript <=4000 ký tự, description <=200; không tự cắt mất nội dung. Mỗi request chỉ một audio, tối đa năm attachment tổng cộng. Có thể tạo SOS trước rồi gửi cùng cấu trúc qua `POST /api/incidents/{id}/supplements` (kèm guestCancellationToken nếu là Guest).
-3. Nghe trước khi gửi: `POST /api/media/audio/preview-url` với `{ uploadToken }`. Sau khi gắn vào ca: `GET /api/incidents/{id}/audio/{mediaId}/playback-url`; audio bổ sung dùng `/api/incidents/{id}/supplements/{supplementId}/audio/{mediaId}/playback-url`. Dùng `response.data.url` cho player; link có hạn 5 phút, hết hạn gọi BE lấy lại. URL media gốc là authenticated asset, không phát trực tiếp được.
-4. Bản ghi và text trả trong `mediaItems` của chi tiết sự cố; bản ghi bổ sung trong `audioAttachments` của supplement. Operator/Staff mở cùng API chi tiết có phân quyền để nghe/đọc. Người báo trùng không được đọc audio của người báo gốc. Audio không phát lên bản đồ Citizen.
-5. Qwen nhận ảnh + transcript; YOLO chỉ nhận ảnh. Có audio nhưng thiếu transcript thì không tự điều phối, Operator thẩm định. Chỉ audio, không ảnh: giữ Pending cho Operator. Audio bổ sung phát `ReceiveIncidentSupplement`, không tự điều lại xe; nhóm theo dõi sự cố không nhận nội dung audio/transcript qua broadcast, cần tải lại API nếu có quyền.
-6. Đóng modal phải dừng tracks/recorder, thu hồi object URLs và giữ dữ liệu nếu upload lỗi. Micro bị từ chối hoặc STT lỗi phải cho phép gửi bằng ảnh/ghi chú, hoặc audio không transcript để Operator xử lý. BE không thể ghi/chụp thay client.
+1. Upload ảnh như cũ; audio qua `POST /api/media/upload` (file <=5 MiB, >0–30 giây). Giữ `uploadToken`; audio chỉ gửi `audioAttachments: [{ uploadToken }]`. Không đưa URL audio vào mediaUrls; không đổi đuôi WebM thành MP3 giả.
+2. Tạo SOS: gửi toàn bộ nội dung trong **description <=4000 ký tự**. Bổ sung sau SOS: dùng **note <=4000** hiện có. Không gửi `audioAttachments[].transcript` (API mới sẽ trả 400); không tự cắt nội dung. Mỗi request tối đa 1 audio, 5 attachment tổng cộng.
+3. Preview qua `POST /api/media/audio/preview-url` với `{ uploadToken }`. Đã gắn vào ca: `GET /api/incidents/{id}/audio/{mediaId}/playback-url`; audio supplement dùng `/api/incidents/{id}/supplements/{supplementId}/audio/{mediaId}/playback-url`. Phát `data.url`, hết hạn 5 phút thì gọi lại BE. URL gốc là private asset, không dùng trực tiếp.
+4. Operator/Staff đọc **description/note**, nghe file từ metadata mediaItems/audioAttachments. Response audio không còn transcript/transcriptionStatus. Nhóm theo dõi sự cố chỉ nhận event supplement có ID/thời gian; phải refetch API nếu có quyền, không render event như nội dung đầy đủ. Người báo trùng không đọc mô tả/audio của người báo gốc.
+5. Qwen dùng ảnh + description, YOLO chỉ dùng ảnh. Audio không có description => manual với mã `audio-description-unavailable`; chỉ audio không ảnh => Pending. Bổ sung không tự phát lại lệnh điều phối. Nội dung ghi âm không lên bản đồ Citizen.
+6. Dừng tracks/recorder khi đóng modal, giữ dữ liệu nếu upload lỗi. Không cấp micro/STT lỗi vẫn cho nhập mô tả hoặc gửi audio để Operator nghe. BE không tự ghi âm/chụp hay chuyển lời nói thành chữ.
 
-Contract và Swagger: xem phần **Audio Evidence** trong `API_DOCUMENTATION.md`; kịch bản trong `SOS_AUDIO_EVIDENCE_TESTING.md`. Migration: `20261125141313_AddIncidentAudioEvidence`.
+Contract và Swagger: xem phần **Audio Evidence** trong `API_DOCUMENTATION.md`; kịch bản trong `SOS_AUDIO_EVIDENCE_TESTING.md`. Migration audio ban đầu: `20261125141313_AddIncidentAudioEvidence`; migration gộp nội dung: `20261125154731_UnifyIncidentDescription` (giữ dữ liệu text cũ trước khi bỏ cột).
+
+## 56. Cập nhật 25/11/2026: độ chính xác GPS trên mobile (theo nhận xét tài liệu)
+
+Tài liệu chốt mục tiêu **≤ 20 m ngoài trời**. Mobile hiện chưa đạt được:
+
+1. **`location.service.ts`: dùng độ chính xác cao khi báo SOS.**
+   - Đổi `Location.Accuracy.Balanced` sang `Location.Accuracy.High` (hoặc `BestForNavigation`) khi lấy vị trí để gửi SOS.
+   - Không dùng `getLastKnownPositionAsync()` làm vị trí cuối nếu nó cũ hơn ~30 s.
+2. **Không âm thầm dùng tọa độ mặc định FPT Station** khi không có quyền hoặc lấy vị trí lỗi.
+   - Hiện tại SOS có thể gửi đi với tọa độ giả mà người báo không biết.
+   - Cần báo "Không lấy được vị trí" và cho người báo chọn trên bản đồ hoặc nhập địa chỉ, giống web `SosModal`.
+   - Giữ fallback ngoài Việt Nam chỉ cho emulator / dev.
+3. **Hiện độ chính xác cho người báo:** nếu `coords.accuracy > 20` m thì hiện "Vị trí chưa chính xác (±X m)" và cho chỉnh trên bản đồ.
+4. **(Tùy chọn) gửi `accuracy` (mét) lên backend.** Cần thêm trường ở DTO tạo sự cố; báo backend nếu làm.
+5. **Bỏ chữ "Độ chính xác GPS cao"** ở `MapboxView.tsx` (popup vị trí người dùng), hoặc thay bằng giá trị ±X m thật.
+
+## 57. Cập nhật 25/11/2026: Guest SOS bắt buộc số điện thoại gọi lại (chỉ kiểm tra ở mobile)
+
+Tài liệu chốt: Guest phải có SĐT gọi lại. **Backend không đổi**: `ReporterPhone` vẫn tùy chọn, nên mobile tự kiểm tra.
+
+1. **`LoginScreen.handleGuestSosBypass`:** trước khi vào `Main`, mở hộp nhập "Số điện thoại gọi lại".
+   - Bắt buộc nhập, kiểm tra bằng `isValidPhoneNumber` (10 số, đầu 03 / 05 / 07 / 08 / 09).
+   - Lưu vào storage, VD key `GUEST_CALLBACK_PHONE`.
+   - Đã có số lưu sẵn thì không hỏi lại, nhưng cho sửa.
+2. **`HomeScreen` (`handleSosSend*`) và `SafetyMapScreen`:** khi không đăng nhập, lấy `reporterPhone` từ `GUEST_CALLBACK_PHONE`.
+   - Nếu vẫn chưa có số (Guest vào app bằng đường khác), mở hộp nhập SĐT trước khi gửi.
+   - Có số rồi thì giữ nguyên thao tác giữ nút 2 giây, không hỏi thêm.
+3. **Người đã đăng nhập mà hồ sơ chưa có SĐT:** hiện gợi ý thêm SĐT (giống web `CitizenPhoneModal`), **không chặn** gửi SOS.
+4. Khi Guest đăng nhập hoặc đăng ký thì có thể xóa `GUEST_CALLBACK_PHONE`, hoặc điền sẵn số này vào form đăng ký.
+
+## 58. Cập nhật 25/11/2026: ưu tiên hotline Trung tâm / trạm Khu CNC trước 114 / 115 (theo nhận xét tài liệu)
+
+Quy định: **trong vùng phục vụ**, nút gọi khẩn luôn đưa hotline của trạm đang xử lý (`Station.PhoneNumber`) hoặc hotline chung của Trung tâm lên trước. 114 / 115 / 113 chỉ là lựa chọn phụ. **Ngoài vùng phục vụ** thì giữ 114 / 115 như hiện tại (`OutOfServiceAreaModal`).
+
+1. **Mobile `CitizenTrackingModal.handleCallHotline`:** dự phòng khi trạm chưa có SĐT nên là hotline Trung tâm, không phải `'114'`.
+2. **Mobile `SosSuccessModal` (nút "GỌI ĐIỀU PHỐI CỨU HỘ"):** gọi hotline trạm hoặc Trung tâm; nếu chưa có trạm thì gọi hotline Trung tâm.
+3. **Mobile, gửi SOS khi mất mạng:** hiện nút gọi hotline Trung tâm trước, 114 / 115 bên dưới.
+4. **Web `sos.ts`:**
+   - `createError`, `cooldownWaitError`: đổi "gọi ngay 114/115" thành "gọi tổng đài Trung tâm điều phối Khu CNC ({{hotline}})", 114 / 115 để phụ.
+   - `outOfAreaMessage`: giữ 114 / 115.
+5. **Web footer trang chủ (`landing.ts` `footerFire114`…):** thêm dòng hotline Trung tâm Khu CNC lên đầu, 113 / 114 / 115 bên dưới.
+6. **Hotline chung của Trung tâm:** hiện chưa có trong cấu hình. Trước mắt có thể đặt hằng số ở FE / mobile, hoặc dùng SĐT trạm chính. Nếu muốn Admin cấu hình được thì báo backend thêm khóa setting (VD `contact.commandCenterHotline`) và trả về qua API cấu hình công khai.
+
+## 59. Cập nhật 25/11/2026: bỏ tự hủy 24h, thay bằng cờ "Quá hạn – cần rà soát" (BR-09)
+
+**Backend đã đổi:**
+- `IncidentStaleReviewWorker` (thay `IncidentAutoExpireWorker`) quét mỗi giờ. Sự cố **chưa xác minh** quá `dispatch.autoExpireHours` giờ (mặc định 24; trạng thái Pending / AiProcessing / AiProcessed / Escalated chưa xác minh) **không bị hủy nữa**. Thay vào đó:
+  - gán `incident.staleFlaggedAt` (một lần);
+  - ghi audit `StaleFlagged` (actor `System`);
+  - gửi thông báo `Escalation`, ưu tiên cao, tới Operator trạm phụ trách + Admin, tiêu đề "SỰ CỐ QUÁ HẠN – CẦN RÀ SOÁT";
+  - phát SignalR `IncidentUpdated`.
+- `IncidentResponseDto` có thêm `staleFlaggedAt` (DateTime?) và `isStale` (bool).
+- Lý do hủy `AutoExpired` chỉ còn trong dữ liệu cũ.
+
+**Web cần làm:**
+1. **Hàng đợi Operator / Incident Detail Drawer:** khi `isStale = true`, hiện nhãn đỏ / cam "Quá hạn – cần rà soát" (EN: "Overdue – review required"), tooltip "Chưa xác minh sau {giờ} giờ, đánh dấu lúc {staleFlaggedAt}".
+2. **Audit timeline:** nhãn cho action `StaleFlagged`: "Hệ thống đánh dấu quá hạn" / "Flagged as overdue by the system".
+3. **Admin → Settings → Dispatch** (`DispatchSettingsSection`, i18n `admin.settings.dispatch.autoExpire*`, `admin/monitoring.ts autoExpireHours`): đổi nhãn. Khóa API giữ nguyên `autoExpireHours`.
+   - VI: "Đánh dấu quá hạn sự cố chưa xác minh"; gợi ý: "Sự cố chưa được Operator duyệt quá thời gian này sẽ được đánh dấu cần rà soát và cảnh báo Operator + Admin; hệ thống không tự hủy ({{min}}–{{max}} giờ)."
+   - EN: "Flag unverified incidents as overdue"; "Incidents not verified within this time are flagged for review and Operators and Administrators are alerted; they are never cancelled automatically ({{min}}–{{max}} hours)."
+4. `data/incidentMock.ts` nhãn `AutoExpired: 'Tự hủy do quá hạn'`: giữ để hiển thị dữ liệu cũ.
+5. **(Tùy chọn)** Bộ lọc "Quá hạn" trên hàng đợi.

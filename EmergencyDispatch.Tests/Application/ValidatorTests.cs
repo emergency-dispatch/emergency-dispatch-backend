@@ -140,10 +140,10 @@ public class CreateIncidentDtoValidatorTests
     }
 
     [Fact]
-    public void DescriptionOver200Chars_Fails()
+    public void DescriptionOver4000Chars_Fails()
     {
         var d = Valid();
-        d.Description = new string('a', 201);
+        d.Description = new string('a', 4001);
 
         Assert.Contains(_v.Validate(d).Errors, e => e.PropertyName == nameof(CreateIncidentDto.Description));
     }

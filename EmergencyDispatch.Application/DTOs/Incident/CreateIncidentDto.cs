@@ -14,9 +14,9 @@ public class CreateIncidentDto
     public string? Title { get; set; }
 
     /// <summary>
-    /// Mô tả ngắn sự việc (FR-CIT-02: tối đa 200 ký tự)
+    /// Nội dung hiện trường duy nhất: người dân nhập hoặc chuyển từ giọng nói, tối đa 4000 ký tự
     /// </summary>
-    [MaxLength(200, ErrorMessage = "Mô tả không được vượt quá 200 ký tự")]
+    [MaxLength(4000, ErrorMessage = "Mô tả không được vượt quá 4000 ký tự")]
     public string Description { get; set; } = string.Empty;
 
     /// <summary>
@@ -57,7 +57,7 @@ public class CreateIncidentDto
     /// </summary>
     public List<string> MediaUrls { get; set; } = new();
 
-    /// <summary>At most one audio receipt from POST /api/media/upload. Transcript can be reviewed before submission.</summary>
+    /// <summary>At most one audio receipt from POST /api/media/upload. All scene text belongs in Description.</summary>
     public List<EmergencyDispatch.Application.DTOs.Media.AudioAttachmentInputDto> AudioAttachments { get; set; } = new();
 
     /// <summary>
