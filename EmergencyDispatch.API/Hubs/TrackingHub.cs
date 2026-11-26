@@ -93,13 +93,20 @@ public class TrackingHub : Hub
         try
         {
             // Service lưu vị trí và phát ReceiveRescueUnitLocation (sự cố lấy từ lượt phân công đang chạy)
+            var senderId = Guid.TryParse(user?.FindFirstValue(ClaimTypes.NameIdentifier), out var parsedId) ? parsedId : (Guid?)null;
+            var senderRole = user?.IsInRole(nameof(UserRole.Admin)) == true ? UserRole.Admin : UserRole.RescueStaff;
             await _rescueUnitService.UpdateLocationAsync(message.RescueUnitId, new UpdateRescueUnitLocationDto
             {
                 Latitude = message.Latitude,
                 Longitude = message.Longitude,
                 HeadingDegrees = message.HeadingDegrees,
                 SpeedKmh = message.SpeedKmh
-            });
+            }, new GpsSender(senderId, senderRole));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            // Không thuộc tổ phụ trách xe: báo đúng lý do cho client, không ghi log cảnh báo mỗi lần gửi
+            throw new HubException(ex.Message);
         }
         catch (Exception ex)
         {

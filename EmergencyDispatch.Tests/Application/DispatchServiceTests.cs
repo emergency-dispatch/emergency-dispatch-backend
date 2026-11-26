@@ -713,6 +713,32 @@ public class DispatchServiceTests
     }
 
     [Fact]
+    public async Task Resolve_ReturnsUnitToStation()
+    {
+        var (a, _, u, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);
+
+        await _svc.ResolveAssignmentAsync(a.Id, Report("https://x/a.jpg"), staff.Id);
+
+        _units.Verify(x => x.ReturnToStationAsync(u, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(DispatchAssignmentStatus.EnRoute, true)]
+    [InlineData(DispatchAssignmentStatus.OnScene, true)]
+    [InlineData(DispatchAssignmentStatus.Accepted, false)]
+    [InlineData(DispatchAssignmentStatus.Dispatched, false)]
+    public async Task Cancel_UnitThatLeftStation_ReturnsToStation(DispatchAssignmentStatus from, bool returns)
+    {
+        var (a, _, u, _) = Mission(from, IncidentStatus.InProgress);
+        var op = new User { Role = UserRole.Operator, StationId = _stationA, FullName = "Op" };
+        _users.Setup(x => x.GetByIdAsync(op.Id)).ReturnsAsync(op);
+
+        await _svc.UpdateAssignmentStatusAsync(a.Id, new UpdateAssignmentStatusDto { Status = DispatchAssignmentStatus.Cancelled }, op.Id);
+
+        _units.Verify(x => x.ReturnToStationAsync(u, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), returns ? Times.Once() : Times.Never());
+    }
+
+    [Fact]
     public async Task Resolve_OtherUnitsStillActive_KeepsIncidentInProgress()
     {
         var (a, inc, _, staff) = Mission(DispatchAssignmentStatus.OnScene, IncidentStatus.InProgress);

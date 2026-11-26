@@ -99,6 +99,22 @@ public class RescueUnitRepository : GenericRepository<RescueUnit>, IRescueUnitRe
                 .SetProperty(r => r.UpdatedAt, atUtc), cancellationToken);
     }
 
+    public async Task<bool> ReturnToStationAsync(RescueUnit unit, DateTime atUtc, CancellationToken cancellationToken = default)
+    {
+        var station = await _context.Set<Station>()
+            .AsNoTracking()
+            .Where(s => s.Id == unit.StationId)
+            .Select(s => new { s.Latitude, s.Longitude })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (station == null) return false;
+
+        await SaveLocationAsync(unit.Id, station.Latitude, station.Longitude, atUtc, cancellationToken);
+        unit.CurrentLat = station.Latitude;
+        unit.CurrentLng = station.Longitude;
+        unit.LastLocationUpdateAt = atUtc;
+        return true;
+    }
+
     public async Task SaveStatusAsync(RescueUnit unit, CancellationToken cancellationToken = default)
     {
         var status = unit.Status;

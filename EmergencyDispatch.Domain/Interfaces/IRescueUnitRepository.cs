@@ -29,6 +29,12 @@ public interface IRescueUnitRepository : IGenericRepository<RescueUnit>
     Task SaveLocationAsync(Guid unitId, double latitude, double longitude, DateTime atUtc, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Xe hết nhiệm vụ: đặt vị trí về tọa độ trạm (chưa có luồng GPS quay về, giữ tọa độ hiện trường thì lần gợi ý xe / ETA sau tính sai).
+    /// Ghi cột vị trí và cập nhật luôn đối tượng trong bộ nhớ; false nếu không tìm thấy trạm
+    /// </summary>
+    Task<bool> ReturnToStationAsync(RescueUnit unit, DateTime atUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Chỉ ghi các cột trạng thái (Status, CoolDownUntil, UpdatedAt) theo giá trị trên đối tượng; không ghi đè vị trí GPS
     /// </summary>
     Task SaveStatusAsync(RescueUnit unit, CancellationToken cancellationToken = default);

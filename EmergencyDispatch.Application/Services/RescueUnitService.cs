@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using EmergencyDispatch.Application.Localization;
 using EmergencyDispatch.Application.DTOs.Audit;
 using EmergencyDispatch.Application.DTOs.RescueUnit;
@@ -21,6 +22,11 @@ public class RescueUnitService : IRescueUnitService
     public const string UnknownUnitTypeMessage = "Loại phương tiện '{0}' không có trong danh mục hoặc đã bị ẩn.";
 
     private readonly ITrafficHotspotRepository? _hotspotRepository;
+    private readonly IUserRepository? _userRepository;
+    private readonly UnitGpsSourceTracker _gpsSources;
+    private readonly ILogger<RescueUnitService>? _logger;
+
+    public const string NotCrewLocationMessage = "Bạn không thuộc tổ đang phụ trách xe này nên không được gửi vị trí của xe.";
 
     public const string OnHotspotMessage = "Xe đang được giao giải tỏa điểm nghẽn giao thông. Hãy hủy giao hoặc đóng điểm nghẽn trước.";
 
@@ -38,8 +44,14 @@ public class RescueUnitService : IRescueUnitService
         ICurrentUserContext currentUser,
         IRealtimeNotifier realtimeNotifier,
         ITypeCatalogRepository? typeCatalog = null,
-        ITrafficHotspotRepository? hotspotRepository = null)
+        ITrafficHotspotRepository? hotspotRepository = null,
+        IUserRepository? userRepository = null,
+        UnitGpsSourceTracker? gpsSources = null,
+        ILogger<RescueUnitService>? logger = null)
     {
+        _userRepository = userRepository;
+        _gpsSources = gpsSources ?? new UnitGpsSourceTracker();
+        _logger = logger;
         _hotspotRepository = hotspotRepository;
         _typeCatalog = typeCatalog;
         _currentUser = currentUser;
@@ -205,7 +217,10 @@ public class RescueUnitService : IRescueUnitService
         return MapToDto(unit);
     }
 
-    public async Task<RescueUnitResponseDto> UpdateLocationAsync(Guid id, UpdateRescueUnitLocationDto dto)
+    public Task<RescueUnitResponseDto> UpdateLocationAsync(Guid id, UpdateRescueUnitLocationDto dto)
+        => UpdateLocationAsync(id, dto, new GpsSender(_currentUser.UserId, _currentUser.Role));
+
+    public async Task<RescueUnitResponseDto> UpdateLocationAsync(Guid id, UpdateRescueUnitLocationDto dto, GpsSender sender)
     {
         var unit = await _rescueUnitRepository.GetByIdAsync(id);
         if (unit == null)
@@ -213,12 +228,37 @@ public class RescueUnitService : IRescueUnitService
             throw new KeyNotFoundException(LocalizationHelper.Localize("Không tìm thấy phương tiện cứu hộ với ID: {0}", id));
         }
 
+        // Sự cố lấy từ lượt phân công đang chạy của xe (không tin incidentId do client gửi)
+        var activeAssignment = await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id);
+
+        if (sender.Role == UserRole.RescueStaff)
+        {
+            if (!await IsCrewOfUnitAsync(sender.UserId, unit, activeAssignment))
+            {
+                throw new UnauthorizedAccessException(LocalizationHelper.Localize(NotCrewLocationMessage));
+            }
+
+            if (activeAssignment != null && sender.UserId is Guid senderId)
+            {
+                var acceptedBy = await _assignmentRepository.GetAcceptedByUserIdAsync(activeAssignment.Id);
+                var decision = _gpsSources.Evaluate(unit.Id, activeAssignment.Id, senderId, acceptedBy,
+                    dto.Latitude, dto.Longitude, DateTime.UtcNow);
+                if (decision != GpsSampleDecision.Accepted)
+                {
+                    // Không báo lỗi: client gửi đều 4–15 giây, mẫu bị bỏ chỉ đơn giản không ghi
+                    if (decision == GpsSampleDecision.ImplausibleJump)
+                    {
+                        _logger?.LogWarning("Bỏ mẫu GPS bất thường của xe {Plate} từ {UserId}: ({Lat}, {Lng}) nhảy quá xa so với vị trí trước",
+                            unit.PlateNumber, senderId, dto.Latitude, dto.Longitude);
+                    }
+                    return MapToDto(unit);
+                }
+            }
+        }
+
         // Chỉ ghi cột vị trí: không lưu cả dòng (sẽ ghi ngược trạng thái đọc từ trước khi nghiệm thu / đổi trạng thái chen giữa)
         unit.UpdateLocation(dto.Latitude, dto.Longitude);
         await _rescueUnitRepository.SaveLocationAsync(unit.Id, unit.CurrentLat, unit.CurrentLng, unit.LastLocationUpdateAt ?? DateTime.UtcNow);
-
-        // Sự cố lấy từ lượt phân công đang chạy của xe (không tin incidentId do client gửi)
-        var activeAssignment = await _assignmentRepository.GetActiveAssignmentByUnitIdAsync(unit.Id);
         await _realtimeNotifier.RescueUnitLocationAsync(new EmergencyDispatch.Application.DTOs.Incident.RescueUnitLocationEventDto
         {
             RescueUnitId = unit.Id,
@@ -233,6 +273,18 @@ public class RescueUnitService : IRescueUnitService
         });
 
         return MapToDto(unit);
+    }
+
+    /// <summary>
+    /// Nhân viên gửi GPS phải thuộc tổ giữ lượt đang chạy của xe (tổ lưu trên lượt, nếu trống thì tổ của xe);
+    /// xe/lượt chưa gán tổ thì nhân viên cùng trạm với xe
+    /// </summary>
+    private async Task<bool> IsCrewOfUnitAsync(Guid? userId, RescueUnit unit, DispatchAssignment? activeAssignment)
+    {
+        if (userId is not Guid id) return false;
+        var crewTeamId = activeAssignment?.StationTeamId ?? unit.StationTeamId;
+        if (crewTeamId is not Guid teamId || _userRepository == null) return true;
+        return await _userRepository.GetTeamIdAsync(id) == teamId;
     }
 
     public async Task<RescueUnitResponseDto> UpdateStatusAsync(Guid id, UpdateRescueUnitStatusDto dto)

@@ -127,6 +127,7 @@ public static partial class LocalizationCatalog
         { "Chỉ nhân viên cứu hộ mới được gửi vị trí.", "Only rescue staff can send locations." },
         { "Bạn chỉ được gửi vị trí của xe thuộc trạm mình.", "You can only send locations for vehicles of your station." },
         { "Không cập nhật được vị trí đội cứu hộ.", "Unable to update the rescue team's location." },
+        { "Bạn không thuộc tổ đang phụ trách xe này nên không được gửi vị trí của xe.", "You are not on the team responsible for this vehicle, so you cannot send its location." },
         { "Không tìm thấy phương tiện cứu hộ.", "Rescue vehicle not found." },
 
         // ===== Điều phối =====

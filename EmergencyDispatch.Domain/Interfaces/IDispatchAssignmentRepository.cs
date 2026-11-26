@@ -55,6 +55,11 @@ public interface IDispatchAssignmentRepository : IGenericRepository<DispatchAssi
     Task<IReadOnlyList<Guid>> GetIncidentIdsWithUnacceptedBeforeAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Người đã bấm nhận lệnh của lượt (lịch sử trạng thái chuyển sang Accepted); null nếu chưa ai nhận
+    /// </summary>
+    Task<Guid?> GetAcceptedByUserIdAsync(Guid assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lượt phân công đang chạy kèm sự cố + xe + trạm. stationId != null → lượt của sự cố trạm đó phụ trách hoặc xe trạm đó
     /// </summary>
     Task<IReadOnlyList<DispatchAssignment>> GetActiveWithDetailsAsync(Guid? stationId, CancellationToken cancellationToken = default);

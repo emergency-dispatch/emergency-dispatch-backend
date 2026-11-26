@@ -1944,3 +1944,106 @@ Quy định: **trong vùng phục vụ**, nút gọi khẩn luôn đưa hotline 
    - Mobile đang bỏ mất trường này khi map `getMyReports`, cần giữ lại `linkedToIncidentStatus` / `linkedToIncidentCode`.
 3. **Danh sách "Báo cáo của tôi"** (web và mobile) không tự tải lại khi sự cố đổi trạng thái. Nên tải lại khi nhận `ReceiveNotification` có `incidentId` trùng, hoặc khi màn hình được focus lại; mobile cũng chưa có SignalR (xem mục 51).
 4. **Mobile `CitizenTrackingModal`:** đang polling 5 giây, chỉ cần dừng polling khi `incidentStatus` là `Completed` hoặc `Cancelled`. Cách lấy nhãn hiện tại (`dispatchStatus || incidentStatus`) sẽ đúng sau bản sửa backend.
+
+## 61. Cập nhật 26/11/2026: rà lại realtime web sau khi pull develop (commit f1338c0)
+
+**Đã xong (cảm ơn FE):**
+- Theo dõi sự cố của citizen chuyển sang `HeroRadarMap`: `SubscribeIncident` trên cả `/hubs/incidents` và `/hubs/tracking`, đăng ký lại khi kết nối lại, xử lý `Completed` / `Cancelled`. Mục 60 ý 1 đã xong.
+- `CitizenReportsModal` nghe `ReceiveIncidentStatus`, tải lại khi kết nối lại và dùng `linkedToIncidentStatus`. Mục 60 ý 2 và ý 3 phía web đã xong.
+- Hub tự kết nối lại khi tab được mở lại hoặc có mạng trở lại (`visibilitychange`, `online`). Operator (`DispatchContext`), thông báo và trang xe đều tải lại khi kết nối lại.
+
+**Còn thiếu:**
+1. **Mục 47, quan trọng khi demo:** `AuthContext.logout()` / `login()` vẫn không ngắt hub. `incidentHubService.start()` dùng lại kết nối cũ nếu chưa `Disconnected`, nên đăng nhập tài khoản khác trên cùng tab vẫn nhận sự kiện của tài khoản trước. Cần thêm `reset()` (gọi `connection.stop()` ngay, xóa `connection` / `startPromise` / `registeredEvents`) cho cả 2 hub và gọi khi logout / login.
+2. **Mục 52, staff bị rút lệnh:** `useStaffMission.onAssignmentStatus` chưa xử lý `status = "Rejected"`. Khi polling không còn lượt đang chạy thì chỉ `setActiveMission(null)` mà không đóng popup (`pendingMission` / `isAlertOpen`) và không tắt còi. Cần: `Rejected` (nhất là `rejectionReason = "NoResponse"`) hoặc polling không còn lượt `Dispatched` thì `setPendingMission(null)`, `setIsAlertOpen(false)`, `staffAudioService.stopEmergencySiren()` và hiện toast "Lệnh đã bị rút".
+3. **Staff chưa tải lại khi kết nối lại** (đang polling 15 giây). Nên thêm `incidentHubService.onReconnected(() => fetchMyAssignments(true))` để sau khi Render ngủ dậy không phải chờ.
+
+## 62. Tổng hợp 26/11/2026: realtime còn thiếu và cách đưa toàn bộ tính năng sang realtime
+
+**Hiện trạng backend:** có 24 sự kiện SignalR (`RealtimeContract`) cho sự cố, điều phối, xe (trạng thái, vị trí), tổ, cấu hình, thông báo, ùn tắc, yêu cầu hiện trường, bổ sung, leo thang, AI tự điều phối, bản đồ citizen. **Chưa phát sự kiện** cho dữ liệu quản trị: trạm, tài khoản (tạo/sửa/xóa), thiết bị, danh mục loại xe / loại sự cố / kế hoạch điều xe, số bị chặn, sửa thông tin xe (biển số, loại, tạo/xóa). Backend đề xuất bổ sung một sự kiện chung `ReceiveDataChanged` (xem cuối mục).
+
+**Hiện trạng web:**
+
+| Khu vực | Realtime | Còn thiếu |
+|---|---|---|
+| Operator (mọi trang dùng `useDispatchStore`) | Đủ, nghe 20 sự kiện, tải lại khi kết nối lại | Không |
+| Citizen (`HomePage`, `HeroRadarMap`, `CitizenReportsModal`) | Đủ, có `SubscribeIncident` + tải lại khi kết nối lại | Không |
+| Staff (`useStaffMission`) | Nghe lệnh mới, trạng thái, yêu cầu hiện trường, ùn tắc, bổ sung, cập nhật sự cố; polling 15 giây | Chưa xử lý `Rejected` / `NoResponse` (popup + còi không tắt, mục 52); chưa tải lại khi kết nối lại; chưa nghe `ReceiveTeamChanged` (bị chuyển tổ / xe đổi tổ) và `ForceLogout` |
+| Admin: Tổng quan, Báo cáo, Báo cáo nghiệm thu, Tài khoản, Citizen, Trạm, Thiết bị, Loại xe, Loại sự cố, Số bị chặn, Nhật ký, Cấu hình | **Không có realtime, không polling** (trang Xe admin đã có) | Phải F5 mới thấy thay đổi |
+| Đổi tài khoản trên cùng tab (mục 47) | Đã sửa trong working tree FE (chưa commit) | Commit / review |
+
+**Hiện trạng mobile:** **chưa có SignalR** (`@microsoft/signalr` chưa có trong `package.json`), và **không có push** vì DB không có `FcmToken` nào, tức app chưa đăng ký FCM. Màn hình chính của staff (`StaffDashboardScreen`) **không polling**: lệnh mới chỉ hiện khi kéo để tải lại, nên khi demo trên mobile sẽ không có còi báo lệnh. Chỉ theo dõi xe citizen, bản đồ an toàn và tổng quan sự cố của staff có polling.
+
+### Cách làm chung cho mọi màn hình (web và mobile)
+
+1. **Sự kiện chỉ là tín hiệu "dữ liệu đã đổi" → gọi lại API.** Không tự ghép dữ liệu từ payload, trừ vị trí xe (đẩy liên tục, dùng trực tiếp).
+2. **Một hook chung** `useLiveQuery(fetcher, { events, match })`:
+   - gọi `fetcher` khi mount;
+   - gọi lại (gộp 300–500 ms) khi nhận một trong `events` thỏa `match(payload)`;
+   - gọi lại khi `onReconnected`, khi tab hoặc app quay lại (`visibilitychange` trên web, `AppState` "active" trên mobile) và khi có mạng trở lại;
+   - **chỉ polling khi hub không kết nối** (10–15 giây), kết nối lại thì dừng.
+3. **Màn hình theo dõi một sự cố** phải `SubscribeIncident(id)` trên cả `/hubs/incidents` và `/hubs/tracking`, và đăng ký lại sau khi kết nối lại.
+4. **Chỉ báo kết nối** ở thanh trên ("Đang kết nối lại…") dùng `subscribeStatus`.
+
+### Việc cụ thể
+
+**Web:**
+- Staff: xử lý `ReceiveAssignmentStatus` `status = "Rejected"` (đóng popup, tắt còi, toast "Lệnh đã bị rút"); `onReconnected(() => fetchMyAssignments(true))`; nghe `ReceiveTeamChanged` → tải lại tổ và nhiệm vụ; nghe `ForceLogout`.
+- Admin Tổng quan / Báo cáo: dùng `useLiveQuery` với `ReceiveNewIncident`, `ReceiveIncidentUpdate`, `ReceiveAssignmentStatus`, `ReceiveRescueUnitStatus` (gộp 2–3 giây để tránh tải lại liên tục).
+- Admin danh mục / tài khoản / trạm / thiết bị / số bị chặn: dùng `useLiveQuery` với `ReceiveDataChanged` (khi backend bổ sung) theo `entity`.
+
+**Mobile (ưu tiên cao nếu demo trên mobile):**
+- Thêm `@microsoft/signalr` (chạy được trên React Native) với cùng `HubClient` như web: `accessTokenFactory`, `withAutomaticReconnect`, reset khi đổi tài khoản.
+- Staff dashboard: nghe `ReceiveJobAssigned` / `ReceiveAssignmentStatus` → `getMyAssignments(true)` và bật `EmergencyAlertModal`. Nếu chưa kịp làm SignalR thì tối thiểu polling 5 giây và tải lại khi `AppState` chuyển sang "active".
+- Citizen: `SubscribeIncident` cho sự cố đang theo dõi; "Báo cáo của tôi" tải lại khi có `ReceiveIncidentStatus` / `ReceiveNotification`.
+- Đăng ký FCM token (`PUT /api/users/fcm-token`) sau khi đăng nhập để có push khi app ở nền.
+
+### Backend đề xuất bổ sung (chờ xác nhận)
+
+`ReceiveDataChanged { entity, action, id, stationId }`:
+- `entity`: `Station`, `User`, `RescueUnit`, `Equipment`, `UnitType`, `IncidentType`, `DispatchPlan`, `BlockedNumber`.
+- `action`: `Created`, `Updated`, `Deleted`.
+- Phát cho Admin và Operator của trạm liên quan (danh mục dùng chung thì gửi mọi Operator). Các sự kiện hiện có giữ nguyên.
+
+## 63. Cập nhật 26/11/2026: mỗi xe một nguồn GPS, chặn tọa độ nhảy, xe tự về trạm
+
+### Vấn đề
+
+Xe 36A-111333 (trạm KCN) đang ở hiện trường cách trạm khoảng 0,3 km thì bị ghi vị trí cách trạm 11,2 km: máy đang đăng nhập tài khoản staff gửi GPS thật của nó. Trước đây mọi thành viên của tổ đang mở màn hình nhiệm vụ đều gửi GPS cho cùng một xe, bản gửi sau cùng được ghi. Nếu một người không ngồi trên xe, vị trí xe nhảy qua lại giữa hai nơi.
+
+### Backend đã đổi (`PUT /api/rescue-units/{id}/location` và `TrackingHub.UpdateLocation`)
+
+Ba quy tắc đầu chỉ áp dụng cho RescueStaff. Operator và Admin (trình giả lập GPS ở bản dev) vẫn gửi tự do.
+
+1. **Chỉ thành viên của tổ giữ lượt phân công đang chạy của xe được gửi.** Tổ lấy từ lượt phân công, nếu trống thì lấy tổ của xe. Nếu cả hai đều chưa có tổ thì nhân viên cùng trạm được gửi. Người khác gửi bị từ chối:
+   - REST trả **403**.
+   - SignalR ném `HubException` với nội dung "Bạn không thuộc tổ đang phụ trách xe này nên không được gửi vị trí của xe." (bản EN: "You are not on the team responsible for this vehicle, so you cannot send its location.").
+2. **Mỗi lượt phân công chỉ có một nguồn GPS.**
+   - Người bấm nhận lệnh luôn được ưu tiên.
+   - Thành viên khác chỉ được làm nguồn khi nguồn hiện tại im lặng quá 30 giây (máy hết pin, mất mạng).
+   - Bản gửi bị bỏ qua **vẫn trả thành công** (200, hoặc SignalR không lỗi), chỉ không được ghi. Client không cần xử lý gì thêm.
+3. **Bỏ tọa độ nhảy:** mẫu GPS dịch chuyển quá 0,3 km với vận tốc suy ra trên 200 km/h so với mẫu trước bị bỏ qua và ghi log cảnh báo. Nếu xe thật sự đã ở chỗ mới thì sau một lúc vận tốc suy ra giảm dưới ngưỡng và mẫu sẽ được nhận lại.
+4. **Xe tự về trạm:**
+   - Khi tổ nghiệm thu (xe vào hồi sức), vị trí xe được đặt về tọa độ trạm.
+   - Khi lượt bị hủy, hoặc sự cố bị hủy, lúc xe **đã xuất phát hoặc đang ở hiện trường**, vị trí xe cũng được đặt về tọa độ trạm.
+   - Sự kiện `ReceiveRescueUnitStatus` phát sau đó mang tọa độ trạm. Bản đồ chỉ cần lấy `latitude/longitude` trong sự kiện này để cập nhật vị trí xe.
+
+Sau khi có backend mới, trình giả lập GPS ở chế độ "Về trạm" phần lớn không còn cần dùng.
+
+### Web (`emergency-dispatch-frontend`)
+
+- `src/pages/staff/hooks/useStaffMission.ts:837-896`: hiện web gửi GPS 4 giây một lần **từ lúc nhận lệnh tới lúc hoàn thành**. Nên:
+  - Chỉ gửi khi `activeMission.status` là `en_route` hoặc `on_scene`. Lúc mới nhận lệnh xe vẫn ở trạm, gửi GPS của laptop sẽ kéo xe đi nơi khác.
+  - Khi `getCurrentPosition` lỗi thì **không gửi**. Hiện code đang gửi lại `activeMission.vehicleLat/Lng`, tức tọa độ cũ, làm nguồn chính "còn sống" mà không có dữ liệu thật.
+  - Nhận lỗi 403 hoặc `HubException` "không thuộc tổ" thì dừng vòng gửi, không gửi lại mỗi 4 giây.
+- Khi demo bằng laptop, đặt vị trí giả trong Chrome DevTools → More tools → **Sensors → Location**, đặt gần trạm hoặc hiện trường. Nếu không, GPS của laptop sẽ thành vị trí xe.
+- Bản đồ operator và citizen: khi nhận `ReceiveRescueUnitStatus` có `latitude/longitude` thì cập nhật marker xe. Kiểm tra lại xem đang lấy tọa độ từ sự kiện này chưa, hay chỉ cập nhật theo `ReceiveRescueUnitLocation`.
+
+### Mobile (`emergency-dispatch-mobile`)
+
+- **Mobile hiện chưa gửi được GPS.** `src/screens/staff/IncidentOverviewScreen.tsx:337` lấy `user?.rescueUnitId`, nhưng hồ sơ người dùng backend trả về không có trường này, nên `unitId` luôn rỗng và vòng gửi không chạy. Sửa: lấy mã xe từ lượt phân công đang làm (`assignment.rescueUnitId`). Nếu không có thì lấy từ `GET /api/users/my-team` (`MY_TEAM`), trường `myTeamRescueUnitId` (hoặc `myTeamRescueUnitIds[0]`).
+
+  ```ts
+  const unitId = activeAssignment?.rescueUnitId ?? myTeam?.myTeamRescueUnitId;
+  ```
+- Giữ điều kiện chỉ gửi khi đang di chuyển hoặc đang ở hiện trường (`en_route` / `on_scene`). Nên rút chu kỳ từ 15 giây xuống khoảng 5 giây để citizen thấy xe di chuyển mượt hơn.
+- Nhận 403 thì dừng gửi.

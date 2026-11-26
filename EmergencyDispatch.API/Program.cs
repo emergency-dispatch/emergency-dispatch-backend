@@ -211,6 +211,8 @@ builder.Services.AddSingleton<IOtpAttemptLimiter, EmergencyDispatch.Infrastructu
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IStationService, StationService>();
 builder.Services.AddScoped<IRescueUnitService, RescueUnitService>();
+// Nguồn GPS của từng xe (người nhận lệnh ưu tiên, chặn tọa độ nhảy): giữ trong bộ nhớ, dùng chung mọi request
+builder.Services.AddSingleton<UnitGpsSourceTracker>();
 // Dual-Engine AI Pipeline: YOLO (nhanh, local) + Qwen-VL (sâu, cloud)
 builder.Services.AddScoped<EmergencyDispatch.Infrastructure.Services.AiClassificationService>();
 builder.Services.AddScoped<EmergencyDispatch.Infrastructure.Services.YoloClassificationService>();

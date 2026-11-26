@@ -1341,6 +1341,14 @@ public class IncidentService : IIncidentService
                 unit.Status = RescueUnitStatus.Available;
                 unit.UpdatedAt = now;
                 recalledUnits.Add(unit);
+                // Xe đã rời trạm bị thu hồi → quay về trạm (xe được theo dõi, SaveChanges bên dưới ghi luôn tọa độ)
+                if (oldAssignmentStatus is DispatchAssignmentStatus.EnRoute or DispatchAssignmentStatus.OnScene
+                    && (unit.Station ?? await _stationRepository.GetByIdAsync(unit.StationId)) is { } homeStation)
+                {
+                    unit.CurrentLat = homeStation.Latitude;
+                    unit.CurrentLng = homeStation.Longitude;
+                    unit.LastLocationUpdateAt = now;
+                }
             }
         }
 

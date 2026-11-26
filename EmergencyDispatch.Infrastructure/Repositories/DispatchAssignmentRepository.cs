@@ -212,6 +212,16 @@ public class DispatchAssignmentRepository : GenericRepository<DispatchAssignment
         return await query.OrderBy(d => d.DispatchedAt).ToListAsync(cancellationToken);
     }
 
+    public async Task<Guid?> GetAcceptedByUserIdAsync(Guid assignmentId, CancellationToken cancellationToken = default)
+    {
+        return await _context.AssignmentStatusHistories
+            .AsNoTracking()
+            .Where(h => h.AssignmentId == assignmentId && h.NewStatus == DispatchAssignmentStatus.Accepted && h.ChangedByUserId != null)
+            .OrderBy(h => h.ChangedAt)
+            .Select(h => h.ChangedByUserId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task AddStatusHistoryAsync(AssignmentStatusHistory history)
     {
         await _context.AssignmentStatusHistories.AddAsync(history);

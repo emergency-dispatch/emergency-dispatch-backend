@@ -1399,6 +1399,11 @@ public class DispatchService : IDispatchService
                         itemUnit.Status = RescueUnitStatus.Available;
                         itemUnit.UpdatedAt = DateTime.UtcNow;
                         await SaveUnitAsync(itemUnit, changedUnits, cancellationToken);
+                        // Xe đã rời trạm mà bị hủy lượt → quay về trạm
+                        if (oldStatus is DispatchAssignmentStatus.EnRoute or DispatchAssignmentStatus.OnScene)
+                        {
+                            await _rescueUnitRepository.ReturnToStationAsync(itemUnit, DateTime.UtcNow, cancellationToken);
+                        }
                     }
                     break;
 
@@ -1857,6 +1862,8 @@ public class DispatchService : IDispatchService
                 itemUnit.CoolDownUntil = now.AddMinutes(dispatchSettings.RecoveryMinutes);
                 itemUnit.UpdatedAt = now;
                 await SaveUnitAsync(itemUnit, changedUnits, cancellationToken);
+                // Chưa có luồng GPS quay về: nghiệm thu xong coi như xe về trạm, lần gợi ý xe / ETA sau tính từ trạm
+                await _rescueUnitRepository.ReturnToStationAsync(itemUnit, now, cancellationToken);
                 completedPlates.Add(itemUnit.PlateNumber);
             }
         }
