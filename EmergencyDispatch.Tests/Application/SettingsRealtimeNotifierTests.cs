@@ -14,8 +14,8 @@ public class SettingsRealtimeNotifierTests
     [InlineData("dispatch", false)]
     [InlineData("escalation", false)]
     [InlineData("duplicateDetection", false)]
-    [InlineData("citizenIncidentAlerts", false)]
-    public async Task OnlyPublicServiceAreaChangesAreBroadcastToEveryone(string key, bool broadcast)
+    [InlineData("citizenIncidentAlerts", true)]
+    public async Task PublicServiceAreaAndCitizenAlertSettingsChangesAreBroadcastToEveryone(string key, bool broadcast)
     {
         var clients = new Mock<IHubClients>();
         var all = new Mock<IClientProxy>();

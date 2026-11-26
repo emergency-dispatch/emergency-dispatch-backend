@@ -193,6 +193,12 @@ public class SystemSettingsService : ISystemSettingsService
     public async Task<ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>> UpdateCitizenIncidentAlertAsync(
         CitizenIncidentAlertSettingsDto values, Guid actorUserId, CancellationToken cancellationToken = default)
     {
+        if (values.ReportCooldownMinutes is < 0 or > 60)
+        {
+            return ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>.FailureResult(
+                LocalizationHelper.Localize("Thời gian chờ giữa hai lần gửi SOS phải từ {0} đến {1} phút.", 0, 60));
+        }
+
         var before = await GetCitizenIncidentAlertSettingsAsync(cancellationToken);
         // Ignore client-supplied timestamps. Enabling does not broadcast older confirmed incidents.
         values.EnabledFromUtc = values.Enabled && (!before.Enabled || !before.EnabledFromUtc.HasValue)

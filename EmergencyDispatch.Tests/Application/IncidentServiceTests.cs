@@ -1086,4 +1086,45 @@ public class IncidentServiceTests
         Assert.Null(items[2].LinkedToIncidentId);
         Assert.Null(items[2].LinkedToIncidentTitle);
     }
+
+    [Theory]
+    [InlineData(1, true, false)]
+    [InlineData(10, false, false)]
+    [InlineData(60, true, true)]
+    public async Task Create_ConfiguredCooldownControlsWindow_ForGuestAndCitizen_IndependentOfAlerts(int minutes, bool alertsEnabled, bool authenticated)
+    {
+        Guid? userId = authenticated ? Guid.NewGuid() : null;
+        _settings.Setup(s => s.GetCitizenIncidentAlertSettingsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CitizenIncidentAlertSettingsDto { Enabled = alertsEnabled, ReportCooldownMinutes = minutes });
+        var before = DateTime.UtcNow;
+        DateTime cutoff = default;
+        _incidents.Setup(i => i.HasRecentActiveIncidentAsync(userId, "0901234567", It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid?, string?, DateTime, CancellationToken>((_, _, since, _) => cutoff = since).ReturnsAsync(true);
+
+        var response = await _svc.CreateIncidentAsync(Sos(), userId);
+
+        Assert.False(response.Success);
+        Assert.Equal(ApiErrorCodes.TooManyRequests, response.ErrorCode);
+        Assert.InRange(cutoff, before.AddMinutes(-minutes), DateTime.UtcNow.AddMinutes(-minutes));
+        Assert.Contains(minutes.ToString(), response.Message);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Create_ZeroCooldownSkipsRecentIncidentCheck_AndCreatesReport(bool alertsEnabled)
+    {
+        _settings.Setup(s => s.GetCitizenIncidentAlertSettingsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CitizenIncidentAlertSettingsDto { Enabled = alertsEnabled, ReportCooldownMinutes = 0 });
+        _incidents.Setup(i => i.HasRecentActiveIncidentAsync(It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _svc.CreateIncidentAsync(Sos());
+
+        Assert.True(result.Success, result.Message);
+        _incidents.Verify(i => i.HasRecentActiveIncidentAsync(It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Once);
+    }
+
 }
