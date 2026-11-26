@@ -55,10 +55,13 @@ Mọi API trả về đều tuân thủ cấu trúc JSON đồng nhất:
 
 ## 2. TÀI KHOẢN MẪU ĐỂ TEST (TEST ACCOUNTS)
 
-Hệ thống đã tự động seed sẵn dữ liệu mẫu lên cơ sở dữ liệu cloud Neon. FE/Mobile có thể dùng trực tiếp để đăng nhập:
+Backend không seed dữ liệu mẫu. Khi khởi động, nếu DB chưa có thì chỉ tự tạo một tài khoản Admin để đăng nhập lần đầu; trạm, xe, tổ và các tài khoản Operator / RescueStaff / Citizen tạo qua giao diện Admin (hoặc Citizen tự đăng ký).
 
-| Vai trò (Role) | Email | Mật khẩu | Mục đích sử dụng |
+| Vai trò (Role) | Email | Mật khẩu | Ghi chú |
 |---|---|---|---|
+| **Admin** | `admin@gmail.com` | `123123` | Tự tạo khi chưa có; không bị đặt lại mật khẩu nếu đã tồn tại. Nên đổi mật khẩu sau khi deploy |
+
+---|---|---|---|
 | **Admin (Mới)** | `admin@gmail.com` | `123123` | Quản trị viên hệ thống (Đã cấu hình & kích hoạt) |
 | **Admin** | `admin@emergencydispatch.com` | `Admin@123456` | Quản trị viên hệ thống, quản lý tài khoản/trạm |
 | **Operator** | `operator@emergencydispatch.com` | `Operator@123456` | Điều phối viên (Xem hàng đợi, duyệt gợi ý AI) |

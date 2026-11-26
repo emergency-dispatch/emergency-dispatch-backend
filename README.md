@@ -110,12 +110,8 @@ Chi tiết toàn bộ tài liệu tích hợp API cho đội ngũ Frontend & Mob
 👉 **[API_DOCUMENTATION.md](file:///d:/SEP490/emergency-dispatch-backend/API_DOCUMENTATION.md)**
 
 * **Swagger UI**: `http://localhost:5000/swagger`
-* **Cơ sở dữ liệu**: Neon PostgreSQL Cloud (Đã tự động migrate và seed sẵn tài khoản mẫu).
-* **Tài khoản test nhanh**:
-  * Admin: `admin@emergencydispatch.com` / `Admin@123456`
-  * Operator: `operator@emergencydispatch.com` / `Operator@123456`
-  * Cứu hộ: `staff@emergencydispatch.com` / `Staff@123456`
-  * Người dân: `citizen@emergencydispatch.com` / `Citizen@123456`
+* **Cơ sở dữ liệu**: Neon PostgreSQL Cloud. Khi khởi động, backend tự chạy migration (kèm danh mục loại xe / loại sự cố mặc định) và **không seed dữ liệu mẫu** (trạm, xe, tài khoản demo).
+* **Tài khoản đăng nhập đầu tiên**: backend chỉ tự tạo `admin@gmail.com` / `123123` (Admin) nếu chưa có. Trạm, xe, tổ và các tài khoản khác tạo qua giao diện Admin. Nên đổi mật khẩu tài khoản này sau khi deploy.
 
 ## License
 Đồ án SEP490 — FPT University.
