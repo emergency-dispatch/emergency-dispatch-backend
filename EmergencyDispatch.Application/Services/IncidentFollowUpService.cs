@@ -292,7 +292,7 @@ public class IncidentFollowUpService : IIncidentFollowUpService
             ReportedEventType = r.ReportedEventType,
             QuickCheckEventType = r.QuickCheckEventType,
             IsOutlier = IncidentLinking.IsOutlier(r, parentType, settings.RadiusMeters),
-            MediaUrls = r.MediaItems.Select(m => m.MediaUrl).ToList()
+            MediaUrls = r.MediaItems.Where(m => !m.IsDeleted && m.MediaType != MediaType.Audio).Select(m => m.MediaUrl).ToList()
         }).ToList();
 
         return ApiResponseDto<List<LinkedReportDto>>.SuccessResult(list);

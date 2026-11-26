@@ -1926,3 +1926,28 @@ Quy định: **trong vùng phục vụ**, nút gọi khẩn luôn đưa hotline 
    - EN: "Flag unverified incidents as overdue"; "Incidents not verified within this time are flagged for review and Operators and Administrators are alerted; they are never cancelled automatically ({{min}}–{{max}} hours)."
 4. `data/incidentMock.ts` nhãn `AutoExpired: 'Tự hủy do quá hạn'`: giữ để hiển thị dữ liệu cũ.
 5. **(Tùy chọn)** Bộ lọc "Quá hạn" trên hàng đợi.
+
+## 60. Cập nhật 25/11/2026: tổ đã nghiệm thu nhưng màn hình Citizen (người báo + người báo trùng) vẫn "đang xử lý"
+
+**Backend đã đúng, đã kiểm tra DB:** khi tổ cuối cùng nghiệm thu, sự cố chuyển `Completed`. Ví dụ SC-261125-0002, 0004, 0006 đều `Completed`; các báo cáo trùng 0003 và 0007 có `linkedToIncidentStatus = Completed` trong `GET /incidents/my-reports`.
+- Sửa thêm 1 chỗ: `GET /dispatch/tracking/incident/{id}` với sự cố đã đóng/hủy mà không có lượt nào `Completed` (Operator đóng tay, xe bị thu hồi) trước trả `dispatchStatus = "PendingDispatch"`, khiến mobile hiện "Đang xử lý". Giờ trả `dispatchStatus = "Completed"` hoặc `"Cancelled"` theo `incidentStatus`.
+- Người báo trùng **không nhận push tiến độ** (theo thay đổi của nhóm), nên màn hình của họ phải tự cập nhật qua API/SignalR như dưới đây.
+
+**Lỗi ở FE (cần sửa):**
+1. **Web `CitizenLiveTrackingMapModal.tsx`:**
+   - Nghe `ReceiveAssignmentStatus` trên `incidentHubService` nhưng chỉ gọi `SubscribeIncident` trên `trackingHubService`. Nhóm theo dõi sự cố của 2 hub là khác nhau, nên người dân **không bao giờ nhận** `ReceiveAssignmentStatus` / `ReceiveIncidentStatus`. Cần gọi thêm `incidentHubService.invoke('SubscribeIncident', incident.id)` (và `UnsubscribeIncident` khi đóng), đồng thời nghe `ReceiveIncidentStatus` → gọi `fetchTracking(true)`.
+   - Trạng thái sự cố đang lấy từ prop `incident.status` (giá trị lúc mở modal, không đổi). Hãy dùng `trackingData.incidentStatus` sau mỗi lần tải.
+   - Nhãn trạng thái chưa xử lý `dispatchStatus = "Completed"` / `"Cancelled"` / `"PendingDispatch"` nên rơi vào "Đang điều xe". Cần thêm nhãn "Đã hoàn thành", "Đã hủy" và "Đang chờ đội nhận lệnh".
+   - Mở theo dõi sự cố gốc cho người báo trùng (`{...incident, id: linkedToIncidentId}`): đang mang theo `status = "Cancelled"` của báo cáo trùng. Hãy lấy trạng thái từ API tracking hoặc `linkedToIncidentStatus`.
+2. **Web `CitizenReportsModal.tsx` và mobile `MyReportsScreen.tsx`, banner báo cáo trùng:**
+   - Câu "Báo cáo đã đóng do trùng với sự cố **đang xử lý**" đang viết cứng. Hãy dùng `linkedToIncidentStatus` (và `linkedToIncidentCode`) từ `my-reports`: `Completed` → "Sự cố gốc {code} đã được xử lý xong"; `Cancelled` → "Sự cố gốc đã bị hủy"; còn lại → "đang xử lý".
+   - Mobile đang bỏ mất trường này khi map `getMyReports`, cần giữ lại `linkedToIncidentStatus` / `linkedToIncidentCode`.
+3. **Danh sách "Báo cáo của tôi"** (web và mobile) không tự tải lại khi sự cố đổi trạng thái. Nên tải lại khi nhận `ReceiveNotification` có `incidentId` trùng, hoặc khi màn hình được focus lại; mobile cũng chưa có SignalR (xem mục 51).
+4. **Mobile `CitizenTrackingModal`:** đang polling 5 giây, chỉ cần dừng polling khi `incidentStatus` là `Completed` hoặc `Cancelled`. Cách lấy nhãn hiện tại (`dispatchStatus || incidentStatus`) sẽ đúng sau bản sửa backend.
+
+## 61. Cập nhật 26/11/2026: audio trong lịch sử báo cáo không lẫn ảnh/video
+
+- `GET /api/incidents/my-reports`: `mediaUrls` chỉ có ảnh/video chưa xóa; trường mới `mediaItems` có metadata media của chính báo cáo, gồm `id`, `mediaType`, `mimeType`, `publicId`, `fileSizeBytes`, `durationSeconds` và URL gốc. Không có media thì trả `[]`.
+- Citizen nghe lại audio: lấy `mediaItems` có `mediaType = Audio` (giá trị enum 2), gọi `GET /api/incidents/{item.id}/audio/{media.id}/playback-url` rồi phát `data.url`. Link hết hạn thì gọi lại. Không phát URL private từ metadata; không gọi API này cho ảnh/video.
+- Báo cáo đã gom/xác nhận trùng: dùng `item.id` của báo cáo chính người dùng gửi để nghe audio của mình. `linkedToIncidentId` dùng theo dõi sự cố gốc; không dùng để phát audio của báo cáo và không được lấy audio của người báo gốc.
+- `GET /api/incidents/{id}/linked-reports`: `mediaUrls` chỉ có ảnh/video chưa xóa; frontend không tạo thumbnail ảnh/video cho audio. Không thay đổi quyền nghe audio, không tạo link phát công khai. Không cần migration.

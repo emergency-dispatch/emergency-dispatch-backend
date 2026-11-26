@@ -336,6 +336,37 @@ public class IncidentFollowUpServiceTests
         Assert.DoesNotContain("1234567", list.Single(x => x.IncidentId == close.Id).MaskedReporterPhone);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetLinkedReports_MediaUrlsExcludePrivateAudioAndDeletedMedia(bool withVisualMedia)
+    {
+        var parent = Incident();
+        var report = LinkedReport(parent);
+        var photo = new IncidentMedia { MediaType = MediaType.Photo, MediaUrl = Photo };
+        var video = new IncidentMedia { MediaType = MediaType.Video, MediaUrl = "https://media.example/video.mp4" };
+        if (withVisualMedia)
+        {
+            report.MediaItems.Add(photo);
+            report.MediaItems.Add(video);
+        }
+        report.MediaItems.Add(new IncidentMedia
+        {
+            MediaType = MediaType.Audio,
+            MediaUrl = "https://res.cloudinary.com/demo/video/authenticated/v1/emergency_dispatch/audio/own.webm"
+        });
+        report.MediaItems.Add(new IncidentMedia { MediaType = MediaType.Photo, MediaUrl = "https://media.example/deleted.jpg", IsDeleted = true });
+        _incidents.Setup(i => i.GetLinkedReportsAsync(parent.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Incident> { report });
+
+        var result = await _svc.GetLinkedReportsAsync(parent.Id);
+
+        Assert.True(result.Success);
+        var dto = Assert.Single(result.Data!);
+        Assert.Equal(report.Id, dto.IncidentId);
+        Assert.Equal(withVisualMedia ? new[] { photo.MediaUrl, video.MediaUrl } : Array.Empty<string>(), dto.MediaUrls);
+    }
+
     [Fact]
     public async Task GetLinkedReports_OtherStation_IsForbidden()
     {
