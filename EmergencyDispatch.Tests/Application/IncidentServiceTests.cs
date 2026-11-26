@@ -997,6 +997,71 @@ public class IncidentServiceTests
         _followUp.Verify(f => f.RestoreLinkedReportsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(IncidentStatus.Pending)]
+    [InlineData(IncidentStatus.Linked)]
+    [InlineData(IncidentStatus.Cancelled)]
+    public async Task MyReports_MediaUrlsAreVisualOnly_MetadataRetainsOwnAudio_NotParentOrDeletedMedia(IncidentStatus status)
+    {
+        var userId = Guid.NewGuid();
+        var parent = new Incident { ReportedByUserId = Guid.NewGuid() };
+        var parentAudio = new IncidentMedia { MediaType = MediaType.Audio, MediaUrl = "https://private.example/parent.m4a" };
+        parent.MediaItems.Add(parentAudio);
+        var report = new Incident
+        {
+            ReportedByUserId = userId, Status = status,
+            CancellationReason = status == IncidentStatus.Cancelled ? CancellationReason.Duplicate : null,
+            DuplicateOfIncidentId = parent.Id, DuplicateOfIncident = parent
+        };
+        var photo = new IncidentMedia { MediaType = MediaType.Photo, MediaUrl = "https://media.example/photo.jpg" };
+        var video = new IncidentMedia { MediaType = MediaType.Video, MediaUrl = "https://media.example/video.mp4" };
+        var audio = new IncidentMedia
+        {
+            MediaType = MediaType.Audio,
+            MediaUrl = "https://res.cloudinary.com/demo/video/authenticated/v1/emergency_dispatch/audio/own.webm",
+            PublicId = "emergency_dispatch/audio/own", MimeType = "audio/webm", FileSizeBytes = 1234, DurationSeconds = 8.5
+        };
+        var deletedPhoto = new IncidentMedia { MediaType = MediaType.Photo, MediaUrl = "https://media.example/deleted.jpg", IsDeleted = true };
+        var deletedAudio = new IncidentMedia { MediaType = MediaType.Audio, MediaUrl = "https://private.example/deleted.m4a", IsDeleted = true };
+        foreach (var media in new[] { photo, video, audio, deletedPhoto, deletedAudio }) report.MediaItems.Add(media);
+        _incidents.Setup(i => i.GetByReporterAsync(userId, null, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<Incident> { report }, 1));
+
+        var result = await _svc.GetMyReportsAsync(userId, MyReportFilter.All, 1, 20);
+
+        Assert.True(result.Success);
+        var dto = Assert.Single(result.Data!.Items);
+        Assert.Equal(report.Id, dto.Id);
+        Assert.Equal(new[] { photo.MediaUrl, video.MediaUrl }, dto.MediaUrls);
+        Assert.Equal(new[] { photo.Id, video.Id, audio.Id }, dto.MediaItems.Select(m => m.Id));
+        var audioDto = Assert.Single(dto.MediaItems, m => m.MediaType == MediaType.Audio);
+        Assert.Equal(audio.Id, audioDto.Id);
+        Assert.Equal(audio.MediaUrl, audioDto.MediaUrl);
+        Assert.Equal(audio.PublicId, audioDto.PublicId);
+        Assert.Equal(audio.MimeType, audioDto.MimeType);
+        Assert.Equal(audio.FileSizeBytes, audioDto.FileSizeBytes);
+        Assert.Equal(audio.DurationSeconds, audioDto.DurationSeconds);
+        Assert.DoesNotContain(dto.MediaItems, m => m.Id == parentAudio.Id);
+        _incidents.Verify(i => i.GetByReporterAsync(userId, null, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MyReports_NoActiveMedia_ReturnsEmptyMediaCollections(bool withDeletedMedia)
+    {
+        var userId = Guid.NewGuid();
+        var report = new Incident { ReportedByUserId = userId };
+        if (withDeletedMedia) report.MediaItems.Add(new IncidentMedia { MediaType = MediaType.Audio, IsDeleted = true });
+        _incidents.Setup(i => i.GetByReporterAsync(userId, null, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<Incident> { report }, 1));
+
+        var dto = Assert.Single((await _svc.GetMyReportsAsync(userId, MyReportFilter.All, 1, 20)).Data!.Items);
+
+        Assert.Empty(dto.MediaUrls);
+        Assert.Empty(dto.MediaItems);
+    }
+
     [Fact]
     public async Task MyReports_LinkedAndDuplicate_CarryParentIncident_OthersDoNot()
     {

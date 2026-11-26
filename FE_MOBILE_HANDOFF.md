@@ -2047,3 +2047,10 @@ Sau khi có backend mới, trình giả lập GPS ở chế độ "Về trạm" 
   ```
 - Giữ điều kiện chỉ gửi khi đang di chuyển hoặc đang ở hiện trường (`en_route` / `on_scene`). Nên rút chu kỳ từ 15 giây xuống khoảng 5 giây để citizen thấy xe di chuyển mượt hơn.
 - Nhận 403 thì dừng gửi.
+
+## 64. Cập nhật 26/11/2026: audio trong lịch sử báo cáo không lẫn ảnh/video
+
+- `GET /api/incidents/my-reports`: `mediaUrls` chỉ có ảnh/video chưa xóa; trường mới `mediaItems` có metadata media của chính báo cáo, gồm `id`, `mediaType`, `mimeType`, `publicId`, `fileSizeBytes`, `durationSeconds` và URL gốc. Không có media thì trả `[]`.
+- Citizen nghe lại audio: lấy `mediaItems` có `mediaType = Audio` (giá trị enum 2), gọi `GET /api/incidents/{item.id}/audio/{media.id}/playback-url` rồi phát `data.url`. Link hết hạn thì gọi lại. Không phát URL private từ metadata; không gọi API này cho ảnh/video.
+- Báo cáo đã gom/xác nhận trùng: dùng `item.id` của báo cáo chính người dùng gửi để nghe audio của mình. `linkedToIncidentId` dùng theo dõi sự cố gốc; không dùng để phát audio của báo cáo và không được lấy audio của người báo gốc.
+- `GET /api/incidents/{id}/linked-reports`: `mediaUrls` chỉ có ảnh/video chưa xóa; frontend không tạo thumbnail ảnh/video cho audio. Không thay đổi quyền nghe audio, không tạo link phát công khai. Không cần migration.

@@ -27,7 +27,14 @@ public class MyReportDto
     public SeverityLevel Severity { get; set; }
     public string? ResolutionSummary { get; set; }
     public CancellationReason? CancellationReason { get; set; }
+    /// <summary>Ảnh/video chưa xóa của chính báo cáo này; không chứa URL audio.</summary>
     public List<string> MediaUrls { get; set; } = new();
+
+    /// <summary>
+    /// Metadata media chưa xóa của chính báo cáo này, gồm audio. Dùng Id báo cáo và Id media để lấy playback-url có phân quyền;
+    /// không dùng LinkedToIncidentId để phát audio của báo cáo và không phát trực tiếp URL audio private.
+    /// </summary>
+    public List<IncidentMediaDto> MediaItems { get; set; } = new();
 
     /// <summary>
     /// Báo cáo đã được gom (Status = Linked) hoặc bị hủy vì trùng (Cancelled + Duplicate): sự cố gốc. null với các ca khác
