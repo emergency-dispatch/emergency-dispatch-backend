@@ -1,0 +1,767 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: /lt/k6/perf04_queue.js
+        output: -
+
+     scenarios: (100.00%) 2 scenarios, 103 max VUs, 20m30s max duration (incl. graceful stop):
+              * burst: 800 iterations shared among 100 VUs (maxDuration: 20m0s, exec: burst, gracefulStop: 30s)
+              * probe: 0.50 iterations/s for 6m0s (maxVUs: 3, exec: probe, gracefulStop: 30s)
+
+
+
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+
+     ✗ sos 200
+      ↳  1% — ✓ 8 / ✗ 792
+     ✓ probe 200
+
+     █ setup
+
+       ✓ login 200
+
+     checks............................................: 19.26% 189 out of 981
+     data_received.....................................: 14 MB  40 kB/s
+     data_sent.........................................: 584 kB 1.6 kB/s
+     http_req_blocked..................................: avg=614.7µs  min=1.36µs  med=3.67µs   p(90)=165.34µs p(95)=332.88µs p(99)=28.61ms  max=32.95ms
+     http_req_connecting...............................: avg=560.88µs min=0s      med=0s       p(90)=116.34µs p(95)=224.94µs p(99)=28.21ms  max=32.33ms
+     http_req_duration.................................: avg=248.88ms min=6.48ms  med=216.71ms p(90)=587.63ms p(95)=624.74ms p(99)=693.21ms max=2.23s  
+       { expected_response:true }......................: avg=72.63ms  min=6.48ms  med=9.89ms   p(90)=18.9ms   p(95)=276.76ms p(99)=2.23s    max=2.23s  
+     ✓ { name:GET /api/incidents (probe) }.............: avg=18.46ms  min=6.48ms  med=9.71ms   p(90)=14.14ms  p(95)=18.95ms  p(99)=77.97ms  max=1.15s  
+     ✓ { name:POST /api/incidents/sos (queue full) }...: avg=300.65ms min=29.16ms med=263.28ms p(90)=605.99ms p(95)=625.53ms p(99)=715.83ms max=2.23s  
+     http_req_failed...................................: 80.73% 792 out of 981
+     http_req_receiving................................: avg=143.1µs  min=17.6µs  med=37.9µs   p(90)=288.02µs p(95)=370.32µs p(99)=661.39µs max=21.71ms
+     http_req_sending..................................: avg=107.09µs min=7.32µs  med=15.01µs  p(90)=57.61µs  p(95)=130.5µs  p(99)=2.51ms   max=32.91ms
+     http_req_tls_handshaking..........................: avg=0s       min=0s      med=0s       p(90)=0s       p(95)=0s       p(99)=0s       max=0s     
+     http_req_waiting..................................: avg=248.63ms min=6.24ms  med=216.67ms p(90)=587.03ms p(95)=624.4ms  p(99)=687.29ms max=2.23s  
+     http_reqs.........................................: 981    2.722808/s
+     iteration_duration................................: avg=250.02ms min=6.68ms  med=216.91ms p(90)=601.19ms p(95)=628.31ms p(99)=719.24ms max=2.23s  
+     iterations........................................: 980    2.720032/s
+     sos_accepted......................................: 8      0.022204/s
+     sos_rejected......................................: 792    2.19823/s
+     vus...............................................: 0      min=0          max=101
+     vus_max...........................................: 103    min=103        max=103
+
+
+burst ✓ [ 100% ] 100 VUs  00m02.5s/20m0s  800/800 shared iters
+probe ✓ [ 100% ] 0/3 VUs  6m0s            0.50 iters/s

@@ -1,0 +1,39 @@
+{
+  "startedAtUtc": "2026-11-27T08:28:04.321Z",
+  "config": {
+    "base": "http://localhost:5080",
+    "receivers": 200,
+    "senders": 50,
+    "intervalMs": 3000,
+    "durationS": 1800
+  },
+  "messages": {
+    "sent": 29923,
+    "sendErrors": 0,
+    "expectedDeliveries": 5984600,
+    "delivered": 5984600,
+    "lost": 0,
+    "duplicates": 0,
+    "outOfOrder": 0
+  },
+  "latencyMs": {
+    "avg": 15.32778519448093,
+    "p50": 14.938400000100955,
+    "p95": 21.76049999985844,
+    "p99": 24.941400000010617,
+    "max": 121.64650000000006,
+    "over1000": 0,
+    "over3000": 0
+  },
+  "invokeAckMs": {
+    "p50": 15.234500000020489,
+    "p95": 21.77860000007786,
+    "max": 121.60349999999994
+  },
+  "connections": {
+    "receiversOpenAtEnd": 200,
+    "reconnecting": 0,
+    "reconnected": 0,
+    "closed": 0
+  }
+}

@@ -200,14 +200,15 @@ public class IncidentsController : ControllerBase
     /// </summary>
     /// <remarks>
     /// Sắp xếp ưu tiên (FR-OP-02): Level 0 (Reject / AI lỗi) và Level 3 cùng nhóm cao nhất theo FIFO,
-    /// sau đó đến Level 2, cuối cùng Level 1.
+    /// sau đó đến Level 2, cuối cùng Level 1. Trả tối đa 200 mục ưu tiên cao nhất; tổng số mục chờ ở header X-Total-Count.
     /// </remarks>
     [HttpGet("queue")]
     [Authorize(Roles = "Operator,Admin")]
     [ProducesResponseType(typeof(ApiResponseDto<List<IncidentResponseDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetQueue(CancellationToken cancellationToken)
     {
-        var response = await _incidentService.GetQueueAsync(cancellationToken);
+        var (response, totalCount) = await _incidentService.GetQueueAsync(cancellationToken);
+        Response.Headers["X-Total-Count"] = totalCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return Ok(response);
     }
 

@@ -1,0 +1,47 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: /lt/k6/ratelimit.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):
+              * default: 10 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)
+
+time="2026-11-27T08:27:34Z" level=info msg="request 1: HTTP 200" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 2: HTTP 200" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 3: HTTP 200" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 4: HTTP 200" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 5: HTTP 200" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 6: HTTP 429" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 7: HTTP 429" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 8: HTTP 429" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 9: HTTP 429" source=console
+time="2026-11-27T08:27:34Z" level=info msg="request 10: HTTP 429" source=console
+
+     ✓ first 5 accepted, rest 429
+
+     checks.........................: 100.00% 10 out of 10
+     data_received..................: 10 kB   17 kB/s
+     data_sent......................: 5.3 kB  8.8 kB/s
+     http_req_blocked...............: avg=155.51µs min=2.24µs   med=3.35µs  max=1.52ms   p(90)=156.49µs p(95)=840.99µs
+     http_req_connecting............: avg=41.63µs  min=0s       med=0s      max=416.37µs p(90)=41.63µs  p(95)=229µs   
+     http_req_duration..............: avg=59.9ms   min=608.56µs med=14.37ms max=462.87ms p(90)=82.87ms  p(95)=272.87ms
+       { expected_response:true }...: avg=118.92ms min=27.04ms  med=35.32ms max=462.87ms p(90)=293.98ms p(95)=378.43ms
+     http_req_failed................: 50.00%  5 out of 10
+     http_req_receiving.............: avg=91.22µs  min=34.4µs   med=84.88µs max=237.31µs p(90)=134.49µs p(95)=185.9µs 
+     http_req_sending...............: avg=53.19µs  min=20.29µs  med=36.54µs max=209.23µs p(90)=68.55µs  p(95)=138.89µs
+     http_req_tls_handshaking.......: avg=0s       min=0s       med=0s      max=0s       p(90)=0s       p(95)=0s      
+     http_req_waiting...............: avg=59.75ms  min=535.2µs  med=14.22ms max=462.43ms p(90)=82.71ms  p(95)=272.57ms
+     http_reqs......................: 10      16.543165/s
+     iteration_duration.............: avg=60.41ms  min=782.08µs med=14.7ms  max=465.78ms p(90)=83.38ms  p(95)=274.58ms
+     iterations.....................: 10      16.543165/s
+     sos_200........................: 5       8.271583/s
+     sos_429........................: 5       8.271583/s
+
+
+default ✓ [ 100% ] 1 VUs  00m00.6s/10m0s  10/10 shared iters

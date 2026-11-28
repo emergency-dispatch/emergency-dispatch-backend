@@ -1,0 +1,71 @@
+connected: 200 receivers + 50 senders; running 1800s, interval 3000 ms
+60s sent=998 delivered=199600 reconnecting=0 closed=0 rss=99MB
+120s sent=1996 delivered=399200 reconnecting=0 closed=0 rss=85MB
+180s sent=2994 delivered=598800 reconnecting=0 closed=0 rss=100MB
+240s sent=3991 delivered=798200 reconnecting=0 closed=0 rss=103MB
+300s sent=4989 delivered=997600 reconnecting=0 closed=0 rss=94MB
+360s sent=5987 delivered=1197400 reconnecting=0 closed=0 rss=111MB
+420s sent=6985 delivered=1397000 reconnecting=0 closed=0 rss=102MB
+480s sent=7983 delivered=1596207 reconnecting=0 closed=0 rss=122MB
+540s sent=8980 delivered=1796000 reconnecting=0 closed=0 rss=122MB
+600s sent=9977 delivered=1995400 reconnecting=0 closed=0 rss=108MB
+660s sent=10973 delivered=2194600 reconnecting=0 closed=0 rss=135MB
+720s sent=11973 delivered=2394600 reconnecting=0 closed=0 rss=138MB
+780s sent=12967 delivered=2593400 reconnecting=0 closed=0 rss=141MB
+840s sent=13966 delivered=2793200 reconnecting=0 closed=0 rss=145MB
+900s sent=14966 delivered=2993200 reconnecting=0 closed=0 rss=132MB
+960s sent=15962 delivered=3192208 reconnecting=0 closed=0 rss=159MB
+1020s sent=16961 delivered=3392200 reconnecting=0 closed=0 rss=163MB
+1080s sent=17959 delivered=3591524 reconnecting=0 closed=0 rss=162MB
+1140s sent=18956 delivered=3791200 reconnecting=0 closed=0 rss=165MB
+1200s sent=19956 delivered=3990649 reconnecting=0 closed=0 rss=166MB
+1260s sent=20953 delivered=4190200 reconnecting=0 closed=0 rss=169MB
+1320s sent=21949 delivered=4389800 reconnecting=0 closed=0 rss=171MB
+1380s sent=22948 delivered=4589400 reconnecting=0 closed=0 rss=194MB
+1440s sent=23944 delivered=4788800 reconnecting=0 closed=0 rss=195MB
+1500s sent=24944 delivered=4988800 reconnecting=0 closed=0 rss=196MB
+1560s sent=25942 delivered=5188400 reconnecting=0 closed=0 rss=197MB
+1620s sent=26938 delivered=5387600 reconnecting=0 closed=0 rss=203MB
+1680s sent=27933 delivered=5586600 reconnecting=0 closed=0 rss=204MB
+1740s sent=28931 delivered=5786200 reconnecting=0 closed=0 rss=204MB
+1800s sent=29923 delivered=5984600 reconnecting=0 closed=0 rss=211MB
+{
+  "startedAtUtc": "2026-11-27T08:28:04.321Z",
+  "config": {
+    "base": "http://localhost:5080",
+    "receivers": 200,
+    "senders": 50,
+    "intervalMs": 3000,
+    "durationS": 1800
+  },
+  "messages": {
+    "sent": 29923,
+    "sendErrors": 0,
+    "expectedDeliveries": 5984600,
+    "delivered": 5984600,
+    "lost": 0,
+    "duplicates": 0,
+    "outOfOrder": 0
+  },
+  "latencyMs": {
+    "avg": 15.32778519448093,
+    "p50": 14.938400000100955,
+    "p95": 21.76049999985844,
+    "p99": 24.941400000010617,
+    "max": 121.64650000000006,
+    "over1000": 0,
+    "over3000": 0
+  },
+  "invokeAckMs": {
+    "p50": 15.234500000020489,
+    "p95": 21.77860000007786,
+    "max": 121.60349999999994
+  },
+  "connections": {
+    "receiversOpenAtEnd": 200,
+    "reconnecting": 0,
+    "reconnected": 0,
+    "closed": 0
+  }
+}
+results -> loadtest/results/signalr_gps_20261127_152802

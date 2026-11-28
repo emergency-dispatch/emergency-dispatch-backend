@@ -30,7 +30,10 @@ public interface IIncidentService
     /// <summary>
     /// Lấy danh sách hàng đợi sự cố cần Operator xác minh (sắp xếp ưu tiên theo Severity)
     /// </summary>
-    Task<ApiResponseDto<List<IncidentResponseDto>>> GetQueueAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Hàng đợi Operator: tối đa <see cref="Services.IncidentService.QueueMaxItems"/> mục ưu tiên cao nhất, kèm tổng số mục chờ
+    /// </summary>
+    Task<(ApiResponseDto<List<IncidentResponseDto>> Response, int TotalCount)> GetQueueAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Operator xác minh sự cố (Human-in-the-loop: điều chỉnh hoặc xác nhận mức độ từ AI)

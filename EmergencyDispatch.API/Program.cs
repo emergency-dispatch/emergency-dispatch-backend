@@ -73,7 +73,7 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowCredentials()
               // FE đọc được lý do token bị từ chối và tên file báo cáo tải về
-              .WithExposedHeaders("X-Auth-Error", "Content-Disposition"));
+              .WithExposedHeaders("X-Auth-Error", "Content-Disposition", "X-Total-Count"));
 });
 
 // 2.1. Cấu hình đa ngôn ngữ (Bilingual vi/en Localization)

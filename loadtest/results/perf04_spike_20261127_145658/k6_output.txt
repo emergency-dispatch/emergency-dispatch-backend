@@ -1,0 +1,214 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: /lt/k6/perf04_spike.js
+        output: -
+
+     scenarios: (100.00%) 2 scenarios, 505 max VUs, 2m10s max duration (incl. graceful stop):
+              * probe: 1.00 iterations/s for 1m40s (maxVUs: 5, exec: probe, gracefulStop: 30s)
+              * spike: Up to 500 looping VUs for 35s over 3 stages (gracefulRampDown: 30s, exec: spike, gracefulStop: 30s)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+spike ↓ [ 100% ] 160/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+spike ✓ [ 100% ] 000/500 VUs  35s           
+
+     ✓ probe 200
+     ✓ sos 200
+
+     █ setup
+
+       ✓ login 200
+
+     checks.......................................: 100.00% 3749 out of 3749
+     data_received................................: 12 MB   124 kB/s
+     data_sent....................................: 2.2 MB  22 kB/s
+     http_req_blocked.............................: avg=142.26µs min=3.2µs   med=9.45µs  p(90)=376.86µs p(95)=542.46µs p(99)=1.32ms   max=53.21ms 
+     http_req_connecting..........................: avg=113.27µs min=0s      med=0s      p(90)=270.44µs p(95)=384.52µs p(99)=1.01ms   max=53.08ms 
+     http_req_duration............................: avg=2.91s    min=5.88ms  med=3.61s   p(90)=3.96s    p(95)=4.31s    p(99)=7.47s    max=10.78s  
+       { expected_response:true }.................: avg=2.91s    min=5.88ms  med=3.61s   p(90)=3.96s    p(95)=4.31s    p(99)=7.47s    max=10.78s  
+     ✓ { name:POST /api/incidents/sos (spike) }...: avg=3s       min=16.1ms  med=3.62s   p(90)=3.99s    p(95)=4.32s    p(99)=7.5s     max=10.78s  
+     ✓ { phase:after_0_30s }......................: avg=7.09ms   min=5.98ms  med=7.06ms  p(90)=8.23ms   p(95)=8.86ms   p(99)=8.94ms   max=8.95ms  
+     ✓ { phase:after_30_60s }.....................: avg=7.85ms   min=5.88ms  med=7.53ms  p(90)=8.56ms   p(95)=10.05ms  p(99)=15.16ms  max=17.33ms 
+     ✓ { phase:during }...........................: avg=43.35ms  min=6.35ms  med=17.41ms p(90)=144.73ms p(95)=168.86ms p(99)=221.67ms max=254.22ms
+     http_req_failed..............................: 0.00%   0 out of 3749
+     http_req_receiving...........................: avg=145.99µs min=26.71µs med=134µs   p(90)=197.71µs p(95)=232.14µs p(99)=450.67µs max=2.95ms  
+     http_req_sending.............................: avg=64.9µs   min=9.94µs  med=53.2µs  p(90)=97.4µs   p(95)=125.71µs p(99)=254.12µs max=6.37ms  
+     http_req_tls_handshaking.....................: avg=0s       min=0s      med=0s      p(90)=0s       p(95)=0s       p(99)=0s       max=0s      
+     http_req_waiting.............................: avg=2.91s    min=5.66ms  med=3.61s   p(90)=3.96s    p(95)=4.31s    p(99)=7.47s    max=10.78s  
+     http_reqs....................................: 3749    37.439233/s
+     iteration_duration...........................: avg=3.89s    min=6.13ms  med=4.61s   p(90)=4.96s    p(95)=5.31s    p(99)=8.47s    max=11.78s  
+     iterations...................................: 3748    37.429247/s
+     sos_accepted.................................: 3647    36.420615/s
+     vus..........................................: 0       min=0            max=500
+     vus_max......................................: 505     min=505          max=505
+
+
+probe ✓ [ 100% ] 0/5 VUs      1m40s  1.00 iters/s
+spike ✓ [ 100% ] 000/500 VUs  35s   

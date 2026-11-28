@@ -1,0 +1,32 @@
+{
+  "measured_at_utc": "2026-11-28T02:02:16Z",
+  "gpu": "Tesla T4",
+  "service_version": "2026-11-23",
+  "max_image_side": "512",
+  "warmup_excluded": 3,
+  "local_client": {
+    "n": 120,
+    "mean_s": 17.12,
+    "median_s": 16.41,
+    "p95_s": 21.67,
+    "max_s": 38.56
+  },
+  "local_service_inference": {
+    "n": 120,
+    "mean_s": 17.1,
+    "median_s": 16.39,
+    "p95_s": 21.66,
+    "max_s": 38.55
+  },
+  "ngrok_end_to_end": null,
+  "errors": 0,
+  "peak_vram_mib_nvidia_smi": 5407,
+  "packages": {
+    "torch": "2.11.0+cu130",
+    "transformers": "5.19.0",
+    "peft": "0.21.2",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.15.0",
+    "fastapi": "0.143.1"
+  }
+}

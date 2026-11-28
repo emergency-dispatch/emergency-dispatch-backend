@@ -1,0 +1,58 @@
+# Môi trường load test cô lập (chỉ chạy trên máy local). Không dùng Neon / Render / Cloudinary / OpenRouter thật.
+#   docker compose -f loadtest/docker-compose.yml up -d --build
+# API: http://localhost:5080   DB: postgres://postgres:postgres@localhost:5440/loadtest
+name: ed-loadtest
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    # Pool của API tối đa 100 kết nối: để dư chỗ cho psql kiểm tra kết quả
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: loadtest
+    ports:
+      - "5440:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d loadtest"]
+      interval: 5s
+      retries: 20
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5080:8080"
+    # Giới hạn tài nguyên cố định để kết quả lặp lại được (ghi trong báo cáo)
+    cpus: 2
+    mem_limit: 1g
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=loadtest;Username=postgres;Password=postgres;Maximum Pool Size=100"
+      JwtSettings__Key: "loadtest-only-key-0123456789abcdef0123456789abcdef0123456789"
+      JwtSettings__Issuer: EmergencyDispatchAPI
+      JwtSettings__Audience: EmergencyDispatchClient
+      JwtSettings__ExpireMinutes: "240"
+      # k6 gửi X-Forwarded-For khác nhau cho mỗi người dùng ảo = nhiều IP như khi chạy sau proxy Render
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__ForwardLimit: "1"
+      # AI chính và AI dự phòng trỏ vào cổng đóng: worker đi đúng đường lỗi → circuit breaker → Level 0, không tốn chi phí API
+      AiService__UseLocalModel: "true"
+      AiService__LocalServiceUrl: "${AI_URL:-http://127.0.0.1:9}"
+      AiService__LocalTimeoutSeconds: "5"
+      AiService__ApiKey: "loadtest"
+      OpenRouter__BaseUrl: "http://127.0.0.1:9/api/v1"
+      OpenRouter__ApiKey: "loadtest"
+      OpenRouter__Model: "qwen/qwen3-vl-32b-instruct"
+      YoloService__Enabled: "false"
+      YoloService__AutoStart: "false"
+      # Cloudinary không cấu hình → chế độ mock, URL ảnh images.unsplash.com được chấp nhận, không upload thật
+      # OSRM local của nhóm (container osrm, cổng 5001, bản đồ TP.HCM) — chọn trạm theo đường bộ như bản chạy thật
+      Routing__OsrmBaseUrl: "http://host.docker.internal:5001"
+      Routing__TimeoutSeconds: "5"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

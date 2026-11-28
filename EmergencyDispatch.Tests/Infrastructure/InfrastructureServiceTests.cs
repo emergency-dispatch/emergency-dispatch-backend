@@ -61,19 +61,62 @@ public class AiAnalysisQueueTests
     }
 
     [Fact]
-    public async Task FullQueue_WaitsInsteadOfDropping()
+    public void FullQueue_DoesNotBlockProducer()
     {
-        var q = new AiAnalysisQueue(capacity: 1);
-        await q.EnqueueAsync(Job());
+        // Trước đây SOS phải chờ chỗ trống khi hàng đợi đầy (load test: p95 68 s)
+        var q = new AiAnalysisQueue(capacity: 2);
+        for (var i = 0; i < 10; i++)
+        {
+            Assert.True(q.EnqueueAsync(Job()).IsCompletedSuccessfully);
+        }
 
-        var pending = q.EnqueueAsync(Job()).AsTask();
-        await Task.Delay(100);
-        Assert.False(pending.IsCompleted);
+        Assert.Equal(8, q.OverflowCount);
+    }
 
-        await using var e = q.DequeueAllAsync(CancellationToken.None).GetAsyncEnumerator();
-        await e.MoveNextAsync();
-        await pending.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.True(pending.IsCompletedSuccessfully);
+    [Fact]
+    public async Task FullQueue_KeepsEveryJobInFifoOrder()
+    {
+        var q = new AiAnalysisQueue(capacity: 3);
+        var jobs = Enumerable.Range(0, 20).Select(_ => Job()).ToList();
+        foreach (var j in jobs) await q.EnqueueAsync(j);
+
+        var read = new List<AiAnalysisJob>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await foreach (var j in q.DequeueAllAsync(cts.Token))
+        {
+            read.Add(j);
+            // Job mới vào giữa chừng phải xếp sau các job đang ở hàng tràn
+            if (read.Count == 5) await q.EnqueueAsync(jobs[0] with { IncidentId = Guid.Empty });
+            if (read.Count == jobs.Count + 1) break;
+        }
+
+        Assert.Equal(jobs, read.Take(jobs.Count));
+        Assert.Equal(Guid.Empty, read[^1].IncidentId);
+        Assert.Equal(0, q.OverflowCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentProducers_LoseNoJob()
+    {
+        var q = new AiAnalysisQueue(capacity: 5);
+        var ids = Enumerable.Range(0, 400).Select(_ => Guid.NewGuid()).ToList();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var reader = Task.Run(async () =>
+        {
+            var seen = new List<Guid>();
+            await foreach (var j in q.DequeueAllAsync(cts.Token))
+            {
+                seen.Add(j.IncidentId);
+                if (seen.Count == ids.Count) break;
+            }
+            return seen;
+        });
+        await Parallel.ForEachAsync(ids, async (id, _) =>
+            await q.EnqueueAsync(new AiAnalysisJob(id, "https://x/a.jpg", null, DateTime.UtcNow)));
+
+        var seen = await reader;
+        Assert.Equal(ids.OrderBy(x => x), seen.OrderBy(x => x));
     }
 
     [Fact]

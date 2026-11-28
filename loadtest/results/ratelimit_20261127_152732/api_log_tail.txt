@@ -1,0 +1,204 @@
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'Incident' has a global query filter defined and is the required end of a relationship with the entity 'CitizenIncidentAlert'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'Notification' has a global query filter defined and is the required end of a relationship with the entity 'CitizenIncidentAlertDelivery'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+info: Program[0]
+      Database migration và seed dữ liệu hoàn tất thành công.
+warn: EmergencyDispatch.API[0]
+      Chưa cấu hình Cors:AllowedOrigins — mọi request từ trình duyệt khác origin sẽ bị chặn.
+info: EmergencyDispatch.Infrastructure.BackgroundJobs.AiAnalysisWorker[0]
+      AI Analysis Worker khởi động (MaxConcurrency=3).
+warn: EmergencyDispatch.Infrastructure.Services.FcmPushNotificationSender[0]
+      Firebase:CredentialPath chưa cấu hình hoặc không tồn tại — push FCM chỉ được ghi log.
+info: EmergencyDispatch.Infrastructure.BackgroundJobs.HotspotCleanupWorker[0]
+      Hotspot Cleanup Worker khởi động (Chu kỳ quét: 5 phút).
+info: EmergencyDispatch.Infrastructure.BackgroundJobs.EscalationWorker[0]
+      🚨 Escalation Rule Engine Worker đã khởi động (Chu kỳ quét: 30s).
+warn: Microsoft.EntityFrameworkCore.Query[10103]
+      The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+info: EmergencyDispatch.Infrastructure.BackgroundJobs.VehicleCoolDownWorker[0]
+      Vehicle CoolDown Worker khởi động (Chu kỳ quét: 30s).
+info: EmergencyDispatch.Infrastructure.BackgroundJobs.IncidentStaleReviewWorker[0]
+      Incident Stale Review Worker khởi động (chu kỳ quét: 60 phút).
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://[::]:8080
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: /app
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 12dfe800-71a6-4868-8325-aebeb6fe88a3 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 1bffd8d9-ee9e-4718-b78a-8ed7f0d90273 (Unclassified) vẫn chưa có đơn vị nhận sau 20.7 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 1d4f75d7-a7a0-40b2-9b9d-2bfa0c536df7 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 22436cd4-a9dc-4dfc-a89c-9a8cdb0034ed (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 2981fd88-5443-47fb-8971-c353692aec64 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 2f691fc8-9ae7-4df4-8fc9-4f0c37ebb9ef (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 307da17b-9b66-4155-b70c-b5bdae75f99f (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 33a1aeee-2868-4fa4-9c03-cdb08cfd1114 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 4ed0e8cb-2a69-4971-a310-f9b9b9b1474c (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 59da03bd-012e-49a1-bce1-7768bd3bc2e5 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 5dc44e65-da3a-4a24-9c7a-a1be07f10820 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 6266f6a3-0b1b-4876-92fe-3d0aeed5b3a4 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 658a4b15-1f85-4524-bae9-317b2ec76e6a (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 813e2fdd-b7d7-4356-951a-c3069c2798b3 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 951d8abf-5e11-4bfb-97ea-e190da0bebd6 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 98c6629d-facb-42e5-984f-3187ed31e981 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 9dcdc408-e229-47e4-8ed1-299e8295df2d (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố b0fb5bec-ebad-4568-872c-a24076046966 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố b53df47a-e81b-4392-b1a8-51129b8c75f4 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố b9991d9b-6958-41a0-8c05-f14132dce658 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố c007a339-ff7d-4bc5-aa53-6c8c131e723d (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố ce418e14-7c7a-40e4-a777-52bd4f425dea (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố d6ff8633-61b0-477d-a5e6-76982b21b615 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố dccf42aa-4528-4436-b804-6c9826244e2f (Unclassified) vẫn chưa có đơn vị nhận sau 21.1 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố de86674f-c330-4a3e-9040-cfbe6aa04511 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố b27dc45b-5d1d-4d6d-8491-004a18c87fbd (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố e6a8c9c2-0f9f-45c9-b16f-d65b5cc79129 (Unclassified) vẫn chưa có đơn vị nhận sau 21.2 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố fe17375e-5f5f-47ff-84bf-ddd3cd0edc49 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố d03f0599-6a17-4561-bd72-85eff5e3da1a (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 263cbc63-b8ba-456c-9794-394f13961222 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố fddd9015-9614-448c-93d5-e4e47ed1a026 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 1beedeb5-a9cd-4140-bd1d-b643d256c9fb (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố e348dcc4-0257-49f0-a545-c506576a0a20 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 7fdcbea8-5a84-4bdb-b4f2-82b830d228d9 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 95ea4d4a-925a-4710-a924-59d93a18e1e4 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+      Failed to determine the https port for redirect.
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 0fbf05c0-e12a-45ba-a5f8-e9b83c90ebbd (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 24577919-374c-4901-b7a0-0e927f002873 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố f988f7af-30dd-461a-99bc-f124e626388e (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 2f076815-84eb-49b4-bffc-9322b35c7138 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố cd887f47-b100-493b-a70a-d8d86b8ae742 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 5dfffd62-8d6f-4c48-ab3b-2eb64eb83ec6 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố bf8cb689-0b5d-4aa6-a7fa-769092f79ce3 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 5ab09fb0-be27-4f3c-b76d-fff5a67a4dc6 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 99593cd3-85de-4d97-93be-45f556c20f3e (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố b1d12e7a-1586-4487-b0ad-4730ae70628f (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 99f201b0-57d6-46fb-af31-d64ffc985422 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 311ecc20-6df6-40b5-90d1-a5bdc5ebdcfc (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[100]
+      Start processing HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.820073,10.846956?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[100]
+      Sending HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.820073,10.846956?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[101]
+      Received HTTP response headers after 41.139ms - 200
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[101]
+      End processing HTTP request after 46.9947ms - 200
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Assigned station aa8eaf65-0b94-42b8-892a-ac46d7eb199d by road distance: 1.892 km.
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 8b39bdbb-5ba8-405f-9c43-a32157911166 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: Microsoft.EntityFrameworkCore.Query[10103]
+      The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Sự cố 7bf734a7-bdd0-47ca-954d-cfedc5e3d5fc không có ảnh hiện trường. Giữ mức Unclassified (Level 0).
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[100]
+      Start processing HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.804703,10.828978?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[100]
+      Sending HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.804703,10.828978?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[101]
+      Received HTTP response headers after 5.2571ms - 200
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[101]
+      End processing HTTP request after 5.3918ms - 200
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Assigned station 84077b44-c02c-4772-ba7e-4743af4ee822 by road distance: 2.357 km.
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 2b29092a-9191-4e5e-adb3-4f4b3782dce8 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Sự cố bd65b4f8-295d-4f5c-9d0e-5db85ac7d2d2 không có ảnh hiện trường. Giữ mức Unclassified (Level 0).
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[100]
+      Start processing HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.786377,10.840844?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[100]
+      Sending HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.786377,10.840844?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[101]
+      Received HTTP response headers after 5.4055ms - 200
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[101]
+      End processing HTTP request after 5.5575ms - 200
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Assigned station 8f008264-4aa1-40b4-a050-0234dd368f07 by road distance: 1.847 km.
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Sự cố b81d0ca2-5a8b-4900-80ba-ac37bf063f06 không có ảnh hiện trường. Giữ mức Unclassified (Level 0).
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[100]
+      Start processing HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.836470,10.861436?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[100]
+      Sending HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.836470,10.861436?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[101]
+      Received HTTP response headers after 5.9558ms - 200
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[101]
+      End processing HTTP request after 6.087ms - 200
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Assigned station aa8eaf65-0b94-42b8-892a-ac46d7eb199d by road distance: 5.05 km.
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Sự cố 62d0b8bc-fed1-44f9-b779-657d5683e945 không có ảnh hiện trường. Giữ mức Unclassified (Level 0).
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[100]
+      Start processing HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.842502,10.853363?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[100]
+      Sending HTTP request GET http://host.docker.internal:5001/table/v1/driving/106.795000,10.845000;106.820000,10.835000;106.815000,10.855000;106.842502,10.853363?*
+info: System.Net.Http.HttpClient.Routing.ClientHandler[101]
+      Received HTTP response headers after 4.6014ms - 200
+info: System.Net.Http.HttpClient.Routing.LogicalHandler[101]
+      End processing HTTP request after 4.7293ms - 200
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Assigned station aa8eaf65-0b94-42b8-892a-ac46d7eb199d by road distance: 5.124 km.
+info: EmergencyDispatch.Application.Services.IncidentService[0]
+      Sự cố af864d7f-4c5f-42ea-86e0-5315d323b78c không có ảnh hiện trường. Giữ mức Unclassified (Level 0).
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 14258b9d-86b2-4fd2-8046-ac3939eba225 (Unclassified) vẫn chưa có đơn vị nhận sau 21.4 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố a13e0969-c0dd-43e9-9abf-e7534e356b07 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 218edca4-6724-41f5-92d3-5d6dd1cd0d3c (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 6ebcf2ad-d6da-461b-8ab8-d69fd275c179 (Unclassified) vẫn chưa có đơn vị nhận sau 21.3 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố 90f7121d-e306-4e1d-a652-62c508df5c3a (Unclassified) vẫn chưa có đơn vị nhận sau 21.4 phút!
+warn: EmergencyDispatch.Application.Services.EscalationService[0]
+      🚨🚨 [ESCALATION TIER 2] Sự cố dcfaf681-7f5a-46d5-a6f4-9e17fa14b0b2 (Unclassified) vẫn chưa có đơn vị nhận sau 21.4 phút!

@@ -851,11 +851,16 @@ public class IncidentService : IIncidentService
         return ApiResponseDto<PaginatedResultDto<IncidentResponseDto>>.SuccessResult(paginated);
     }
 
-    public async Task<ApiResponseDto<List<IncidentResponseDto>>> GetQueueAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Số mục tối đa trả về trong một lần lấy hàng đợi Operator (tổng số thật trả qua header X-Total-Count)
+    /// </summary>
+    public const int QueueMaxItems = 200;
+
+    public async Task<(ApiResponseDto<List<IncidentResponseDto>> Response, int TotalCount)> GetQueueAsync(CancellationToken cancellationToken = default)
     {
-        var queueItems = await _incidentRepository.GetPendingQueueAsync(cancellationToken, _currentUser.FilterStationId());
+        var (queueItems, total) = await _incidentRepository.GetPendingQueueAsync(QueueMaxItems, _currentUser.FilterStationId(), cancellationToken);
         var dtos = queueItems.Select(i => MapToResponseDto(i)).ToList();
-        return ApiResponseDto<List<IncidentResponseDto>>.SuccessResult(dtos, "Lấy danh sách hàng đợi sự cố thành công.");
+        return (ApiResponseDto<List<IncidentResponseDto>>.SuccessResult(dtos, "Lấy danh sách hàng đợi sự cố thành công."), total);
     }
 
     public async Task<ApiResponseDto<IncidentResponseDto>> VerifyIncidentAsync(

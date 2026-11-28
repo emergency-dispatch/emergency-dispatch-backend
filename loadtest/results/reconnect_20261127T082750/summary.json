@@ -1,0 +1,12 @@
+{
+  "receivers": 50,
+  "apiDowntimeS": 3.392,
+  "reconnected": 50,
+  "gaveUp": 0,
+  "reconnectAfterReadyS": {
+    "min": 1.042,
+    "median": 1.076,
+    "max": 1.078
+  },
+  "within5s": 50
+}

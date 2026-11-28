@@ -2054,3 +2054,22 @@ Sau khi có backend mới, trình giả lập GPS ở chế độ "Về trạm" 
 - Citizen nghe lại audio: lấy `mediaItems` có `mediaType = Audio` (giá trị enum 2), gọi `GET /api/incidents/{item.id}/audio/{media.id}/playback-url` rồi phát `data.url`. Link hết hạn thì gọi lại. Không phát URL private từ metadata; không gọi API này cho ảnh/video.
 - Báo cáo đã gom/xác nhận trùng: dùng `item.id` của báo cáo chính người dùng gửi để nghe audio của mình. `linkedToIncidentId` dùng theo dõi sự cố gốc; không dùng để phát audio của báo cáo và không được lấy audio của người báo gốc.
 - `GET /api/incidents/{id}/linked-reports`: `mediaUrls` chỉ có ảnh/video chưa xóa; frontend không tạo thumbnail ảnh/video cho audio. Không thay đổi quyền nghe audio, không tạo link phát công khai. Không cần migration.
+
+## 65. Cập nhật 27/11/2026: hàng đợi Operator tối đa 200 mục + header X-Total-Count
+
+**Backend đã đổi.** Load test cho thấy `GET /api/incidents/queue` tải toàn bộ sự cố chưa xác minh kèm media và JSON AI. Với khoảng 6.500 sự cố chờ, 50 Operator làm mới cùng lúc làm API hết 1 GB RAM và dừng hẳn.
+
+- `GET /api/incidents/queue` nay chỉ trả **tối đa 200 mục ưu tiên cao nhất**, vẫn đúng thứ tự FR-OP-02. Hình dạng JSON không đổi (`data` vẫn là mảng).
+- Tổng số mục chờ xác minh thật nằm ở header **`X-Total-Count`** (đã thêm vào CORS `WithExposedHeaders`).
+- Hàng đợi AI không còn làm SOS phải chờ khi đầy. Thay đổi này chỉ ở backend, FE không cần làm gì.
+
+### Web (`emergency-dispatch-frontend`)
+
+- `src/services/incidentService.ts:168` (`apiClient.get('/Incidents/queue')`): đọc thêm `response.headers['x-total-count']`, trả về cùng danh sách.
+- Badge, bộ đếm "đang chờ" và tiêu đề hàng đợi: dùng `X-Total-Count`, **không dùng `data.length`**. Khi có hơn 200 mục, `data.length` dừng ở 200.
+- Nếu `X-Total-Count` > số mục đang hiển thị, ghi một dòng ở cuối danh sách, ví dụ: "Đang hiển thị 200 / 1.234 sự cố ưu tiên cao nhất. Xử lý bớt để thấy các sự cố còn lại". Để tìm sự cố cụ thể, dùng `GET /api/incidents?statuses=...&page=` (có phân trang).
+- `src/context/DispatchContext.tsx`: khi sự cố mới đến qua SignalR, vẫn chèn vào danh sách như hiện tại và tăng tổng đếm thêm 1.
+
+### Mobile
+
+Không dùng endpoint này, không cần làm gì.

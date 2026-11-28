@@ -98,26 +98,37 @@ public class IncidentRepository : GenericRepository<Incident>, IIncidentReposito
         return (items, totalCount);
     }
 
-    public async Task<List<Incident>> GetPendingQueueAsync(CancellationToken cancellationToken = default, Guid? responsibleStationId = null)
+    public async Task<(List<Incident> Items, int TotalCount)> GetPendingQueueAsync(int maxItems, Guid? responsibleStationId = null, CancellationToken cancellationToken = default)
     {
         // Hàng đợi sự cố chưa được Operator xác minh (kể cả đang chờ AI hoặc đã bị leo thang trước khi duyệt)
         // FR-OP-02: Level 0 (Reject / AI lỗi) và Level 3 cùng nhóm ưu tiên cao nhất theo FIFO → Level 2 → Level 1
-        return await _context.Incidents
+        var pending = _context.Incidents
+            .Where(i => !responsibleStationId.HasValue || i.ResponsibleStationId == null || i.ResponsibleStationId == responsibleStationId.Value)
+            .Where(i => i.Status == IncidentStatus.Pending
+                        || i.Status == IncidentStatus.AiProcessing
+                        || i.Status == IncidentStatus.AiProcessed
+                        || (i.Status == IncidentStatus.Escalated && i.VerifiedAt == null));
+
+        // Giới hạn số mục: trước đây tải toàn bộ hàng đợi kèm media và JSON thô của AI cho mỗi request.
+        // Load test với ~6.500 sự cố chờ: 50 Operator làm mới cùng lúc làm API hết bộ nhớ (1 GB) và dừng.
+        var items = await pending
+            .AsNoTracking()
+            .AsSplitQuery()
             .Include(i => i.ReportedByUser)
             .Include(i => i.LockedByOperator)
             .Include(i => i.ResponsibleStation)
             .Include(i => i.MediaItems)
             .Include(i => i.AiClassification)
-            .Where(i => !responsibleStationId.HasValue || i.ResponsibleStationId == null || i.ResponsibleStationId == responsibleStationId.Value)
-            .Where(i => i.Status == IncidentStatus.Pending
-                        || i.Status == IncidentStatus.AiProcessing
-                        || i.Status == IncidentStatus.AiProcessed
-                        || (i.Status == IncidentStatus.Escalated && i.VerifiedAt == null))
             .OrderBy(i => i.Severity == SeverityLevel.Level3 || i.Severity == SeverityLevel.Unclassified ? 0
                         : i.Severity == SeverityLevel.Level2 ? 1
                         : 2)
             .ThenBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .Take(maxItems)
             .ToListAsync(cancellationToken);
+
+        var total = items.Count < maxItems ? items.Count : await pending.CountAsync(cancellationToken);
+        return (items, total);
     }
 
     public async Task<List<Guid>> GetStaleUnverifiedIdsAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default)

@@ -27,7 +27,10 @@ public interface IIncidentRepository : IGenericRepository<Incident>
     /// <summary>
     /// responsibleStationId != null → chỉ sự cố của trạm đó và sự cố chưa xác định trạm
     /// </summary>
-    Task<List<Incident>> GetPendingQueueAsync(CancellationToken cancellationToken = default, Guid? responsibleStationId = null);
+    /// <summary>
+    /// Hàng đợi Operator theo thứ tự ưu tiên, tối đa <paramref name="maxItems"/> mục, kèm tổng số mục chờ xác minh
+    /// </summary>
+    Task<(List<Incident> Items, int TotalCount)> GetPendingQueueAsync(int maxItems, Guid? responsibleStationId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lấy các sự cố kẹt ở trạng thái AiProcessing mà chưa có kết quả AI (do server restart làm mất hàng đợi in-memory)

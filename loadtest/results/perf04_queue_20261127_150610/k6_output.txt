@@ -1,0 +1,561 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: /lt/k6/perf04_queue.js
+        output: -
+
+     scenarios: (100.00%) 2 scenarios, 103 max VUs, 20m30s max duration (incl. graceful stop):
+              * burst: 800 iterations shared among 100 VUs (maxDuration: 20m0s, exec: burst, gracefulStop: 30s)
+              * probe: 0.50 iterations/s for 6m0s (maxVUs: 3, exec: probe, gracefulStop: 30s)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+
+     ✓ probe 200
+     ✓ sos 200
+
+     █ setup
+
+       ✓ login 200
+
+     checks............................................: 100.00% 981 out of 981
+     data_received.....................................: 7.6 MB  21 kB/s
+     data_sent.........................................: 584 kB  1.6 kB/s
+     http_req_blocked..................................: avg=467.59µs min=1.97µs  med=5.17µs   p(90)=157.5µs  p(95)=247.49µs p(99)=26.59ms  max=27.29ms 
+     http_req_connecting...............................: avg=453.3µs  min=0s      med=0s       p(90)=116.25µs p(95)=202.55µs p(99)=26.54ms  max=27.26ms 
+     http_req_duration.................................: avg=17.7s    min=5.94ms  med=886.69ms p(90)=1m7s     p(95)=1m8s     p(99)=1m8s     max=1m9s    
+       { expected_response:true }......................: avg=17.7s    min=5.94ms  med=886.69ms p(90)=1m7s     p(95)=1m8s     p(99)=1m8s     max=1m9s    
+     ✓ { name:GET /api/incidents (probe) }.............: avg=14.64ms  min=5.94ms  med=8.74ms   p(90)=11.82ms  p(95)=12.64ms  p(99)=47.97ms  max=886.69ms
+     ✗ { name:POST /api/incidents/sos (queue full) }...: avg=21.7s    min=20.26ms med=1.46s    p(90)=1m7s     p(95)=1m8s     p(99)=1m9s     max=1m9s    
+     http_req_failed...................................: 0.00%   0 out of 981
+     http_req_receiving................................: avg=129.62µs min=30.44µs med=104.13µs p(90)=175.47µs p(95)=222.08µs p(99)=343.83µs max=13.37ms 
+     http_req_sending..................................: avg=76.69µs  min=9.4µs   med=37.51µs  p(90)=70.96µs  p(95)=132.26µs p(99)=357.08µs max=26.72ms 
+     http_req_tls_handshaking..........................: avg=0s       min=0s      med=0s       p(90)=0s       p(95)=0s       p(99)=0s       max=0s      
+     http_req_waiting..................................: avg=17.7s    min=5.73ms  med=886.57ms p(90)=1m7s     p(95)=1m8s     p(99)=1m8s     max=1m9s    
+     http_reqs.........................................: 981     2.72083/s
+     iteration_duration................................: avg=17.71s   min=6.2ms   med=894.32ms p(90)=1m7s     p(95)=1m8s     p(99)=1m8s     max=1m9s    
+     iterations........................................: 980     2.718057/s
+     sos_accepted......................................: 800     2.218822/s
+     vus...............................................: 0       min=0          max=101
+     vus_max...........................................: 103     min=103        max=103
+
+
+burst ✓ [ 100% ] 100 VUs  03m27.4s/20m0s  800/800 shared iters
+probe ✓ [ 100% ] 0/3 VUs  6m0s            0.50 iters/s
+time="2026-11-27T08:12:12Z" level=error msg="thresholds on metrics 'http_req_duration{name:POST /api/incidents/sos (queue full)}' have been crossed"
