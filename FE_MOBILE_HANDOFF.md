@@ -1849,7 +1849,7 @@ Backend không có SMS gateway, luồng SOS cũng không đọc `ice.autoSendSms
 ## 54. Cập nhật BE 25/11/2026: cảnh báo Citizen mặc định bật và vùng phục vụ realtime
 
 - Citizen incident alerts default to enabled / Cảnh báo Citizen mặc định bật. Migration `20261125090000_EnableCitizenIncidentAlertsByDefault` bật cấu hình cũ đang tắt một lần và ghi mốc UTC bền vững; giữ mốc của cấu hình đã bật hợp lệ. Không đổi mốc mỗi lần đọc/restart. Admin vẫn có thể tắt sau migration; chỉ các xác nhận/Staff tiếp nhận từ mốc bật mới đủ điều kiện thông báo.
-- `ReceiveSettingsChanged` trên `/hubs/incidents`: `key == "serviceArea"` được gửi một lần tới mọi kết nối, gồm Citizen; các key khác giữ phạm vi Operator/Admin. Citizen nhận sự kiện thì gọi lại API công khai `GET /api/settings/service-area` và vẽ lại vùng trên bản đồ. Tải lại cấu hình khi reconnect để bù sự kiện bị lỡ. BE không tự vẽ giao diện.
+- `ReceiveSettingsChanged` trên `/hubs/incidents`: `key == "serviceArea"` được gửi một lần tới mọi kết nối, gồm Citizen; từ mục 65, `citizenIncidentAlerts` cũng được phát công khai, các key khác giữ phạm vi Operator/Admin. Citizen nhận sự kiện thì gọi lại API công khai `GET /api/settings/service-area` và vẽ lại vùng trên bản đồ. Tải lại cấu hình khi reconnect để bù sự kiện bị lỡ. BE không tự vẽ giao diện.
 
 
 ## 55. Cập nhật 25/11/2026: SOS audio chỉ dùng một nội dung description
@@ -2055,7 +2055,15 @@ Sau khi có backend mới, trình giả lập GPS ở chế độ "Về trạm" 
 - Báo cáo đã gom/xác nhận trùng: dùng `item.id` của báo cáo chính người dùng gửi để nghe audio của mình. `linkedToIncidentId` dùng theo dõi sự cố gốc; không dùng để phát audio của báo cáo và không được lấy audio của người báo gốc.
 - `GET /api/incidents/{id}/linked-reports`: `mediaUrls` chỉ có ảnh/video chưa xóa; frontend không tạo thumbnail ảnh/video cho audio. Không thay đổi quyền nghe audio, không tạo link phát công khai. Không cần migration.
 
-## 65. Cập nhật 27/11/2026: hàng đợi Operator tối đa 200 mục + header X-Total-Count
+## 65. Cập nhật 26/11/2026: Admin cấu hình thời gian chờ gửi SOS
+
+- GET công khai `/api/settings/citizen-incident-alerts`: lấy `data.values.reportCooldownMinutes` (số nguyên 0–60; JSON cũ mặc định 3). Áp dụng cho cả Citizen và Guest.
+- PUT vẫn chỉ Admin: `{ "enabled": true, "reportCooldownMinutes": 3 }`. Ngoài khoảng 0–60 bị từ chối 400. `enabled` là công tắc thông báo khu vực, không tắt/bật cooldown.
+- `reportCooldownMinutes = 0`: bỏ bước giới hạn chờ giữa các báo cáo đang hoạt động của cùng tài khoản/số điện thoại. Blacklist, rate limit HTTP, idempotency và gom trùng vẫn áp dụng. Khi > 0, BE trả 429 nếu có báo cáo đang hoạt động trong cửa sổ đó, thông báo dùng số phút cấu hình và có vi/en.
+- Giữ sự kiện `ReceiveSettingsChanged` key `citizenIncidentAlerts`; BE gửi một lần tới mọi kết nối để Citizen nhận được. Khi nhận sự kiện, client gọi lại GET rồi cập nhật cooldown. Tải lại khi mở app/reconnect; Guest chưa nối SignalR vẫn đọc cấu hình qua GET. Không coi việc không nhận event là giá trị mặc định không thay đổi.
+- Không cần migration; không làm đổi mốc `EnabledFromUtc` khi chỉ chỉnh cooldown và giữ trạng thái Enabled. Không dùng cooldown để tính lại mốc phát cảnh báo hoặc gửi bù sự cố cũ.
+
+## 66. Cập nhật 27/11/2026: hàng đợi Operator tối đa 200 mục + header X-Total-Count
 
 **Backend đã đổi.** Load test cho thấy `GET /api/incidents/queue` tải toàn bộ sự cố chưa xác minh kèm media và JSON AI. Với khoảng 6.500 sự cố chờ, 50 Operator làm mới cùng lúc làm API hết 1 GB RAM và dừng hẳn.
 

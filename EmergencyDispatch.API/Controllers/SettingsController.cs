@@ -95,6 +95,7 @@ public class SettingsController : ControllerBase
 
     /// <summary>Area-only citizen announcement settings / Cấu hình thông báo khu vực cho người dân.</summary>
     [HttpGet("citizen-incident-alerts")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCitizenIncidentAlerts(CancellationToken cancellationToken)
         => Ok(ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>.Ok(await _settingsService.GetCitizenIncidentAlertRecordAsync(cancellationToken)));

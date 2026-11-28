@@ -160,4 +160,19 @@ public class LocalizationTests
 
         Assert.True(missing.Count == 0, $"{missing.Count} Vietnamese messages have no English entry:\n" + string.Join("\n", missing));
     }
+
+    [Theory]
+    [InlineData("vi-VN", "Thời gian chờ giữa hai lần gửi SOS phải từ 0 đến 60 phút.")]
+    [InlineData("en-US", "The waiting time between SOS reports must be between 0 and 60 minutes.")]
+    public void ReportCooldownValidationMessage_IsLocalized(string culture, string expected)
+        => Assert.Equal(expected, TestHelpers.WithCulture(culture, () => LocalizationHelper.Localize(
+            "Thời gian chờ giữa hai lần gửi SOS phải từ {0} đến {1} phút.", 0, 60)));
+
+    [Theory]
+    [InlineData("vi-VN", "Bạn vừa gửi một yêu cầu cứu hộ đang được xử lý. Vui lòng chờ 10 phút hoặc gọi trực tiếp đường dây nóng nếu cần hỗ trợ thêm.")]
+    [InlineData("en-US", "You just sent a rescue request that is being processed. Please wait 10 minutes or call hotline directly if you need more help.")]
+    public void ReportCooldownRejectionMessage_FormatsConfiguredMinutes(string culture, string expected)
+        => Assert.Equal(expected, TestHelpers.WithCulture(culture, () => LocalizationHelper.Localize(
+            "Bạn vừa gửi một yêu cầu cứu hộ đang được xử lý. Vui lòng chờ {0} phút hoặc gọi trực tiếp đường dây nóng nếu cần hỗ trợ thêm.", 10)));
+
 }

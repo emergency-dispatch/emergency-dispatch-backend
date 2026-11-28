@@ -223,11 +223,14 @@ public class IncidentService : IIncidentService
             }
         }
 
-        // BR-CIT-01: mỗi người dùng / số điện thoại tối đa 1 sự cố đang hoạt động trong 3 phút
-        if (await _incidentRepository.HasRecentActiveIncidentAsync(userId, normalizedPhone, now.AddMinutes(-3), cancellationToken))
+        // BR-CIT-01: cooldown cấu hình theo tài khoản/số điện thoại; 0 chỉ tắt bước này, không bỏ blacklist/rate limit/idempotency.
+        var cooldownMinutes = (await _settingsService.GetCitizenIncidentAlertSettingsAsync(cancellationToken))?.ReportCooldownMinutes ?? 3;
+        if (cooldownMinutes > 0
+            && await _incidentRepository.HasRecentActiveIncidentAsync(userId, normalizedPhone, now.AddMinutes(-cooldownMinutes), cancellationToken))
         {
-            return ApiResponseDto<IncidentResponseDto>.TooManyRequestsResult(
-                "Bạn vừa gửi một yêu cầu cứu hộ đang được xử lý. Vui lòng chờ 3 phút hoặc gọi trực tiếp 114 / 115 nếu cần hỗ trợ thêm.");
+            return ApiResponseDto<IncidentResponseDto>.TooManyRequestsResult(LocalizationHelper.Localize(
+                "Bạn vừa gửi một yêu cầu cứu hộ đang được xử lý. Vui lòng chờ {0} phút hoặc gọi trực tiếp đường dây nóng nếu cần hỗ trợ thêm.",
+                cooldownMinutes));
         }
 
         // Kiểm tra khu vực phục vụ ở server (client có thể bị bỏ qua khi gọi thẳng API)
