@@ -146,12 +146,15 @@ public class CitizenIncidentAlertSettingsTests
     }
 
     [Fact]
-    public void PublicGetContract_UsesDataValuesAndCamelCaseCooldown_WhilePutRemainsAdminOnly()
+    public void AuthenticatedGetContract_UsesDataValuesAndCamelCaseCooldown_WhilePutRemainsAdminOnly()
     {
         var controller = typeof(EmergencyDispatch.API.Controllers.SettingsController);
         var get = controller.GetMethod(nameof(EmergencyDispatch.API.Controllers.SettingsController.GetCitizenIncidentAlerts))!;
         var put = controller.GetMethod(nameof(EmergencyDispatch.API.Controllers.SettingsController.UpdateCitizenIncidentAlerts))!;
-        Assert.Single(get.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), true));
+        Assert.Empty(get.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), true));
+        var controllerAuthorization = Assert.Single(controller.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
+        Assert.Null(controllerAuthorization.Roles);
         Assert.Empty(put.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), true));
         var authorization = Assert.Single(put.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true)
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());

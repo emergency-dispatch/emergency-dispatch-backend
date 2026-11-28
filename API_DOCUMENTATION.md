@@ -1745,7 +1745,7 @@ AI chỉ có độ tin cậy cao hoặc mới giao nhưng chưa được nhận 
 
 | API | Quyền | Mục đích |
 | --- | --- | --- |
-| `GET /api/settings/citizen-incident-alerts` | Công khai (Guest/Citizen/Operator/Admin) | Đọc cấu hình theo `SettingsRecordDto`: `data.values.enabled`, `data.values.reportCooldownMinutes` (0–60; mặc định 3) và metadata |
+| `GET /api/settings/citizen-incident-alerts` | Đã đăng nhập (Citizen/RescueStaff/Operator/Admin); Guest nhận 401 | Đọc cấu hình theo `SettingsRecordDto`: `data.values.enabled`, `data.values.reportCooldownMinutes` (0–60; mặc định 3) và metadata |
 | `PUT /api/settings/citizen-incident-alerts` | Admin | Gửi `{ "enabled": true, "reportCooldownMinutes": 3 }`; cooldown 0 tắt bước kiểm tra SOS liên tiếp, 1–60 là số phút. Ngoài khoảng trả 400, không lưu/phát sự kiện |
 | `GET /api/citizen-incident-alerts?pageIndex=1&pageSize=20` | Citizen | Danh sách thông báo đã gửi vào hộp thư của chính người gọi, trong `ApiResponseDto.data` dạng phân trang |
 | `GET /api/citizen-incident-alerts/{id}` | Citizen | Chi tiết thông báo an toàn; 404 nếu không thuộc người gọi |
@@ -1845,6 +1845,6 @@ Chưa sửa giao diện Web/Mobile. Hướng dẫn và kết quả kiểm thử:
 
 - `citizenIncidentAlerts.reportCooldownMinutes` là số nguyên 0–60, mặc định 3 khi JSON cũ chưa có trường. Không cần migration schema.
 - `enabled` chỉ điều khiển thông báo khu vực Citizen; cooldown vẫn áp dụng khi `enabled = false`. `0` chỉ bỏ kiểm tra `HasRecentActiveIncidentAsync`, không bỏ blacklist, HTTP rate limit, idempotency hoặc quy tắc gom báo cáo trùng.
-- GET `/api/settings/citizen-incident-alerts` công khai; PUT vẫn Admin. Đọc giá trị từ `data.values.reportCooldownMinutes`.
+- GET `/api/settings/citizen-incident-alerts` yêu cầu JWT đăng nhập, bao gồm Citizen; chưa đăng nhập trả 401. PUT vẫn chỉ Admin. Đọc giá trị từ `data.values.reportCooldownMinutes`.
 - Sau khi PUT thành công, giữ key `citizenIncidentAlerts`, audit và mốc `EnabledFromUtc` do server quản lý. `ReceiveSettingsChanged` với key này được phát một lần tới `Clients.All`, tương tự `serviceArea`. Các key quản trị khác vẫn chỉ Operator/Admin.
-- FE/Mobile tải cấu hình khi mở app, khi reconnect và khi nhận event có key `citizenIncidentAlerts`; cập nhật timer theo giá trị mới. Guest không có kết nối SignalR vẫn đọc được GET khi mở app/trước lần gửi tiếp theo. BE là nơi quyết định chặn và trả 429 kèm thông báo vi/en có số phút cấu hình.
+- FE/Mobile tải cấu hình sau khi đăng nhập, khi mở app với phiên hợp lệ, khi reconnect và khi nhận event có key `citizenIncidentAlerts`; cập nhật timer theo giá trị mới. Không gọi GET này cho Guest; HTTP 401 cần xử lý theo luồng đăng nhập. BE là nơi quyết định chặn và trả 429 kèm thông báo vi/en có số phút cấu hình.

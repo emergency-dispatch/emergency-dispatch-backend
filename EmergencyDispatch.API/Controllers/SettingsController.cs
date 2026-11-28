@@ -12,7 +12,7 @@ namespace EmergencyDispatch.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/settings")]
-[Authorize(Roles = "Admin,Operator")]
+[Authorize]
 public class SettingsController : ControllerBase
 {
     private readonly ISystemSettingsService _settingsService;
@@ -26,6 +26,7 @@ public class SettingsController : ControllerBase
     /// Cấu hình leo thang: ngưỡng ngày/đêm, khung giờ đêm, hệ số mở rộng bán kính, bán kính tối đa
     /// </summary>
     [HttpGet("escalation")]
+    [Authorize(Roles = "Admin,Operator")]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetEscalation(CancellationToken cancellationToken)
         => Ok(ApiResponseDto<SettingsRecordDto<EscalationSettingsDto>>.Ok(await _settingsService.GetEscalationRecordAsync(cancellationToken)));
@@ -41,6 +42,7 @@ public class SettingsController : ControllerBase
     /// Tham số điều phối: trọng số Load-Aware, các nấc bán kính tìm xe, thời gian hồi sức xe
     /// </summary>
     [HttpGet("dispatch")]
+    [Authorize(Roles = "Admin,Operator")]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<DispatchSettingsDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetDispatch(CancellationToken cancellationToken)
         => Ok(ApiResponseDto<SettingsRecordDto<DispatchSettingsDto>>.Ok(await _settingsService.GetDispatchRecordAsync(cancellationToken)));
@@ -78,6 +80,7 @@ public class SettingsController : ControllerBase
     /// Cấu hình tự gom báo cáo trùng (BR-07): bán kính (m), khung thời gian (phút), bật / tắt
     /// </summary>
     [HttpGet("duplicate-detection")]
+    [Authorize(Roles = "Admin,Operator")]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetDuplicateDetection(CancellationToken cancellationToken)
         => Ok(ApiResponseDto<SettingsRecordDto<DuplicateDetectionSettingsDto>>.Ok(await _settingsService.GetDuplicateDetectionRecordAsync(cancellationToken)));
@@ -90,13 +93,14 @@ public class SettingsController : ControllerBase
         => this.ToHttpResult(await _settingsService.UpdateDuplicateDetectionAsync(dto, GetCurrentUserId(), cancellationToken));
 
     [HttpGet("defaults")]
+    [Authorize(Roles = "Admin,Operator")]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsDefaultsDto>), StatusCodes.Status200OK)]
     public IActionResult GetDefaults() => Ok(ApiResponseDto<SettingsDefaultsDto>.Ok(new SettingsDefaultsDto()));
 
-    /// <summary>Area-only citizen announcement settings / Cấu hình thông báo khu vực cho người dân.</summary>
+    /// <summary>Authenticated SOS cooldown and announcement settings / Cấu hình thời gian chờ SOS và thông báo cho tài khoản đã đăng nhập.</summary>
     [HttpGet("citizen-incident-alerts")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetCitizenIncidentAlerts(CancellationToken cancellationToken)
         => Ok(ApiResponseDto<SettingsRecordDto<CitizenIncidentAlertSettingsDto>>.Ok(await _settingsService.GetCitizenIncidentAlertRecordAsync(cancellationToken)));
 

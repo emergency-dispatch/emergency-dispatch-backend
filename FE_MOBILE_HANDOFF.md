@@ -2057,10 +2057,10 @@ Sau khi có backend mới, trình giả lập GPS ở chế độ "Về trạm" 
 
 ## 65. Cập nhật 26/11/2026: Admin cấu hình thời gian chờ gửi SOS
 
-- GET công khai `/api/settings/citizen-incident-alerts`: lấy `data.values.reportCooldownMinutes` (số nguyên 0–60; JSON cũ mặc định 3). Áp dụng cho cả Citizen và Guest.
+- GET `/api/settings/citizen-incident-alerts` yêu cầu JWT đăng nhập, bao gồm Citizen/RescueStaff/Operator/Admin; Guest nhận 401. Lấy `data.values.reportCooldownMinutes` (số nguyên 0–60; JSON cũ mặc định 3). Client chỉ tải cấu hình sau khi có phiên đăng nhập hợp lệ.
 - PUT vẫn chỉ Admin: `{ "enabled": true, "reportCooldownMinutes": 3 }`. Ngoài khoảng 0–60 bị từ chối 400. `enabled` là công tắc thông báo khu vực, không tắt/bật cooldown.
 - `reportCooldownMinutes = 0`: bỏ bước giới hạn chờ giữa các báo cáo đang hoạt động của cùng tài khoản/số điện thoại. Blacklist, rate limit HTTP, idempotency và gom trùng vẫn áp dụng. Khi > 0, BE trả 429 nếu có báo cáo đang hoạt động trong cửa sổ đó, thông báo dùng số phút cấu hình và có vi/en.
-- Giữ sự kiện `ReceiveSettingsChanged` key `citizenIncidentAlerts`; BE gửi một lần tới mọi kết nối để Citizen nhận được. Khi nhận sự kiện, client gọi lại GET rồi cập nhật cooldown. Tải lại khi mở app/reconnect; Guest chưa nối SignalR vẫn đọc cấu hình qua GET. Không coi việc không nhận event là giá trị mặc định không thay đổi.
+- Giữ sự kiện `ReceiveSettingsChanged` key `citizenIncidentAlerts`; BE gửi một lần tới mọi kết nối để Citizen nhận được. Khi nhận sự kiện, client đã đăng nhập gọi lại GET rồi cập nhật cooldown. Tải lại sau đăng nhập, khi mở app với phiên hợp lệ hoặc reconnect. Guest không đọc được GET; xử lý 401 theo luồng đăng nhập. Không coi việc không nhận event là giá trị mặc định không thay đổi.
 - Không cần migration; không làm đổi mốc `EnabledFromUtc` khi chỉ chỉnh cooldown và giữ trạng thái Enabled. Không dùng cooldown để tính lại mốc phát cảnh báo hoặc gửi bù sự cố cũ.
 
 ## 66. Cập nhật 27/11/2026: hàng đợi Operator tối đa 200 mục + header X-Total-Count
