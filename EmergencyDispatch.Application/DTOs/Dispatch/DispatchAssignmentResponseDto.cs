@@ -55,6 +55,11 @@ public class DispatchAssignmentResponseDto
     /// Thuật toán gợi ý đã dùng khi phát lệnh, khoảng cách và ETA tại thời điểm đó (dữ liệu RQ2)
     /// </summary>
     public string? DispatchAlgorithm { get; set; }
+
+    /// <summary>
+    /// Lượt do tổ tự nhận khi tự phát hiện sự cố (không qua Operator phát lệnh)
+    /// </summary>
+    public bool IsSelfDispatched => DispatchAlgorithm == "FieldSelfDispatch";
     public double? DistanceKm { get; set; }
     public double? EstimatedArrivalMinutes { get; set; }
     public Guid? AssignedByUserId { get; set; }

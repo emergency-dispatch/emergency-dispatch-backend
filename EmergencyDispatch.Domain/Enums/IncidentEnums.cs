@@ -139,7 +139,8 @@ public enum IncidentSource
     Radio = 2,            // Bộ đàm của lực lượng tuần tra, bảo vệ
     Cctv = 3,             // Camera giám sát
     FieldObservation = 4, // Nhân sự trực tiếp nhìn thấy
-    Other = 5
+    Other = 5,
+    RescueTeam = 6        // Tổ cứu hộ phát hiện khi đang ở ngoài và tự nhận xử lý tại chỗ (POST /api/dispatch/field-report)
 }
 
 /// <summary>
@@ -193,5 +194,6 @@ public enum AuditAction
     LinkedReportsRestored = 30,    // Sự cố gốc bị hủy → các báo cáo đã gom quay lại hàng đợi
     AutoDispatched = 31,           // AI đủ tin cậy → hệ thống tự xác minh và điều xe
     AutoDispatchSkipped = 32,      // AI đủ tin cậy nhưng không tự điều (nghi trùng, hết xe...) → Operator
-    StaleFlagged = 33              // Chưa được xác minh quá hạn → hệ thống đánh dấu cần rà soát và cảnh báo (không tự hủy)
+    StaleFlagged = 33,             // Chưa được xác minh quá hạn → hệ thống đánh dấu cần rà soát và cảnh báo (không tự hủy)
+    FieldReportedByTeam = 34       // Tổ cứu hộ phát hiện sự cố ngoài hiện trường, báo trung tâm và tự nhận xử lý
 }

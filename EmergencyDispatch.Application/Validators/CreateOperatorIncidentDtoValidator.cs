@@ -30,7 +30,7 @@ public class CreateOperatorIncidentDtoValidator : AbstractValidator<CreateOperat
             .MaximumLength(4000).WithMessage("Mô tả không được vượt quá 4000 ký tự.");
 
         RuleFor(x => x.Source)
-            .Must(s => s != IncidentSource.CitizenApp && Enum.IsDefined(s))
+            .Must(s => s != IncidentSource.CitizenApp && s != IncidentSource.RescueTeam && Enum.IsDefined(s))
             .WithMessage("Chọn kênh biết tin: PhoneCall, Radio, Cctv, FieldObservation hoặc Other.");
 
         RuleFor(x => x.EventType)

@@ -806,6 +806,269 @@ public class DispatchService : IDispatchService
     }
 
     /// <summary>
+    /// Ghi trong DispatchAssignment.DispatchAlgorithm khi tổ tự nhận sự cố do chính mình phát hiện
+    /// </summary>
+    public const string FieldSelfDispatchAlgorithm = "FieldSelfDispatch";
+
+    public const string FieldReportNoTeamMessage = "Bạn chưa thuộc tổ cứu hộ nào nên không thể nhận xử lý sự cố.";
+    public const string FieldReportTeamBusyMessage = "Tổ \"{0}\" đang thực hiện nhiệm vụ khác. Hãy báo trung tâm qua yêu cầu hiện trường để Operator điều tổ khác.";
+    public const string FieldReportNoUnitMessage = "Tổ \"{0}\" không có xe đang sẵn sàng để nhận xử lý sự cố.";
+
+    /// <summary>
+    /// Nhân viên cứu hộ phát hiện sự cố ngoài hiện trường: tạo sự cố (nguồn RescueTeam, xác minh ngay theo đánh giá của tổ),
+    /// giao luôn cho tổ của người báo với xe đang sẵn sàng của tổ, lượt vào thẳng OnScene, xe chuyển "Đang ở hiện trường".
+    /// Operator trạm + Admin nhận thông báo; các luồng khác giữ nguyên (điều thêm tổ, chi viện, nghiệm thu, hủy)
+    /// </summary>
+    public async Task<ApiResponseDto<FieldIncidentReportResultDto>> ReportFieldIncidentAsync(
+        FieldIncidentReportDto dto,
+        Guid staffId,
+        CancellationToken cancellationToken = default)
+    {
+        var errors = new List<string>();
+        if (dto.Latitude is < -90 or > 90 || dto.Longitude is < -180 or > 180 || (dto.Latitude == 0 && dto.Longitude == 0))
+        {
+            errors.Add(LocalizationHelper.Localize("Tọa độ sự cố không hợp lệ."));
+        }
+        if (string.IsNullOrWhiteSpace(dto.LocationAddress))
+        {
+            errors.Add(LocalizationHelper.Localize("Địa chỉ sự cố không được để trống."));
+        }
+        if (dto.Severity is not (SeverityLevel.Level1 or SeverityLevel.Level2 or SeverityLevel.Level3))
+        {
+            errors.Add(LocalizationHelper.Localize("Chọn mức độ sự cố Level1–Level3."));
+        }
+        if ((dto.Title?.Trim().Length ?? 0) > 300 || (dto.Description?.Trim().Length ?? 0) > 4000)
+        {
+            errors.Add(LocalizationHelper.Localize("Tiêu đề tối đa 300 ký tự, mô tả tối đa 4000 ký tự."));
+        }
+        var mediaUrls = (dto.MediaUrls ?? new List<string>()).Where(u => !string.IsNullOrWhiteSpace(u)).Select(u => u.Trim()).ToList();
+        if (mediaUrls.Count > 10 || mediaUrls.Any(u => !MediaUrlPolicy.IsTrusted(u, _configuration)))
+        {
+            errors.Add(LocalizationHelper.Localize("Ảnh / video hiện trường phải tải lên qua hệ thống (tối đa 10 tệp)."));
+        }
+        if (errors.Count > 0)
+        {
+            return ApiResponseDto<FieldIncidentReportResultDto>.FailureResult(errors, LocalizationHelper.Localize("Dữ liệu sự cố không hợp lệ."));
+        }
+
+        var eventType = dto.EventType;
+        var typeCode = dto.EventType.ToString();
+        if (!string.IsNullOrWhiteSpace(dto.IncidentTypeCode))
+        {
+            var resolved = await IncidentService.ResolveIncidentTypeAsync(_typeCatalog, dto.IncidentTypeCode, cancellationToken);
+            if (resolved.Error != null)
+            {
+                return ApiResponseDto<FieldIncidentReportResultDto>.FailureResult(resolved.Error);
+            }
+            eventType = resolved.Category!.Value;
+            typeCode = resolved.Code!;
+        }
+        else if (eventType is not (IncidentEventType.FireExplosion or IncidentEventType.TrafficAccident or IncidentEventType.Other))
+        {
+            eventType = IncidentEventType.Other;
+            typeCode = eventType.ToString();
+        }
+
+        var staff = await _userRepository.GetByIdAsync(staffId);
+        if (staff is not { Role: UserRole.RescueStaff, Status: UserStatus.Active } || !staff.StationId.HasValue)
+        {
+            return ApiResponseDto<FieldIncidentReportResultDto>.ForbiddenResult("Chỉ nhân viên cứu hộ đang công tác tại trạm mới được báo sự cố hiện trường.");
+        }
+        if (await _userRepository.GetTeamIdAsync(staffId, cancellationToken) is not Guid teamId)
+        {
+            return ApiResponseDto<FieldIncidentReportResultDto>.FailureResult(LocalizationHelper.Localize(FieldReportNoTeamMessage));
+        }
+
+        // Tổ phải rảnh (không có lượt đang chạy) và có xe đang sẵn sàng; xe chỉ định phải thuộc tổ
+        var allUnits = (await _rescueUnitRepository.GetAllWithStationAsync()).Where(u => !u.IsDeleted).ToList();
+        var activeAll = await _assignmentRepository.GetAllActiveAsync();
+        var teamPool = await LoadTeamPoolAsync(allUnits, activeAll, cancellationToken);
+        var teamName = teamPool.NameOf(teamId);
+        if (teamPool.BusyTeams.Contains(teamId))
+        {
+            return ApiResponseDto<FieldIncidentReportResultDto>.ConflictResult(LocalizationHelper.Localize(FieldReportTeamBusyMessage, teamName));
+        }
+
+        var busyUnitIds = activeAll.Select(a => a.RescueUnitId).ToHashSet();
+        var candidates = allUnits
+            .Where(u => u.StationTeamId == teamId && u.Status == RescueUnitStatus.Available && !busyUnitIds.Contains(u.Id))
+            .Where(u => dto.RescueUnitId == null || u.Id == dto.RescueUnitId)
+            .OrderBy(u => CalculateDistanceKm(dto.Latitude, dto.Longitude, u.CurrentLat, u.CurrentLng))
+            .ToList();
+        var picked = candidates.FirstOrDefault();
+        if (picked == null || !await _rescueUnitRepository.TryReserveForDispatchAsync(picked.Id, cancellationToken))
+        {
+            return ApiResponseDto<FieldIncidentReportResultDto>.FailureResult(LocalizationHelper.Localize(FieldReportNoUnitMessage, teamName));
+        }
+        var unit = await _rescueUnitRepository.GetByIdWithDetailsAsync(picked.Id) ?? picked;
+
+        var now = DateTime.UtcNow;
+        var actorRole = UserRole.RescueStaff.ToString();
+        var station = unit.Station;
+        var title = !string.IsNullOrWhiteSpace(dto.Title) ? dto.Title.Trim() : $"Sự cố tại {dto.LocationAddress.Trim()}";
+        var incident = new Incident
+        {
+            ResponsibleStationId = staff.StationId,
+            Title = title,
+            Description = dto.Description?.Trim() ?? string.Empty,
+            Latitude = dto.Latitude,
+            Longitude = dto.Longitude,
+            LocationAddress = dto.LocationAddress.Trim(),
+            ReporterName = staff.FullName,
+            ReporterPhone = staff.PhoneNumber,
+            Source = IncidentSource.RescueTeam,
+            EventType = eventType,
+            IncidentTypeCode = typeCode,
+            Severity = dto.Severity,
+            Status = IncidentStatus.InProgress,
+            VerifiedByUserId = staffId,
+            VerifiedAt = now,
+            OperatorNotes = $"Tổ {teamName} ({staff.FullName}) phát hiện tại hiện trường và tự nhận xử lý bằng xe {unit.PlateNumber}.",
+            DispatchTimeMs = 0,
+            CreatedAt = now
+        };
+        foreach (var url in mediaUrls)
+        {
+            incident.MediaItems.Add(new IncidentMedia
+            {
+                MediaUrl = url,
+                MediaType = AudioEvidence.LegacyType(url) == MediaType.Video ? MediaType.Video : MediaType.Photo,
+                CreatedAt = now
+            });
+        }
+
+        incident.StatusHistories.Add(new IncidentStatusHistory
+        {
+            IncidentId = incident.Id,
+            OldStatus = IncidentStatus.Pending,
+            NewStatus = IncidentStatus.InProgress,
+            ChangedByUserId = staffId,
+            ChangedByRole = actorRole,
+            Notes = $"Tổ {teamName} báo sự cố phát hiện tại hiện trường và nhận xử lý ({dto.Severity}).",
+            ChangedAt = now
+        });
+        incident.AuditTrails.Add(new IncidentAuditTrail
+        {
+            IncidentId = incident.Id,
+            ActorId = staffId,
+            ActorRole = actorRole,
+            Action = AuditAction.FieldReportedByTeam,
+            Description = $"{staff.FullName} (tổ {teamName}) phát hiện sự cố, đánh giá {dto.Severity}, {typeCode}; tổ tự nhận xử lý bằng xe {unit.PlateNumber}",
+            NewStateJson = JsonSerializer.Serialize(new
+            {
+                status = IncidentStatus.InProgress.ToString(),
+                source = IncidentSource.RescueTeam.ToString(),
+                severity = dto.Severity.ToString(),
+                incidentType = typeCode,
+                teamId,
+                unitId = unit.Id,
+                plate = unit.PlateNumber,
+                mediaCount = incident.MediaItems.Count
+            }),
+            Timestamp = now
+        });
+
+        var assignment = new DispatchAssignment
+        {
+            IncidentId = incident.Id,
+            RescueUnitId = unit.Id,
+            StationTeamId = teamId,
+            DispatchedAt = now,
+            AcceptedAt = now,
+            EnRouteAt = now,
+            ArrivedAt = now,
+            Status = DispatchAssignmentStatus.OnScene,
+            AssignedByUserId = staffId,
+            DispatchAlgorithm = FieldSelfDispatchAlgorithm,
+            DistanceKm = 0,
+            EstimatedArrivalMinutes = 0,
+            Notes = "Tổ tự phát hiện và nhận xử lý tại hiện trường"
+        };
+        // Người báo = người nhận lệnh (nguồn GPS ưu tiên của xe); lượt bỏ qua bước chờ nhận / di chuyển
+        assignment.StatusHistories.Add(new AssignmentStatusHistory
+        {
+            AssignmentId = assignment.Id,
+            OldStatus = DispatchAssignmentStatus.Dispatched,
+            NewStatus = DispatchAssignmentStatus.Accepted,
+            ChangedByUserId = staffId,
+            Notes = "Tổ tự nhận sự cố do mình phát hiện",
+            ChangedAt = now
+        });
+        assignment.StatusHistories.Add(new AssignmentStatusHistory
+        {
+            AssignmentId = assignment.Id,
+            OldStatus = DispatchAssignmentStatus.Accepted,
+            NewStatus = DispatchAssignmentStatus.OnScene,
+            ChangedByUserId = staffId,
+            Notes = "Đang xử lý tại hiện trường",
+            ChangedAt = now
+        });
+        incident.DispatchAssignments.Add(assignment);
+
+        try
+        {
+            await _incidentRepository.AddAsync(incident);
+        }
+        catch
+        {
+            await _rescueUnitRepository.ReleaseReservationAsync(unit.Id, cancellationToken);
+            throw;
+        }
+
+        // Xe đang ở hiện trường cùng tổ
+        unit.Status = RescueUnitStatus.OnScene;
+        unit.CoolDownUntil = null;
+        unit.UpdatedAt = now;
+        await _rescueUnitRepository.SaveStatusAsync(unit, cancellationToken);
+        unit.UpdateLocation(dto.Latitude, dto.Longitude);
+        await _rescueUnitRepository.SaveLocationAsync(unit.Id, dto.Latitude, dto.Longitude, now, cancellationToken);
+
+        _logger.LogInformation("Tổ {TeamId} ({Staff}) báo sự cố hiện trường {IncidentId} và tự nhận xử lý bằng xe {Plate}",
+            teamId, staffId, incident.Id, unit.PlateNumber);
+
+        incident.ResponsibleStation ??= station;
+        var assignmentDto = MapToAssignmentDto(assignment, incident, unit);
+        assignmentDto.StationTeamName ??= teamName;
+        var crewIds = await CrewIdsAsync(unit, cancellationToken, teamId);
+        await _realtimeNotifier.IncidentCreatedAsync(MapIncidentToSlimDto(incident), cancellationToken);
+        await _realtimeNotifier.AssignmentStatusChangedAsync(assignmentDto, crewIds, cancellationToken);
+        await PublishUnitStatusAsync(unit, RescueUnitStatus.Available, cancellationToken);
+
+        // Trung tâm biết tổ đang xử lý sự cố bên ngoài; đồng đội trong tổ biết tổ đã nhận việc
+        var commandCenter = await CommandCenterIdsAsync(incident.ResponsibleStationId, unit.StationId);
+        await _notificationService.NotifyUsersAsync(commandCenter, new NotificationRequest
+        {
+            Type = NotificationType.NewIncident,
+            Title = new LocalizedText("TỔ CỨU HỘ BÁO SỰ CỐ HIỆN TRƯỜNG {0}", dto.Severity),
+            Message = new LocalizedText("[{0}] {1} ({2}) phát hiện \"{3}\" tại {4} và đang xử lý tại hiện trường bằng xe {5}.",
+                incident.Code, teamName, staff.FullName, incident.Title, incident.LocationAddress, unit.PlateNumber),
+            IncidentId = incident.Id,
+            Data = new { assignmentId = assignment.Id, teamId, rescueUnitId = unit.Id, source = IncidentSource.RescueTeam.ToString() },
+            HighPriority = dto.Severity == SeverityLevel.Level3
+        }, cancellationToken);
+        var teammates = crewIds.Where(id => id != staffId).ToList();
+        if (teammates.Count > 0)
+        {
+            await _notificationService.NotifyUsersAsync(teammates, new NotificationRequest
+            {
+                Type = NotificationType.JobAssigned,
+                Title = new LocalizedText("TỔ ĐÃ NHẬN SỰ CỐ HIỆN TRƯỜNG"),
+                Message = new LocalizedText("[{0}] {1} báo sự cố \"{2}\" tại {3}. Tổ đang xử lý bằng xe {4}.",
+                    incident.Code, staff.FullName, incident.Title, incident.LocationAddress, unit.PlateNumber),
+                IncidentId = incident.Id,
+                Data = new { assignmentId = assignment.Id }
+            }, cancellationToken);
+        }
+
+        return ApiResponseDto<FieldIncidentReportResultDto>.SuccessResult(new FieldIncidentReportResultDto
+        {
+            IncidentId = incident.Id,
+            IncidentCode = incident.Code,
+            Assignment = assignmentDto
+        }, LocalizationHelper.Localize("Đã báo sự cố cho trung tâm. Tổ {0} đang xử lý tại hiện trường.", teamName));
+    }
+
+    /// <summary>
     /// Vai trò ghi trong lịch sử / audit khi hệ thống tự thao tác (VD tự rút lệnh tổ không phản hồi)
     /// </summary>
     public const string SystemActorRole = "System";
@@ -2378,7 +2641,10 @@ public class DispatchService : IDispatchService
             ResponsibleStationName = incident.ResponsibleStation?.Name,
             IsOutOfServiceArea = incident.IsOutOfServiceArea,
             DistanceOutsideAreaKm = incident.DistanceOutsideAreaKm,
-            StaleFlaggedAt = incident.StaleFlaggedAt
+            StaleFlaggedAt = incident.StaleFlaggedAt,
+            Source = incident.Source,
+            EventType = incident.EventType,
+            IncidentTypeCode = incident.IncidentTypeCode
         };
     }
 

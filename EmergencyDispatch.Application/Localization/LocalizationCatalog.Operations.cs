@@ -594,6 +594,20 @@ public static partial class LocalizationCatalog
         { "Ngôn ngữ chỉ nhận 'vi' hoặc 'en'.", "Language must be 'vi' or 'en'." },
         { "Ngôn ngữ không được để trống", "Language is required" },
         { "Đã cập nhật ngôn ngữ.", "Language updated." },
+        { "Tọa độ sự cố không hợp lệ.", "Invalid incident coordinates." },
+        { "Địa chỉ sự cố không được để trống.", "Incident address is required." },
+        { "Chọn mức độ sự cố Level1–Level3.", "Choose an incident severity from Level1 to Level3." },
+        { "Tiêu đề tối đa 300 ký tự, mô tả tối đa 4000 ký tự.", "Title is limited to 300 characters and description to 4000 characters." },
+        { "Ảnh / video hiện trường phải tải lên qua hệ thống (tối đa 10 tệp).", "Scene photos / videos must be uploaded through the system (up to 10 files)." },
+        { "Chỉ nhân viên cứu hộ đang công tác tại trạm mới được báo sự cố hiện trường.", "Only active rescue staff assigned to a station can report field incidents." },
+        { "Bạn chưa thuộc tổ cứu hộ nào nên không thể nhận xử lý sự cố.", "You are not on any rescue team, so you cannot take on the incident." },
+        { "Tổ \"{0}\" đang thực hiện nhiệm vụ khác. Hãy báo trung tâm qua yêu cầu hiện trường để Operator điều tổ khác.", "Team \"{0}\" is on another mission. Send a field request so the operator can dispatch another team." },
+        { "Tổ \"{0}\" không có xe đang sẵn sàng để nhận xử lý sự cố.", "Team \"{0}\" has no available vehicle to take on the incident." },
+        { "TỔ CỨU HỘ BÁO SỰ CỐ HIỆN TRƯỜNG {0}", "RESCUE TEAM REPORTED A FIELD INCIDENT {0}" },
+        { "[{0}] {1} ({2}) phát hiện \"{3}\" tại {4} và đang xử lý tại hiện trường bằng xe {5}.", "[{0}] {1} ({2}) found \"{3}\" at {4} and is handling it on scene with vehicle {5}." },
+        { "TỔ ĐÃ NHẬN SỰ CỐ HIỆN TRƯỜNG", "YOUR TEAM TOOK ON A FIELD INCIDENT" },
+        { "[{0}] {1} báo sự cố \"{2}\" tại {3}. Tổ đang xử lý bằng xe {4}.", "[{0}] {1} reported \"{2}\" at {3}. The team is handling it with vehicle {4}." },
+        { "Đã báo sự cố cho trung tâm. Tổ {0} đang xử lý tại hiện trường.", "The incident has been reported to the command center. Team {0} is handling it on scene." },
         { "Sự cố vừa được xác minh, không tự hủy.", "The incident has just been verified and will not be auto-cancelled." }
     };
 }

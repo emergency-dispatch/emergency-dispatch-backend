@@ -1846,4 +1846,127 @@ public class DispatchServiceTests
         Assert.Equal(2, sent.Count);
         Assert.Contains(u.PlateNumber, sent[1].Message.Vi);
     }
+
+    // ===================== Tổ báo sự cố hiện trường =====================
+    private (User Staff, RescueUnit Unit, StationTeam Team) FieldCrew()
+    {
+        var unit = Unit(RescueUnitType.FireTruck, 3, teamed: false);
+        var staff = Staffer(_stationA);
+        staff.PhoneNumber = "0901234567";
+        var mate = Staffer(_stationA);
+        var team = CrewOf(unit, staff, mate);
+        _users.Setup(x => x.GetByIdAsync(staff.Id)).ReturnsAsync(staff);
+        return (staff, unit, team);
+    }
+
+    private static FieldIncidentReportDto FieldReport(Guid? unitId = null) => new()
+    {
+        Title = "Cháy xe máy",
+        Latitude = Lat,
+        Longitude = Lng,
+        LocationAddress = "Nguyễn Văn Linh, Quận 7",
+        EventType = IncidentEventType.FireExplosion,
+        Severity = SeverityLevel.Level2,
+        RescueUnitId = unitId
+    };
+
+    [Fact]
+    public async Task FieldReport_CreatesVerifiedIncident_TeamOnSceneWithoutAcceptStep()
+    {
+        var (staff, unit, team) = FieldCrew();
+        Incident? saved = null;
+        _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
+
+        var r = await _svc.ReportFieldIncidentAsync(FieldReport(), staff.Id);
+
+        Assert.True(r.Success, r.Message);
+        Assert.NotNull(saved);
+        Assert.Equal(IncidentSource.RescueTeam, saved!.Source);
+        Assert.Equal(IncidentStatus.InProgress, saved.Status);
+        Assert.Equal(_stationA, saved.ResponsibleStationId);
+        Assert.NotNull(saved.VerifiedAt);
+        Assert.Equal(staff.FullName, saved.ReporterName);
+        Assert.Null(saved.ReportedByUserId);
+        Assert.Contains(saved.AuditTrails, a => a.Action == AuditAction.FieldReportedByTeam);
+        var assignment = Assert.Single(saved.DispatchAssignments);
+        Assert.Equal(DispatchAssignmentStatus.OnScene, assignment.Status);
+        Assert.Equal(team.Id, assignment.StationTeamId);
+        Assert.Equal(staff.Id, assignment.AssignedByUserId);
+        Assert.Contains(assignment.StatusHistories, h => h.NewStatus == DispatchAssignmentStatus.Accepted && h.ChangedByUserId == staff.Id);
+        Assert.True(r.Data!.Assignment.IsSelfDispatched);
+        Assert.Equal(RescueUnitStatus.OnScene, unit.Status);
+        _units.Verify(x => x.SaveStatusAsync(unit, It.IsAny<CancellationToken>()), Times.Once);
+        _units.Verify(x => x.SaveLocationAsync(unit.Id, Lat, Lng, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+        // Không bật còi / popup nhận lệnh cho tổ: tổ đã tự nhận
+        _rt.Verify(n => n.JobAssignedAsync(It.IsAny<DispatchAssignmentResponseDto>(), It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _rt.Verify(n => n.IncidentCreatedAsync(It.Is<EmergencyDispatch.Application.DTOs.Incident.IncidentResponseDto>(d => d.IsFieldReportedByTeam), It.IsAny<CancellationToken>()), Times.Once);
+        _notify.Verify(n => n.NotifyUsersAsync(It.IsAny<IReadOnlyCollection<Guid>>(),
+            It.Is<NotificationRequest>(m => m.Title.Vi.StartsWith("TỔ CỨU HỘ BÁO SỰ CỐ HIỆN TRƯỜNG")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task FieldReport_TeamBusyOnAnotherMission_IsConflict()
+    {
+        var (staff, unit, team) = FieldCrew();
+        _active.Add(new DispatchAssignment { RescueUnitId = unit.Id, StationTeamId = team.Id, Status = DispatchAssignmentStatus.EnRoute });
+
+        var r = await _svc.ReportFieldIncidentAsync(FieldReport(), staff.Id);
+
+        Assert.False(r.Success);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task FieldReport_StaffWithoutTeam_OrOtherTeamsUnit_IsRejected()
+    {
+        var (staff, _, _) = FieldCrew();
+        var loner = Staffer(_stationA);
+        _users.Setup(x => x.GetByIdAsync(loner.Id)).ReturnsAsync(loner);
+        var otherTeamsUnit = Unit(RescueUnitType.Ambulance, 1);
+
+        var noTeam = await _svc.ReportFieldIncidentAsync(FieldReport(), loner.Id);
+        var wrongUnit = await _svc.ReportFieldIncidentAsync(FieldReport(otherTeamsUnit.Id), staff.Id);
+
+        Assert.False(noTeam.Success);
+        Assert.False(wrongUnit.Success);
+        _incidents.Verify(i => i.AddAsync(It.IsAny<Incident>()), Times.Never);
+        _units.Verify(x => x.TryReserveForDispatchAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task FieldReport_InvalidSeverity_IsRejected()
+    {
+        var (staff, _, _) = FieldCrew();
+        var dto = FieldReport();
+        dto.Severity = SeverityLevel.Unclassified;
+
+        var r = await _svc.ReportFieldIncidentAsync(dto, staff.Id);
+
+        Assert.False(r.Success);
+    }
+
+    [Fact]
+    public async Task FieldReport_OperatorCanStillDispatchMoreTeams()
+    {
+        var (staff, _, _) = FieldCrew();
+        Incident? saved = null;
+        _incidents.Setup(i => i.AddAsync(It.IsAny<Incident>())).Callback<Incident>(i => saved = i).ReturnsAsync((Incident i) => i);
+        await _svc.ReportFieldIncidentAsync(FieldReport(), staff.Id);
+        _incidentById[saved!.Id] = saved;
+        _incidents.Setup(i => i.GetIncidentWithDetailsAsync(saved.Id, It.IsAny<CancellationToken>())).ReturnsAsync(saved);
+        var support = Unit(RescueUnitType.Ambulance, 2);
+
+        // Level 2 giữ quy tắc cũ: thêm tổ thứ hai phải ghi lý do (hoặc theo yêu cầu chi viện của tổ hiện trường)
+        var r = await _svc.AssignUnitAsync(new AssignDispatchDto
+        {
+            IncidentId = saved.Id,
+            RescueUnitIds = new List<Guid> { support.Id },
+            AllowExtraUnits = true,
+            Notes = "Tổ hiện trường cần thêm xe cứu thương"
+        }, _operatorId);
+
+        Assert.True(r.Success, r.Message);
+        Assert.Equal(IncidentStatus.InProgress, saved.Status);
+        Assert.Equal(2, saved.DispatchAssignments.Count(a => a.IsActive));
+    }
 }

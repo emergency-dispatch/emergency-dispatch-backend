@@ -114,9 +114,15 @@ public class IncidentResponseDto
     public IncidentEventType EventType { get; set; }
 
     /// <summary>
-    /// CitizenApp = SOS qua ứng dụng; giá trị khác = Operator tự tạo (PhoneCall, Radio, Cctv, FieldObservation, Other)
+    /// CitizenApp = SOS qua ứng dụng; RescueTeam = tổ cứu hộ phát hiện và tự nhận xử lý;
+    /// giá trị khác = Operator tự tạo (PhoneCall, Radio, Cctv, FieldObservation, Other)
     /// </summary>
     public IncidentSource Source { get; set; }
+
+    /// <summary>
+    /// Sự cố do tổ cứu hộ phát hiện ngoài hiện trường và tự nhận xử lý (Source = RescueTeam)
+    /// </summary>
+    public bool IsFieldReportedByTeam => Source == IncidentSource.RescueTeam;
 
     // Thông tin hủy (tách khỏi VerifiedAt / OperatorNotes)
     public CancellationReason? CancellationReason { get; set; }

@@ -42,6 +42,11 @@ public interface IDispatchService
     Task<ApiResponseDto<List<DispatchAssignmentResponseDto>>> AutoAssignAsync(AssignDispatchDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Tổ cứu hộ phát hiện sự cố ngoài hiện trường: báo trung tâm và tự nhận xử lý (lượt OnScene, xe "Đang ở hiện trường")
+    /// </summary>
+    Task<ApiResponseDto<FieldIncidentReportResultDto>> ReportFieldIncidentAsync(FieldIncidentReportDto dto, Guid staffId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Quy tắc loại xe áp dụng cho loại sự cố của sự cố này (rỗng = chưa có quy tắc)
     /// </summary>
     Task<IReadOnlyList<EmergencyDispatch.Domain.Entities.IncidentTypeUnitRule>> GetUnitRulesAsync(EmergencyDispatch.Domain.Entities.Incident incident, CancellationToken cancellationToken);

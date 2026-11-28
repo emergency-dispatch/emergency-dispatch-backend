@@ -2081,3 +2081,93 @@ Sau khi có backend mới, trình giả lập GPS ở chế độ "Về trạm" 
 ### Mobile
 
 Không dùng endpoint này, không cần làm gì.
+
+## 64. Cập nhật 28/11/2026: tổ cứu hộ báo sự cố hiện trường và tự nhận xử lý
+
+### Nghiệp vụ
+
+Nhân viên cứu hộ đang ở ngoài (tuần tra, trên đường về trạm...) phát hiện sự cố thì bấm "Báo sự cố hiện trường":
+- Sự cố được gửi lên trung tâm.
+- **Tổ của người báo nhận xử lý luôn**, xe của tổ chuyển sang **"Đang ở hiện trường"**.
+- Operator của trạm thấy ngay sự cố này và biết tổ đó đang bận xử lý sự cố bên ngoài.
+
+Các tính năng cũ giữ nguyên trên sự cố này: Operator điều thêm tổ, tổ gửi yêu cầu chi viện hoặc bổ sung thiết bị, tổ nghiệm thu, Operator hủy sự cố hoặc thu hồi xe.
+
+### API mới: `POST /api/dispatch/field-report` (chỉ RescueStaff)
+
+```json
+{
+  "title": "Cháy xe máy",
+  "description": "Xe máy cháy giữa đường, chưa có người bị thương",
+  "latitude": 10.7335,
+  "longitude": 106.7192,
+  "locationAddress": "Nguyễn Văn Linh, Quận 7",
+  "eventType": "FireExplosion",
+  "incidentTypeCode": null,
+  "severity": "Level2",
+  "rescueUnitId": null,
+  "mediaUrls": ["https://res.cloudinary.com/..."]
+}
+```
+
+- Các trường bắt buộc: `latitude`, `longitude`, `locationAddress` và `severity` (Level1–Level3).
+- `eventType` và `incidentTypeCode` có ý nghĩa như khi Operator tạo sự cố.
+- Tọa độ thường lấy từ GPS của điện thoại hoặc trình duyệt.
+- `rescueUnitId` để trống thì backend chọn xe **đang sẵn sàng** gần nhất của tổ. Nếu truyền vào thì xe đó phải thuộc tổ của người báo.
+- `mediaUrls` là ảnh hoặc video đã tải lên qua API media hiện có, tối đa 10 tệp.
+
+Kết quả thành công:
+
+```json
+{ "incidentId": "...", "incidentCode": "INC-...", "assignment": { "...": "DispatchAssignmentResponseDto, status = OnScene, isSelfDispatched = true" } }
+```
+
+Các lỗi có thể trả về:
+
+| Mã | Khi nào |
+|---|---|
+| 400 | Thiếu hoặc sai dữ liệu. Nhân viên chưa thuộc tổ nào. Tổ không có xe sẵn sàng. Truyền xe của tổ khác. Ảnh không được tải lên qua hệ thống |
+| 403 | Không phải RescueStaff đang hoạt động, hoặc chưa được gán trạm |
+| 409 | Tổ đang làm nhiệm vụ khác. Khi đó dùng yêu cầu hiện trường để Operator điều tổ khác |
+
+### Dữ liệu backend tạo ra
+
+- **Sự cố:**
+  - `source = "RescueTeam"`, giá trị enum mới bằng 6. Có cờ `isFieldReportedByTeam = true`.
+  - `status = InProgress`, xác minh ngay theo đánh giá của tổ.
+  - `responsibleStationId` là trạm của người báo.
+  - `reporterName` và `reporterPhone` là của nhân viên. `reportedByUserId = null`, nên nhân viên không nhận các thông báo dành cho người dân.
+- **Lượt phân công:**
+  - `status = OnScene`, `dispatchAlgorithm = "FieldSelfDispatch"`, cờ `isSelfDispatched = true`.
+  - `assignedByUserId` là nhân viên báo.
+  - Lịch sử ghi lần lượt Dispatched → Accepted → OnScene, cùng thời điểm. Người báo được tính là người nhận lệnh, nên cũng là nguồn GPS ưu tiên của xe (§63).
+- **Xe:** `status = OnScene`, vị trí đặt bằng vị trí sự cố.
+
+### Realtime và thông báo
+
+- `ReceiveNewIncident`: sự cố mới, có `source` và `isFieldReportedByTeam`.
+- `ReceiveAssignmentStatus` với lượt `OnScene`: gửi cho Operator và cho cả tổ.
+- `ReceiveRescueUnitStatus` với xe `OnScene`.
+- **Không** phát `ReceiveJobAssigned`, nên tổ không bị bật còi hay popup nhận lệnh.
+- Operator của trạm và Admin nhận thông báo "TỔ CỨU HỘ BÁO SỰ CỐ HIỆN TRƯỜNG Level2", nội dung: "[mã] Tổ X (tên người báo) phát hiện "…" tại … và đang xử lý tại hiện trường bằng xe …". Mức Level3 thì `highPriority = true`.
+- Các thành viên khác của tổ nhận "TỔ ĐÃ NHẬN SỰ CỐ HIỆN TRƯỜNG".
+
+### Web (`emergency-dispatch-frontend`)
+
+- **Staff:** thêm nút "Báo sự cố hiện trường" trên màn hình staff, chỉ hiện khi tổ đang rảnh.
+  - Form gồm: loại sự cố (lấy từ `GET /api/incident-types`), mức độ Level1–3, mô tả, địa chỉ (lấy GPS rồi tra ngược địa chỉ như form SOS), ảnh hoặc video (dùng API upload hiện có), và chọn xe nếu tổ có nhiều xe.
+  - Gửi `POST /api/dispatch/field-report`. Thành công thì mở thẳng màn hình nhiệm vụ ở bước **"Đang ở hiện trường"**, dùng `assignment` trong kết quả hoặc tải lại `GET /api/dispatch/my-assignments`.
+  - Từ đó các nút cũ dùng như bình thường: yêu cầu chi viện, nghiệm thu.
+- **Operator:**
+  - Thêm nhãn **"Tổ tự phát hiện"** khi `source === "RescueTeam"` (hoặc `isFieldReportedByTeam`) cho sự cố trong danh sách, chi tiết sự cố và bản đồ.
+  - Ở lượt phân công có `isSelfDispatched`, ghi "Tổ X tự nhận, đang xử lý tại hiện trường" thay cho "Operator … phát lệnh".
+  - Sự cố đến ở trạng thái `InProgress`. Hàng đợi chờ xác minh không cần hiện nó; nó nằm ở danh sách đang xử lý.
+  - Nhận `ReceiveNewIncident` có `source = RescueTeam` thì hiện toast hoặc âm báo nhẹ (khác còi SOS) và cập nhật danh sách.
+  - Nút "Điều thêm tổ" vẫn dùng `POST /api/dispatch/assign` như cũ. Quy tắc số tổ theo mức độ không đổi: Level1–2 thêm tổ thứ hai phải bật `allowExtraUnits` kèm lý do, hoặc giao theo yêu cầu chi viện.
+  - Danh sách tổ và xe: tổ có lượt `isSelfDispatched` đang chạy thì hiển thị "Đang xử lý sự cố bên ngoài (mã sự cố)".
+- **Hiển thị nguồn:** thêm bản dịch cho giá trị nguồn mới, `RescueTeam` là "Tổ cứu hộ phát hiện" / "Rescue team (field)". Form Operator tạo sự cố **không** được có lựa chọn này, vì backend sẽ trả 400.
+
+### Mobile (`emergency-dispatch-mobile`)
+
+- Làm giống web staff: thêm nút và form "Báo sự cố hiện trường" trên màn hình chính của staff, lấy GPS bằng `expo-location`, gửi `POST /api/dispatch/field-report`, thành công thì vào `IncidentOverviewScreen` ở bước `on_scene`.
+- Thêm bản dịch cho `RescueTeam` ở những chỗ đang hiển thị `source`.

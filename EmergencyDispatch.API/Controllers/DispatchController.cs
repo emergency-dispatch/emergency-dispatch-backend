@@ -88,6 +88,22 @@ public class DispatchController : ControllerBase
     }
 
     /// <summary>
+    /// Tổ cứu hộ phát hiện sự cố khi đang ở ngoài: báo trung tâm và tổ tự nhận xử lý ngay tại chỗ.
+    /// Sự cố (nguồn RescueTeam) được xác minh theo đánh giá của tổ; lượt của tổ vào thẳng OnScene, xe "Đang ở hiện trường".
+    /// Operator trạm + Admin nhận thông báo, vẫn điều thêm tổ / xử lý chi viện / hủy như sự cố thường
+    /// </summary>
+    [HttpPost("field-report")]
+    [Authorize(Roles = "RescueStaff")]
+    [ProducesResponseType(typeof(ApiResponseDto<FieldIncidentReportResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<FieldIncidentReportResultDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<FieldIncidentReportResultDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponseDto<FieldIncidentReportResultDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ReportFieldIncident(
+        [FromBody] FieldIncidentReportDto dto,
+        CancellationToken cancellationToken)
+        => this.ToHttpResult(await _dispatchService.ReportFieldIncidentAsync(dto, GetCurrentUserId(), cancellationToken));
+
+    /// <summary>
     /// Chỉ đường cho tổ: tuyến đường bộ + các bước rẽ từ vị trí xe (hoặc fromLat/fromLng của thiết bị) tới hiện trường.
     /// Backend gọi OSRM (tự host được), FE không cần gọi máy chủ OSRM công cộng
     /// </summary>
